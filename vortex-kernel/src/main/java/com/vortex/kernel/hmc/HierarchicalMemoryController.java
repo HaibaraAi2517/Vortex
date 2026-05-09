@@ -198,9 +198,7 @@ public class HierarchicalMemoryController {
         enforceQuotaBeforeInsert(fragment);
         enforceGlobalCapacityBeforeInsert(fragment);
         maybeEvict(fragment.getNamespace(), fragment.getEmbedding());
-        l1.put(fragment);
-        indexPin(fragment);
-        enforceGlobalCapacityAfterInsert(fragment);
+        tryAdmitToL1(fragment, "initial-store");
         // Async: persist to L2 and L3
         persistenceManager.persistAsync(fragment, "initial-store");
         sloTracker.recordStoreLatency(System.nanoTime() - startedAt);
@@ -281,9 +279,7 @@ public class HierarchicalMemoryController {
                 enforceGlobalCapacityBeforeInsert(candidate);
                 maybeEvict(candidate.getNamespace(), candidate.getEmbedding());
                 // Prefetch back to L1 for future calls
-                l1.put(candidate);
-                indexPin(candidate);
-                enforceGlobalCapacityAfterInsert(candidate);
+                tryAdmitToL1(candidate, "recall-reinforcement");
                 persistenceManager.persistAsync(candidate, "recall-reinforcement");
                 regretTracker.recordRecall(candidate, "L2");
                 redundancyState.add(candidate);
@@ -575,13 +571,42 @@ public class HierarchicalMemoryController {
             return;
         }
         List<SemanticEvictionPolicy.EvictionCandidate> candidates = evictionPolicy.rankCandidates(
-                caffeineStore.getAllFragments(),
+                caffeineStore.getAllFragments().stream()
+                        .filter(fragment -> !Objects.equals(fragment.getId(), anchorFragment.getId()))
+                        .toList(),
                 anchorFragment.getEmbedding());
-        evictCandidatesUntil(
+        long released = evictCandidatesUntil(
                 candidates,
                 anchorFragment.getNamespace(),
                 overflow,
                 "capacity-post-insert-reclaim");
+        if (released < overflow) {
+            l1.remove(anchorFragment.getId());
+            pinnedFragmentDeadlines.remove(anchorFragment.getId());
+            log.warn(
+                    "Rejected L1 admission after insert due to saturated pinned working set fragmentId={} namespace={} overflow={} released={}",
+                    anchorFragment.getId(),
+                    anchorFragment.getNamespace(),
+                    overflow,
+                    released);
+        }
+    }
+
+    private void tryAdmitToL1(MemoryFragment fragment, String context) {
+        long projectedTokens = l1.currentTokenCount() + fragment.getTokenCount();
+        if (projectedTokens > l1.maxTokenCapacity()) {
+            log.warn(
+                    "Skipped L1 admission due to saturated pinned working set fragmentId={} namespace={} context={} projectedTokens={} capacity={}",
+                    fragment.getId(),
+                    fragment.getNamespace(),
+                    context,
+                    projectedTokens,
+                    l1.maxTokenCapacity());
+            return;
+        }
+        l1.put(fragment);
+        indexPin(fragment);
+        enforceGlobalCapacityAfterInsert(fragment);
     }
 
     private long evictCandidatesUntil(
@@ -898,20 +923,18 @@ public class HierarchicalMemoryController {
 
         private void add(MemoryFragment candidate) {
             double candidateMaxPenalty = 0.0;
-            double candidateMinNovelty = 0.0;
+            double candidateMinNovelty = Double.POSITIVE_INFINITY;
             boolean hasPeer = false;
             for (MemoryFragment existing : fragments) {
                 hasPeer = true;
                 double candidatePenalty = candidate.redundancyPenaltyAgainst(existing);
                 double candidateNovelty = candidate.noveltyBonusAgainst(existing);
                 candidateMaxPenalty = Math.max(candidateMaxPenalty, candidatePenalty);
-                candidateMinNovelty = candidateMinNovelty == 0.0
-                        ? candidateNovelty
-                        : Math.min(candidateMinNovelty, candidateNovelty);
+                candidateMinNovelty = Math.min(candidateMinNovelty, candidateNovelty);
 
                 RedundancyStats previous = stats.getOrDefault(existing.getId(), new RedundancyStats(0.0, 0.0));
                 double updatedPenalty = Math.max(previous.redundancyPenalty(), existing.redundancyPenaltyAgainst(candidate));
-                double updatedNovelty = previous.noveltyBonus() == 0.0
+                double updatedNovelty = fragments.size() == 1
                         ? existing.noveltyBonusAgainst(candidate)
                         : Math.min(previous.noveltyBonus(), existing.noveltyBonusAgainst(candidate));
                 stats.put(existing.getId(), new RedundancyStats(updatedPenalty, updatedNovelty));

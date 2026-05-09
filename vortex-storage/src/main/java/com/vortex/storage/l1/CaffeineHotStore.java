@@ -36,6 +36,8 @@ public class CaffeineHotStore implements L1HotStore {
             @Value("${vortex.storage.l1.max-tokens:8192}") long maxTokens) {
         this.maxTokens = maxTokens;
         this.cache = Caffeine.newBuilder()
+                // HMC owns capacity enforcement; this listener only guards against
+                // future non-explicit Caffeine evictions if cache policy changes again.
                 .removalListener((String k, MemoryFragment v, RemovalCause cause) -> {
                     if (v != null) {
                         if (cause.wasEvicted()) {

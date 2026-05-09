@@ -600,6 +600,7 @@ class HierarchicalMemoryControllerTest {
         assertThat(l1.peek("pinned-overflow")).isPresent();
         assertThat(l1.peek("evictable-overflow")).isEmpty();
         assertThat(l1.currentTokenCount()).isLessThanOrEqualTo(l1.maxTokenCapacity());
+        assertThat(l3.retrieveFragment("evictable-overflow")).isPresent();
     }
 
     @Test
@@ -645,6 +646,77 @@ class HierarchicalMemoryControllerTest {
         assertThat(l2.searchResultsServed()).isEqualTo(2);
         assertThat(l1.peek("l2-a")).isPresent();
         assertThat(l1.peek("l2-b")).isPresent();
+    }
+
+    @Test
+    void incrementalRedundancyMatchesFullRecomputeWhenNoveltyDropsToZero() {
+        CaffeineHotStore l1 = new CaffeineHotStore(512);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1,
+                l2,
+                l3,
+                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
+                new NamespaceQuotaManager(0.25, 0.15, 16),
+                TEST_WEIGHT_LEARNER,
+                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+                TEST_SLO_TRACKER,
+                persistenceManager(l2, l3),
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding,
+                emptyProvider(),
+                0.85
+        );
+
+        MemoryFragment identicalL1 = fragment("l1-same", "ns", "same", List.of(), 4);
+        identicalL1.setEmbedding(new float[]{1.0f, 0.0f, 0.0f, 0.0f});
+        MemoryFragment orthogonalL1 = fragment("l1-other", "ns", "other", List.of(), 4);
+        orthogonalL1.setEmbedding(new float[]{0.0f, 1.0f, 0.0f, 0.0f});
+        hmc.storeFragment(identicalL1);
+        hmc.storeFragment(orthogonalL1);
+
+        MemoryFragment l2Candidate = fragment("l2-same", "ns", "same-hit", List.of(), 4);
+        l2Candidate.setEmbedding(new float[]{1.0f, 0.0f, 0.0f, 0.0f});
+        l2.seedSearchResults(List.of(l2Candidate));
+        l3.archiveFragment(l2Candidate);
+
+        RecallResult result = hmc.recall(RecallQuery.builder()
+                .query("query")
+                .namespace("ns")
+                .topK(3)
+                .tokenBudget(100)
+                .build());
+
+        RecallResult.ScoredFragment recalled = result.getFragments().stream()
+                .filter(fragment -> "l2-same".equals(fragment.getFragment().getId()))
+                .findFirst()
+                .orElseThrow();
+
+        List<MemoryFragment> allCandidates = List.of(
+                l1.getAll("ns").stream().filter(fragment -> "l1-same".equals(fragment.getId())).findFirst().orElseThrow(),
+                l1.getAll("ns").stream().filter(fragment -> "l1-other".equals(fragment.getId())).findFirst().orElseThrow(),
+                recalled.getFragment());
+        double expected = recalled.getFragment().describeEvictionScore(
+                vector(4),
+                0.3,
+                0.5,
+                0.2,
+                allCandidates.stream()
+                        .filter(other -> other != recalled.getFragment())
+                        .mapToDouble(recalled.getFragment()::redundancyPenaltyAgainst)
+                        .max()
+                        .orElse(0.0),
+                allCandidates.stream()
+                        .filter(other -> other != recalled.getFragment())
+                        .mapToDouble(recalled.getFragment()::noveltyBonusAgainst)
+                        .min()
+                        .orElse(0.0)).totalScore();
+
+        assertThat(recalled.getScore()).isCloseTo(expected, org.assertj.core.data.Offset.offset(1.0e-7));
     }
 
     @Test
