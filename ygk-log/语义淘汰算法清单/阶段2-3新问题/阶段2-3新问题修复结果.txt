@@ -1,0 +1,79 @@
+ 先说评审结论的核对结果：
+
+
+
+  B-1 评审不成立。FileBackedProcessedTaskStore 本来就实现了 maxEntries 裁剪和超限重写，不是无界增长。我补了测试把这一点
+
+  固化，避免后续再误判。
+
+  B-2、B-4、B-5 是真实问题，我已经修掉。
+
+  B-3 严格说不是功能性 bug，但我顺手把维护路径做得更干净了。
+
+  B-6 仍然属于低影响项，当前不值得为它引入 Redis/MQ 复杂度；现有单线程 replay + idempotency key 已经够稳。
+
+
+
+  这次实际落地的修复有四块：
+
+
+
+  1. pin 过期清理不再全量扫描 L1。
+
+     现在 HMC 维护一个按 pinnedUntil 排序的到期队列和一个 deadline map，只处理真正到期的 fragment，替代原来每次
+
+     clearExpiredPins() 扫全量 L1 的方式。核心改动在 vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+
+     HierarchicalMemoryController.java:364 和 vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+
+     HierarchicalMemoryController.java:725。
+
+  2. pin/unpin/过期清理不再污染 recency。
+
+     我给 L1 增加了 put(fragment, recordAccess) 和 peek(id)，把维护型写入/读取和真正访问分开。这样 pin 元数据更新不会错
+
+     误提升 lastAccessTime，不会干扰 LRU/语义淘汰。改动在 vortex-storage/src/main/java/com/vortex/storage/api/
+
+     L1HotStore.java:14、vortex-storage/src/main/java/com/vortex/storage/l1/CaffeineHotStore.java:64、vortex-kernel/src/
+
+     main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:341。
+
+  3. 组淘汰时不再重复 O(n) 扫描 namespace token。
+
+     evictCandidateGroup() 现在接收预计算的 namespace token usage map，并在每次实际删除后原地扣减，不再每次
+
+     l1.getAll(namespace).sum()。核心改动在 vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+
+     HierarchicalMemoryController.java:425 到 vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+
+     HierarchicalMemoryController.java:587。
+
+  4. recall 冗余度改成单次预计算。
+
+     rankForRecall() 不再为每个 fragment 都重新流式扫描全体候选算 redundancy/novelty，而是先一次性算出 RedundancyStats，
+
+     再复用。改动在 vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:614 和 vortex-
+
+     kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:748。
+
+
+
+  另外我补了测试，覆盖：
+
+  FileBackedProcessedTaskStore 超限重写
+
+  pin/unpin 不刷新 recency
+
+  真实 TTL 过期后的 pin 清理
+
+  现有 HMC、淘汰、processed key 路径回归
+
+
+
+  如果你后面确实想把这块再做成更重型架构，我可以继续给你上第二层方案：
+
+  用 Redis ZSET 托管 pin 到期索引，或者用 MQ/延时队列驱动 pin 失效事件。
+
+  但就当前项目规模和 L1 语义缓存定位，这一步现在不是必须，现有内存索引方案已经足够专业且成本更低。
+
+你觉得修复的怎么样？

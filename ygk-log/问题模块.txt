@@ -1,0 +1,448 @@
+Vortex 当前最合适的模块划分
+
+  1. HMC 主控编排模块
+  2. 语义召回与文本切分模块
+  3. 语义淘汰与 L1 热缓存模块
+  4. Embedding 与向量一致性模块
+  5. L2/L3 持久化与可靠性模块
+  6. 快照恢复与任务状态模块
+  7. API、测试与构建环境模块
+
+  下面我按“模块职责 -> 典型问题 -> 原因 -> 解决 -> 当前状态”给你整理。
+
+  ———
+
+  1. HMC 主控编排模块
+
+  对应代码：
+
+  - vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:33
+
+  模块职责
+
+  这是项目主心骨。
+  它负责把三层记忆串起来：
+
+  - store() 时切分、嵌入、写入 L1，并异步下沉到 L2/L3
+  - recall() 时先查 L1，再查 L2，并回灌到 L1
+  - maybeEvict() 在 L1 接近阈值时主动淘汰
+  - 同时挂接 regret、decision log、持久化管理器
+
+  过程里暴露的问题
+
+  1. RecallQuery.tags 接口有定义，但 recall 里一开始没真正过滤
+  2. recall 命中 L1 后，lastAccessTime 没刷新
+  3. 淘汰候选最初是全局候选，可能跨 namespace 误伤
+  4. HMC 端到端测试不足，很多问题只能靠读代码猜
+
+  这些问题的线索在：
+
+  - ygk-log/项目评审.txt
+  - ygk-log/阶段1.txt
+  - ygk-log/p0p1p2问题解决过程.txt
+
+  问题原因
+
+  这个模块的问题不是“不会写”，而是典型的 MVP 向生产化演进 问题：
+
+  - 主链路先跑通了
+  - 但接口承诺、时序更新、隔离边界、反馈闭环这些细节一开始没收紧
+
+  也就是说，HMC 最初更像“流程编排骨架”，后面才逐步补成“可长期运行的内核”。
+
+  解决方案
+
+  现在代码里已经做了几项关键修复：
+
+  - recall 加入标签过滤
+  - L1 命中后通过 get(id) 刷新访问时间
+  - 淘汰候选改成 namespace 内隔离
+  - 淘汰时接入结构化日志与 regret 跟踪
+
+  当前状态
+
+  - 主链路已经成立，是你项目最强的一块
+  - 但 HMC store -> recall -> evict -> checkpoint -> recover 端到端集成测试仍然是后续重点
+
+  ———
+
+  2. 语义召回与文本切分模块
+
+  对应代码：
+
+  - vortex-kernel/src/main/java/com/vortex/kernel/hmc/SemanticTextSplitter.java:24
+  - vortex-common/src/main/java/com/vortex/common/dto/RecallQuery.java:17
+  - HMC recall 流程仍在 vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:133
+
+  模块职责
+
+  这一块决定：
+
+  - 原始文本怎么切成 fragment
+  - token 预算怎么算
+  - recall 时如何筛选出能返回的上下文片段
+
+  过程里暴露的问题
+
+  1. token 统计最初是 char / 3.5 启发式估算
+  2. 标签过滤 DTO 已定义，但没有接进召回逻辑
+  3. L2 命中回灌到 L1 时，片段语义状态不完整，影响后续评分
+
+  问题原因
+
+  这里的核心问题是：
+  文本长度和模型 token 长度不是一回事。
+
+  一旦 token 统计不真实，会连锁影响：
+
+  - splitter 分块失真
+  - tokenBudget 不准
+  - L1 容量判断不准
+  - recall 结果不稳定
+
+  而标签过滤问题则是接口语义   实现脱节。
+
+  解决方案
+
+  过程文档里已经明确这块的修法：
+
+  - 用真实 TokenCounter 替代启发式估算
+  - recall 在 L1 层和 L2 补偿层都做标签过滤
+  - L2 命中后本地重嵌入，恢复 L1 评分所需 embedding
+
+  当前状态
+
+  这一块已经从“能用”修到了“逻辑自洽”。
+  但仍建议未来补更强的 recall 质量评估，比如固定基准集、nDCG。
+
+  ———
+
+  3. 语义淘汰与 L1 热缓存模块
+
+  对应代码：
+
+  - vortex-storage/src/main/java/com/vortex/storage/l1/CaffeineHotStore.java:17
+  - vortex-kernel/src/main/java/com/vortex/kernel/hmc/SemanticEvictionPolicy.java:18
+  - vortex-common/src/main/java/com/vortex/common/model/MemoryFragment.java:19
+  - 还有你那份 ygk-log/项目评审-语义淘汰清单.txt
+
+  模块职责
+
+  这一块决定：
+
+  - L1 留什么
+  - 淘汰什么
+  - 为什么淘汰
+  - 淘汰后是否后悔
+  - 多 namespace 是否会互相干扰
+
+  过程里暴露的问题
+
+  这是问题最多、也最有技术含量的一块：
+
+  1. importance 名义上有，实际没参与打分
+  2. recency 24h 后直接归零，老片段区分力消失
+  3. recall 命中后不刷新访问时间，热片段被误淘汰
+  4. 淘汰候选跨 namespace 混用
+  5. 候选策略按“条目数前 10%”，不稳定
+  6. currentTokens 统计漂移
+  7. 缺少决策日志与 regret 反馈
+  8. 没有 namespace 级配额、pin、冗余治理这些更高阶能力
+
+  问题原因
+
+  这一块的问题本质上来自两个层面：
+
+  1. 算法层
+      - 分数模型太粗
+      - 衰减函数太硬
+      - importance 缺少动态反馈
+      - 淘汰目标和 token 释放量不严格对应
+  2. 工程层
+      - L1 计数与 Caffeine listener 存在竞态和重复记账
+      - 命中不刷新、候选不隔离，说明状态流转没闭环
+      - 没有 regret 和日志就无法优化策略
+
+  解决方案
+
+  你过程里已经做了大量修复：
+
+  - importance 接入分数
+  - recency 改为对数衰减
+  - recall 命中提升 importance
+  - 候选按 namespace 隔离
+  - 策略改为按 score/tokenCount 的“价值密度”
+  - 补了 EvictionDecisionLogger
+  - 补了 EvictionRegretTracker
+  - 修掉了 currentTokens 的替换/删除路径漂移
+
+  当前状态
+
+  这是当前项目里最像“内核能力”的模块。
+  按你的文档，它已经从大约 7.8/10 提到接近 9.x，但离“生产级 10 分”还差：
+
+  - namespace quota
+  - pin / 组淘汰
+  - answer-grounded importance 回写
+  - 在线权重学习
+  - SLO 与告警闭环
+
+  ———
+
+  4. Embedding 与向量一致性模块
+
+  对应代码：
+
+  - vortex-kernel/src/main/java/com/vortex/kernel/embedding/BgeSmallEmbeddingService.java:42
+  - vortex-kernel/src/main/java/com/vortex/kernel/embedding/DeepSeekEmbeddingService.java:31
+  - vortex-storage/src/main/java/com/vortex/storage/l2/MilvusWarmStore.java:60
+  - vortex-app/src/main/resources/application.yml:22
+
+  模块职责
+
+  负责两条 embedding 路径：
+
+  - L1 本地 BGE 512 维
+  - L2 云 embedding 1024 维
+
+  同时负责：
+
+  - tokenizer 一致性
+  - 向量维度与 Milvus schema 一致性
+  - 回退时不把错误向量写入错误 collection
+
+  过程里暴露的问题
+
+  1. 默认配置与回退路径不一致，可能把 512 写进 1024
+  2. L2 回灌到 L1 时 embedding 恢复不严谨
+  3. 本地 embedding / 云 embedding 双路径容易造成“表面能跑，内部不一致”
+
+  问题原因
+
+  这是典型的“双模型路径一致性问题”。
+
+  你这里难点不是调 API，而是：
+
+  - 两套模型的维度不同
+  - Milvus schema 是刚性的
+  - 本地评分和远程检索不是同一向量空间
+
+  所以只要回退逻辑写得不严，系统就会悄悄污染。
+
+  解决方案
+
+  过程里明确做了这些事：
+
+  - 默认 embedding-dim 改回 512
+  - 增加启动期维度校验，fail-fast
+  - L2 命中后本地重嵌入，而不是把 queryEmbedding 硬塞进 fragment
+  - 明确区分 embedding 和 l2Embedding
+
+  当前状态
+
+  这是你项目里最典型的 P0 工程一致性问题，已经大部分修好。
+  这块现在主要剩下真实 Milvus 环境下的集成验证。
+
+  ———
+
+  5. L2/L3 持久化与可靠性模块
+
+  对应代码：
+
+  - vortex-storage/src/main/java/com/vortex/storage/l2/MilvusWarmStore.java:44
+  - vortex-storage/src/main/java/com/vortex/storage/l3/MinioColdStore.java:21
+  - vortex-kernel/src/main/java/com/vortex/kernel/hmc/FragmentPersistenceManager.java:18
+  - vortex-kernel/src/main/java/com/vortex/kernel/hmc/FileBackedDeadLetterQueue.java:17
+
+  模块职责
+
+  负责：
+
+  - fragment 异步下沉到 L2/L3
+  - L2 用向量检索
+  - L3 做冷存档和 checkpoint 存储
+  - 写失败后的重试、DLQ、回放
+
+  过程里暴露的问题
+
+  1. 异步下沉最初无失败重试/死信
+  2. 可靠性和可观测性不足
+  3. MilvusWarmStore.get() 曾经未闭合
+  4. 幂等语义最初是弱的，更多依赖下层 upsert/覆盖写
+  5. 真实副作用去重还没完全闭环
+
+  问题原因
+
+  这类问题本质上不是“功能没写”，而是：
+
+  - 主链路先打通
+  - 失败链路、崩溃恢复链路、重复回放链路没同步完善
+
+  这是所有中间件/存储系统都会遇到的第二阶段问题。
+
+  解决方案
+
+  根据 阶段2.txt，现在已经做了不少：
+
+  - 持久化管理器
+  - 文件型 DLQ
+  - 启动自动回放
+  - 幂等 key
+  - 失败入队 -> 重放成功 的单测
+
+  但也明确还差两点：
+
+  - regret/可靠性指标要有真正监控出口
+  - idempotencyKey 要有已处理去重闭环
+
+  当前状态
+
+  这块已经从“异步写一下”升级到“有可靠性设计”。
+  但严格来说还没达到完全审计级幂等。
+
+  ———
+
+  6. 快照恢复与任务状态模块
+
+  对应代码：
+
+  - vortex-kernel/src/main/java/com/vortex/kernel/snapshot/SnapshotService.java:14
+  - vortex-app/src/main/java/com/vortex/app/controller/TaskController.java:11
+  - vortex-common/src/main/java/com/vortex/common/model/TaskState.java:22
+  - L3 checkpoint 存储仍在 vortex-storage/src/main/java/com/vortex/storage/l3/MinioColdStore.java:78
+
+  模块职责
+
+  负责：
+
+  - 任务创建
+  - DAG / thought node 追加
+  - checkpoint 持久化
+  - 任务恢复
+  - 当前活跃任务注册表
+
+  过程里暴露的问题
+
+  主评审对这块的结论很明确：
+
+  1. 功能有了，单机可用
+  2. 但 activeTasks 是本地 ConcurrentHashMap
+  3. 所以不是分布式恢复系统，只是单机状态内核 MVP
+
+  问题原因
+
+  这不是 bug，而是能力边界与目标叙事不一致。
+
+  你构思里有“多机恢复、共识同步”，但当前实现还只是：
+
+  - 本地注册表
+  - L3 checkpoint 持久化
+  - 单机恢复
+
+  解决方案
+
+  这块最重要的不是立刻上 Raft，而是：
+
+  - 明确对外定位为“单机 Agent Memory Kernel MVP”
+  - 不过度承诺分布式一致性
+  - 后续如果真做分布式，再把状态注册表外置化
+
+  当前状态
+
+  这块是“有实现、边界清晰、但还没进入分布式阶段”。
+
+  ———
+
+  7. API、测试与构建环境模块
+
+  对应代码：
+
+  - vortex-app/src/main/java/com/vortex/app/controller/MemoryController.java:15
+  - pom.xml
+  - 测试散落在 vortex-common / vortex-storage / vortex-kernel
+
+  模块职责
+
+  负责：
+
+  - 对外暴露 memory / task API
+  - 验证功能正确性
+  - 保证项目能稳定编译与回归
+
+  过程里暴露的问题
+
+  1. 早期测试覆盖偏薄
+  2. 语义淘汰和 splitter 有单测，但 HMC 端到端不足
+  3. 默认 Maven 跑 JDK 17，而项目目标是 21
+  4. 容易出现“代码没坏，但构建先红”的误判
+
+  问题原因
+
+  这类问题是项目从 demo 走向可维护工程时必然暴露的：
+
+  - 先写实现
+  - 后补测试
+  - 最后才发现环境不统一
+
+  解决方案
+
+  你过程里已经做了两件关键事：
+
+  - 补了关键回归测试，尤其 CaffeineHotStoreTest
+  - 实际用 JDK 21 跑通了 mvn test
+
+  但后续仍然需要：
+
+  - HMC 端到端集成测试
+  - Milvus / MinIO 真实集成测试
+  - 固定 IDE/Maven 的 JDK 21
+
+  当前状态
+
+  这块已经从“能本地跑”进到“可验证”，但离 CI 级稳定还有一步。
+
+  ———
+
+  最后给你一个总表
+
+  模块 1：HMC 主控编排
+
+  - 问题：标签过滤未兑现、命中不刷新、淘汰边界不严
+  - 解决：补过滤、刷新、隔离和日志/反馈
+  - 状态：核心已成型
+
+  模块 2：语义召回与文本切分
+
+  - 问题：token 估算失真、标签语义污染、回灌状态不完整
+  - 解决：真实 tokenizer、双层过滤、本地重嵌入
+  - 状态：逻辑已基本自洽
+
+  模块 3：语义淘汰与 L1 热缓存
+
+  - 问题：importance 未生效、recency 粗糙、计数漂移、候选不稳
+  - 解决：gamma 接入、对数衰减、价值密度排序、回归测试、regret/log
+  - 状态：项目最强模块之一
+
+  模块 4：Embedding 与向量一致性
+
+  - 问题：512/1024 路径不一致、回退污染风险
+  - 解决：默认 512、启动校验、区分 L1/L2 embedding
+  - 状态：P0 已基本修复
+
+  模块 5：L2/L3 持久化与可靠性
+
+  - 问题：异步失败无闭环、幂等弱、回放机制不足
+  - 解决：PersistenceManager + DLQ + replay + 幂等 key
+  - 状态：可靠性框架已搭起来
+
+  模块 6：快照恢复与任务状态
+
+  - 问题：单机注册表，非分布式恢复
+  - 解决：明确 MVP 边界，后续再做外部化/共识
+  - 状态：单机可用
+
+  模块 7：API、测试与构建
+
+  - 问题：端到端测试不足、JDK 版本不一致
+  - 解决：补回归测试、切到 JDK 21、建议补集成测试
+  - 状态：能构建，测试基础已建立

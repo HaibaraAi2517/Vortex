@@ -1,0 +1,112 @@
+阶段 2 专家级代码审查：可观测性 & 后悔信号
+
+  #6 Eviction Decision Log — 审查结论：✅ 达标，质量高
+
+  EvictionDecisionLogger.java (115行) 实现完整，字段覆盖全（fragmentId/namespace/mode/分项得分/density/reasoningChainId/
+  groupTokenCount/timestamp），两条淘汰路径（semantic + caffeine-fallback）均打点，JSON 序列化输出。
+
+  唯一小瑕疵：logDecision() 方法是 protected（第 81 行），仅为了方便测试中 spy/mock，但作为非 abstract 类的 protected
+  方法略显不规范。不影响功能。
+
+  评分：9/10
+
+  ---
+  #7 Eviction Regret 指标 — 审查结论：✅ 达标，比我之前评估的更好
+
+  之前报告说"监控暴露层缺失"，但实际上还有一个我遗漏的类：
+
+  EvictionRegretMetricsBinder.java (35行) 通过 Micrometer Gauge 注册了 4 个指标：
+  - vortex.hmc.eviction.regret.rate
+  - vortex.hmc.eviction.regret.count
+  - vortex.hmc.eviction.count
+  - vortex.hmc.eviction.regreg.pending
+
+  加上 application.yml 中 Actuator 已暴露 metrics 端点（第 20 行 include: health,info,metrics），所以 regret rate
+  已经可以通过 /actuator/metrics/vortex.hmc.eviction.regret.rate 暴露给 Prometheus/Grafana。
+
+  EvictionRegretTracker.java (109行) 核心逻辑无问题，TTL 窗口、namespace 校验、L1 排除都正确。
+
+  发现的问题：
+
+  问题 7-A（低）：recordRecall() 中 recentlyEvicted.remove(fragment.getId(), evicted) 的竞争条件
+
+  EvictionRegretTracker.java:62
+
+  if (recentlyEvicted.remove(fragment.getId(), evicted)) {
+
+  这是 ConcurrentHashMap.remove(key, value) 的原子条件删除，语义正确——只有当前值仍是 evicted
+  时才删除。但如果两个线程同时对同一个 fragment 执行 recall（比如并发 recall 请求），第二个线程会因为第一个线程已经
+  remove 而返回 false。这是正确行为（一个 regret 只计一次），没问题。
+
+  评分：9/10（比我之前的 7 分评估高，因为我之前漏看了 EvictionRegretMetricsBinder）
+
+  ---
+  #8 下沉链路幂等 & 可重放 — 审查结论：🟡 基本达标，有设计缺陷
+
+  问题 8-A（中等）：persistTask() 中 L2 和 L3 写入不是原子的
+
+  FragmentPersistenceManager.java:89-103
+
+  private void persistTask(FragmentPersistenceTask task) {
+      if (processedTaskStore.contains(task.getIdempotencyKey())) {  // 1. 检查幂等
+          return;
+      }
+      MemoryFragment fragment = task.getFragment();
+      if (fragment.getEmbedding() != null) {
+          l2.upsert(fragment);          // 2. 写 L2
+      }
+      l3.archiveFragment(fragment);     // 3. 写 L3
+      processedTaskStore.markProcessed(task.getIdempotencyKey()); // 4. 标记完成
+  }
+
+  问题：如果步骤 2（L2 upsert）成功，步骤 3（L3 archive）抛异常，会进入 persistOrEnqueue() 的 catch 块并放入 DLQ。但下次
+   replay 时，步骤 1 检查 processedTaskStore.contains() 会返回 false（因为还没 markProcessed），所以会重复执行 L2
+  upsert。
+
+  - L2 用 Milvus upsert，重复写入是幂等的，不会出错
+  - L3 用固定 key 覆盖写，重复写入也是幂等的
+  - 所以这个设计依赖底层存储的结果幂等性来保证正确性，而不是严格的过程幂等
+
+  影响：当前 L2/L3 实现碰巧是幂等的，但如果将来换存储引擎或写入逻辑变化，这个假设就会破裂。
+
+  严重性：中等（当前可工作，但架构脆弱）
+
+  问题 8-B（中等）：FileBackedProcessedTaskStore 无清理机制，文件会无限增长
+
+  FileBackedProcessedTaskStore.java 的 markProcessed() 只做
+  append，没有任何过期清理或大小限制。长时间运行后，processed-keys.txt 会持续增长，每次 contains()
+  调用都要全量读取文件。
+
+  影响：
+  - 启动时文件越大，replay 前的检查越慢
+  - 极端情况下文件可能达到 GB 级别
+
+  严重性：中等（生产环境长期运行会暴露）
+
+  问题 8-C（中等）：FileBackedDeadLetterQueue.replay() 中 consumer 失败时 task 原地修改
+
+  FileBackedDeadLetterQueue.java:59-62
+
+  } catch (Exception ex) {
+      task.setAttemptCount(task.getAttemptCount() + 1);
+      task.setLastFailure(ex.getMessage());
+      failedTasks.add(task);
+  }
+
+  FragmentPersistenceTask 使用 @Data（Lombok 生成 mutable setter），replay 时直接修改了 task 对象的字段。这些对象是从
+  JSON 反序列化出来的，修改后写回 DLQ 文件——这是正确行为。
+
+  但问题是：没有 max attempt count 限制。一个永远失败的任务会无限重试，DLQ 永远不会清空它。
+
+  严重性：中等
+
+  问题 8-D（低）：replay() 和 enqueue() 共用同一个 lock，replay 阻塞所有新 enqueue
+
+  FileBackedDeadLetterQueue 的 synchronized(lock) 在 replay() 期间持有锁，整个 replay 过程中任何新的 enqueue()
+  调用都会被阻塞。在 replay 大量积压任务时，异步持久化线程会被阻塞。
+
+  严重性：低（MVP 可接受）
+
+  评分：7/10
+
+  ---

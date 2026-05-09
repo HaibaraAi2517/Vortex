@@ -1,0 +1,14 @@
+.idea/
+*.iml
+
+.claude/settings.local.json
+
+target/
+*/target/
+
+*.log
+hs_err_pid*
+*.pid
+
+.DS_Store
+Thumbs.db

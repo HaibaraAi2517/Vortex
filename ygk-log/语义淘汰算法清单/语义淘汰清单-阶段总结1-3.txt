@@ -1,0 +1,212 @@
+› 请你把上述阶段1-3所出现的问题，为什么会出现问题，问题如何解决，以及解决过程，全部总结一下。我需要完整详细的报告
+
+
+• 总览
+  这份报告总结了阶段 1 到阶段 3 的三类内容：
+
+  1. 清单里原始定义的问题是什么，为什么会发生。
+  2. 我实际采用了什么修复方案，代码落在什么位置。
+  3. 在落地过程中又暴露了哪些实现级问题，我是怎么继续修掉的。
+
+  核心修改集中在这些文件：
+  /E:/1projects/claude/Vortex/vortex-common/src/main/java/com/vortex/common/model/MemoryFragment.java
+  /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java
+  /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/SemanticEvictionPolicy.java
+  /E:/1projects/claude/Vortex/vortex-storage/src/main/java/com/vortex/storage/l1/CaffeineHotStore.java
+  以及阶段 2、3 新增的一组支撑组件。
+
+  阶段 1
+
+  1. recency 24h 归零
+
+  - 问题：原实现是 24 小时线性衰减，超过 24h 后统一变成 0。
+  - 原因：线性模型把“2 天前”和“2 周前”都压成同一个值，老数据之间失去区分度。
+  - 解决：把 recency 改成对数衰减，超过 24h 仍然保留差异。
+  - 过程：修改了 /E:/1projects/claude/Vortex/vortex-common/src/main/java/com/vortex/common/model/MemoryFragment.java 的
+    recencyScore()，并新增 /E:/1projects/claude/Vortex/vortex-common/src/test/java/com/vortex/common/model/
+    MemoryFragmentTest.java 验证“2 天前 > 2 周前 > 0”。
+
+  2. recall 命中后 lastAccessTime 不刷新
+
+  - 问题：L1 recall 只拿 getAll(namespace) 后排序，命中的 fragment 没经过 get(id)，访问时间不更新。
+  - 原因：召回和读取路径解耦，缓存命中并不自动触发“访问语义”。
+  - 解决：L1 recall 结果在返回前统一走 l1.get(id)，刷新 lastAccessTime；同时 recall 时顺带提升 importance。
+  - 过程：修了 /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+    HierarchicalMemoryController.java 和 /E:/1projects/claude/Vortex/vortex-storage/src/main/java/com/vortex/storage/l1/
+    CaffeineHotStore.java，并补了 recallRefreshesLastAccessTime... 测试。
+
+  3. 候选集跨 namespace 混用
+
+  - 问题：原淘汰候选可从全局 L1 取，A namespace 写入可能驱逐 B namespace 热数据。
+  - 原因：L1 总容量是全局的，但淘汰算法最初没有租户隔离概念。
+  - 解决：阶段 1 先收敛成“触发哪个 namespace，就只在该 namespace 内做语义淘汰候选”。
+  - 过程：HMC 的 maybeEvict() 改成基于 l1.getAll(namespace)，并加了
+    maybeEvictOnlyUsesCandidatesFromTheTriggeringNamespace 测试。
+
+  4. 候选池按条目数前 10% 不稳定
+
+  - 问题：如果条目都很小，按“前 10% 条目”预选，释放 token 可能不够，最后退回 Caffeine 默认淘汰。
+  - 原因：条目数和 token 占用不是同一尺度。
+  - 解决：改成按 score/tokenCount 的价值密度排序，并按“目标释放 token 数”选片段。
+  - 过程：重写了 /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+    SemanticEvictionPolicy.java 的选择逻辑，并补了密度排序测试。
+
+  5. importance 长期退化为常数
+
+  - 问题：默认值是 0.5，如果业务侧不主动更新，importance 这个维度几乎失效。
+  - 原因：模型字段存在，但没有行为回路持续反馈。
+  - 解决：先把 recall 命中变成一个强化信号，每次 recall 提升 importance。
+  - 过程：在 /E:/1projects/claude/Vortex/vortex-common/src/main/java/com/vortex/common/model/MemoryFragment.java 增加
+    reinforceImportanceOnRecall()。当时仓库里没有现成的 answer-grounded callback，所以阶段 1 先只闭环 recall 路径。
+
+  阶段 2
+  6. 淘汰决策不可解释
+
+  - 问题：无法回答“为什么这个 fragment 被淘汰”。
+  - 原因：淘汰时只有删除行为，没有结构化决策记录。
+  - 解决：新增结构化日志器，把分项分数、贡献、density、namespace、mode 全记下来。
+  - 过程：新增 /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+    EvictionDecisionLogger.java，在语义淘汰和 Caffeine fallback 两条路径都接入。
+
+  7. Eviction Regret 无法量化
+
+  - 问题：不知道哪些淘汰其实是错淘汰。
+  - 原因：系统没有保存“最近被淘汰”的观察窗口，也没有把下层召回和上层淘汰关联起来。
+  - 解决：新增 regret tracker，记录淘汰事件；如果窗口期内从 L2 再次召回，则计为 regret。
+  - 过程：新增 /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+    EvictionRegretTracker.java，HMC 在淘汰时 recordEviction，在 L2 回补时 recordRecall。
+
+  8. 下沉失败可能丢数据
+
+  - 问题：L1 删除后如果异步写 L2/L3 失败，可能两边都没有。
+  - 原因：原实现只是 CompletableFuture 异步写 + 打日志，没有失败持久化和 replay。
+  - 解决：抽出持久化管理器、死信队列和 replay 机制。
+  - 过程：新增 /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+    FragmentPersistenceManager.java、/E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+    FileBackedDeadLetterQueue.java、/E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+    FragmentPersistenceTask.java。同时把 /E:/1projects/claude/Vortex/vortex-storage/src/main/java/com/vortex/storage/l2/
+    MilvusWarmStore.java 和 /E:/1projects/claude/Vortex/vortex-storage/src/main/java/com/vortex/storage/l3/
+    MinioColdStore.java 的“只记日志不抛错”改成真正抛异常，让失败能进入 DLQ。
+
+  9. 阶段 2 评审追加缺口：regret 没暴露成监控
+
+  - 问题：能算 regret，但生产代码没有暴露指标。
+  - 原因：snapshot() 只在测试里用，没有接 Micrometer。
+  - 解决：新增指标绑定器，把 regret rate/count/pending 暴露成 Actuator 指标。
+  - 过程：新增 /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+    EvictionRegretMetricsBinder.java，并给 vortex-kernel 增加 actuator 依赖。
+
+  10. 阶段 2 评审追加缺口：idempotencyKey 只有标识，没有去重闭环
+
+  - 问题：DLQ replay 虽然能重放，但同一任务重复执行仍可能带来重复副作用。
+  - 原因：幂等键只生成了，没有“已处理键存储”。
+  - 解决：新增本地 processed-key store，成功写入后标记；重放前先检查。
+  - 过程：新增 /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+    FileBackedProcessedTaskStore.java，并改 /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/
+    hmc/FragmentPersistenceManager.java。
+
+  阶段 3
+  11. namespace 没有 hard/soft quota
+
+  - 问题：高频 namespace 理论上可以挤掉其他 namespace 的全部热数据。
+  - 原因：之前只有全局 L1 容量，没有 namespace 级 admission control。
+  - 解决：引入 quota manager，计算每个 namespace 的 hard quota、soft quota、borrowed tokens、可回收借用容量。
+  - 过程：新增 /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+    NamespaceQuotaManager.java，HMC 在 storeFragment() 前先 enforceQuotaBeforeInsert()。
+
+  12. 需要弹性借用，但不能破坏核心热记忆
+
+  - 问题：完全硬切 quota 会浪费空闲容量；完全共享又会互相踩踏。
+  - 原因：多租户公平性和利用率天然冲突。
+  - 解决：允许借用“未使用的 quota”，但借用部分可被优先回收；每个 namespace 的 hard quota 以内视为核心集，不能被别的
+    namespace 清空。
+  - 过程：HMC 先回收本 namespace 超额部分；不够再按 borrowed usage 从其他 namespace 的借用部分回收，不碰核心份额。
+
+  13. 关键片段可能被正常淘汰
+
+  - 问题：结论片段和中间推理节点一旦被淘汰，后续召回只剩碎片。
+  - 原因：淘汰算法此前只看数值分，不理解依赖关系。
+  - 解决：给 fragment 增加 pinnedUntil 和 reasoningChainId。
+  - 过程：在 /E:/1projects/claude/Vortex/vortex-common/src/main/java/com/vortex/common/model/MemoryFragment.java 加元数
+    据，在 /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+    HierarchicalMemoryController.java 的驱逐逻辑里跳过 pinned，并按 chain 组一致淘汰。
+
+  14. 组淘汰不能拆链
+
+  - 问题：同一 reasoning chain 里如果只淘掉一半，语义完整性被破坏。
+  - 原因：单条 fragment 排序淘汰对依赖图是不感知的。
+  - 解决：候选片段若属于同一 chain，则按组解析并整体淘汰。
+  - 过程：HMC 新增 resolveEvictionGroup() 和 evictCandidateGroup()；驱逐时同组片段一起下沉。
+
+  15. 冗余片段没有惩罚，新颖片段没有奖励
+
+  - 问题：相似度 > 0.95 的重复片段和新信息片段被同等对待。
+  - 原因：旧评分公式只有 recency/similarity/importance 三维，没有横向比较候选池内部关系。
+  - 解决：在评分时加入 redundancy penalty 和 novelty bonus。
+  - 过程：扩展 /E:/1projects/claude/Vortex/vortex-common/src/main/java/com/vortex/common/model/MemoryFragment.java 的评
+    分分解，并改 /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+    SemanticEvictionPolicy.java 让评分依赖整个候选池而不是单片段。
+
+  16. 外部 API 之前无法设置 pin / reasoning chain
+
+  - 问题：内部能力加了，但入口不暴露就无法被业务使用。
+  - 原因：原 /memory/store 只有 content/namespace/tags。
+  - 解决：把 reasoningChainId 和 pinTtlMillis 加到 store request，并让 splitter 透传。
+  - 过程：修改 /E:/1projects/claude/Vortex/vortex-app/src/main/java/com/vortex/app/controller/MemoryController.java 和 /
+    E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/SemanticTextSplitter.java。
+
+  实现过程中额外暴露并修掉的问题
+
+  1. PowerShell 参数解析
+
+  - 问题：mvn -Dtest=a,b 初次执行被 PowerShell 误拆。
+  - 解决：把 -D... 整体加引号。
+  - 影响：只影响命令执行，不影响代码逻辑。
+
+  2. 新增依赖后 Maven 拉元数据失败
+
+  - 问题：加 actuator 后，沙箱下 Maven 取依赖元数据失败。
+  - 解决：按权限流程提权重跑，随后改成 reactor 全量相关模块一起构建。
+
+  3. 只跑 kernel 时找不到 common/storage SNAPSHOT
+
+  - 问题：-pl vortex-kernel 单独跑时本地 reactor 产物不可见。
+  - 解决：改为 -pl vortex-common,vortex-storage,vortex-kernel -am。
+
+  4. DLQ JSON 反序列化失败
+
+  - 问题：阶段 3 加了 isPinned() 后，Jackson 把它当成 pinned 属性写进 JSON，但 MemoryFragment 没有对应字段，重放时反序列
+    化报错。
+  - 原因：Java Bean 规范会把 isPinned() 识别成布尔属性 getter。
+  - 解决：给 isPinned() 加 @JsonIgnore。
+  - 位置：已修在 /E:/1projects/claude/Vortex/vortex-common/src/main/java/com/vortex/common/model/MemoryFragment.java。
+
+  5. reasoningChainId 为空时 group map NPE
+
+  - 问题：评分阶段对 Map.getOrDefault(null, ...) 走到了不可变 map 的空键路径，触发 NPE。
+  - 解决：在 /E:/1projects/claude/Vortex/vortex-kernel/src/main/java/com/vortex/kernel/hmc/SemanticEvictionPolicy.java
+    里对空 chain id 单独分支，直接退化为单片段组。
+
+  6. 测试基线因接口签名变化失效
+
+  - 问题：SemanticTextSplitterTest、MemoryFragmentTest 还在用旧签名。
+  - 解决：同步更新测试，并顺带增加对 reasoningChainId/pin 透传的断言。
+
+  7. Surefire 因 app 模块无匹配测试失败
+
+  - 问题：指定了一组 kernel/common/storage 测试类，vortex-app 没有对应测试，Surefire 默认报错。
+  - 解决：加 " -Dsurefire.failIfNoSpecifiedTests=false " 完成跨模块收口验证。
+
+  验证过程
+  阶段 1 到 3 的关键回归最终统一用这条命令通过：
+
+  mvn test -pl vortex-common,vortex-storage,vortex-kernel,vortex-app -am "-Dsurefire.failIfNoSpecifiedTests=false"
+  "-Dtest=MemoryFragmentTest,CaffeineHotStoreTest,SemanticTextSplitterTest,SemanticEvictionPolicyTest,NamespaceQuotaMana
+  gerTest,HierarchicalMemoryControllerTest,FragmentPersistenceManagerTest,EvictionRegretTrackerTest,EvictionRegretMetric
+  sBinderTest"
+
+  最终结果
+
+  - 阶段 1：算法区分力、recall 访问语义、namespace 候选隔离、密度淘汰、importance 动态更新都已闭环。
+  - 阶段 2：决策日志、regret 统计、监控暴露、DLQ 重放、幂等去重都已闭环。
+  - 阶段 3：hard/soft quota、弹性借用、pin 机制、reasoning chain 组淘汰、冗余度维度都已落地并通过测试。

@@ -1,0 +1,354 @@
+› 你为我详细的讲一下问题的发现，问题的原因，以及如何解决。我需要一个问题具体报告
+
+
+• 我整理成一份可直接留档的问题报告。先补一下关键文件的精确定位行号，避免报告里只讲现象不落到代码。
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 报告结论
+
+  这次问题报告的依据有 3 个来源：
+
+  1. 你给的 项目评审.txt
+  2. 当前仓库的实际代码实现
+  3. 你仓库里的 当前问题.txt
+
+  另外，项目评审-解决过程1.txt 现在是空文件，所以我不能用它判断“上次到底修到了哪一步”，只能以当前代码状态做审计。
+
+  下面这份报告分成两类：
+
+  - 第一类：评审里提出、且当前代码里已经补上的问题
+  - 第二类：我在继续审查和跑测试时，实际发现并修掉的问题
+
+  一、问题发现过程
+
+  我这次不是直接改，而是按这个顺序做的：
+
+  1. 先读评审结论，提炼出 3 个 P0 问题：
+      - 向量维度不一致
+      - RecallQuery.tags 没真正过滤
+      - token 统计仍是启发式估算
+  2. 再直接检查代码落点：
+      - HMC 主逻辑：vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:61
+      - 切分器：vortex-kernel/src/main/java/com/vortex/kernel/hmc/SemanticTextSplitter.java:33
+      - L1 缓存：vortex-storage/src/main/java/com/vortex/storage/l1/CaffeineHotStore.java:37
+      - 配置文件：vortex-app/src/main/resources/application.yml:22
+  3. 再跑测试验证，而不是只看代码表面
+      - 过程中发现默认 Maven 实际跑在 JDK 17，上来就失败
+      - 切到 JDK 21 后继续跑，才真正暴露出 L1 token 计数 bug
+
+  这一步很重要。因为有些问题“肉眼看像修了”，但只有跑测试才能确认有没有边界漏洞。
+
+  ———
+
+  二、问题 1：L2 向量维度与运行时 embedding 路径可能不一致
+
+  发现方式
+
+  这是评审里最先指出的 P0 问题。它的本质不是某一行代码写错，而是“配置、模型、Milvus schema”三者之间可能不一致。
+
+  当前已经能看到修复痕迹：
+
+  - vortex-app/src/main/resources/application.yml:33 把 embedding-dim 默认改成了 512
+  - vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:281 增加了
+  validateL2DimensionCompatibility()
+
+  问题原因
+
+  系统里实际存在两套 embedding 路径：
+
+  - L1 本地 BGE：512 维
+  - L2 云 embedding：1024 维
+
+  而 Milvus collection 的向量字段维度是固定 schema，一旦建库时是 1024，后面就不能直接塞 512 维向量。
+
+  所以只要出现下面这种情况，就会出问题：
+
+  - 配置上 L2 collection 按 1024 维建立
+  - 运行时云 embedding 没启用或者失败
+  - HMC 回退到本地 512 维 embedding
+  - 最终把 512 维向量写进 1024 维 collection
+
+  结果就是：
+
+  - 轻则 upsert/search 失败
+  - 重则系统行为不一致，召回结果不可预测
+
+  解决方案
+
+  当前代码的解决策略是对的，分两层：
+
+  1. 配置层默认安全回退
+      - vortex-app/src/main/resources/application.yml:33 默认使用 512
+      - 只有明确启用云 embedding 并完成 Milvus 迁移时，才切到 1024
+  2. 启动期做强校验
+      - vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:281 会比较：
+          - l2.vectorDimension()
+          - 当前实际生效的 embedding 维度
+      - 一旦不一致，直接 IllegalStateException 启动失败
+
+  为什么这个方案正确
+
+  因为这个问题不能靠“运行时尽量容错”解决，必须 fail-fast。
+  这是 schema 级别不一致，不是业务参数误差。晚失败比早失败更危险。
+
+  当前状态
+
+  这个问题在当前代码里已经补上了，属于“评审指出，代码已修”。
+
+  ———
+
+  三、问题 2：RecallQuery.tags 接口有定义，但召回链路未真正执行过滤
+
+  发现方式
+
+  评审指出接口承诺和实际行为不一致。检查当前 HMC 后，我确认这部分现在已经接进来了：
+
+  - 标签归一化：vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:312
+  - L1 过滤：vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:167
+  - L2 补充过滤：vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:300
+  - 标签匹配逻辑：vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:324
+
+  问题原因
+
+  原始问题的根本原因是：
+
+  - DTO 里有 tags
+  - API 语义已经承诺“按标签过滤”
+  - 但 recall 流程只按 embedding 相似度召回，没有执行标签约束
+
+  这会造成很典型的语义污染：
+
+  - 用户想召回 role:user
+  - 实际把 role:system 或其他任务片段也带回来了
+
+  这类问题不一定报错，但业务语义已经错了。
+
+  解决方案
+
+  当前代码的处理方式是合理的：
+
+  1. L1 先按标签过滤，再做相似度排序
+     这样缓存层不会直接返回错误标签的结果。
+  2. L2 因为向量检索结果不一定带完整标签，所以做二次校验
+      - 先从 L2 拿候选
+      - 再通过 L3 取完整 fragment
+      - 用 matchesAllTags() 做最终过滤
+  3. 有标签时适当放大 L2 搜索窗口
+      - vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:188
+      - 因为过滤后有效结果会变少，不放大搜索窗口容易召不满
+
+  为什么这个方案正确
+
+  因为标签过滤不属于“排序增强”，而属于“结果约束”。
+  必须在最终返回前保证约束成立，而不能只依赖向量检索初筛。
+
+  当前状态
+
+  这个问题在当前代码里也已经修好，并且已有对应测试覆盖。
+
+  ———
+
+  四、问题 3：token 统计如果用启发式估算，会直接影响切片、预算和淘汰
+
+  发现方式
+
+  评审指出早期实现是 char / 3.5 这种启发式估算。
+  我检查当前实现后确认已经换成真实 tokenizer 计数：
+
+  - SemanticTextSplitter 注入 TokenCounter：vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+  SemanticTextSplitter.java:30
+  - 真正计数入口：vortex-kernel/src/main/java/com/vortex/kernel/hmc/SemanticTextSplitter.java:89
+  - 分块过程中实际用这个计数：vortex-kernel/src/main/java/com/vortex/kernel/hmc/SemanticTextSplitter.java:53
+  - buildFragment() 里保存的 tokenCount 也是实计值：vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+  SemanticTextSplitter.java:79
+
+  问题原因
+
+  启发式 token 估算的问题在于，它和模型实际 tokenizer 不是同一个尺度。
+
+  影响有 3 个：
+
+  1. 切片大小会失真
+     看起来 400 token，实际可能已经超 512。
+  2. recall 的 tokenBudget 不可信
+     返回结果可能超预算，或者过早截断。
+  3. L1 容量管理会失真
+     因为 L1 是按 token 做容量控制，不是真 token 就会导致阈值判断漂移。
+
+  解决方案
+
+  现在的修法是对的：
+
+  - 让 SemanticTextSplitter 直接依赖 TokenCounter
+  - 让 token 计数和 embedding 模型使用同一套 tokenizer 家族
+  - 切分、存储、预算都统一基于这一套真实 token 计数
+
+  为什么这个方案正确
+
+  因为 token 预算本质上是模型约束，不是文本长度约束。
+  凡是和模型上下文窗口有关的地方，都应该使用真实 tokenizer。
+
+  当前状态
+
+  这个问题当前也已经修好。
+
+  ———
+
+  五、问题 4：L1 currentTokens 统计会漂移，这是我这次实际发现并修掉的问题
+
+  这是这次最重要的新增发现。
+
+  发现方式
+
+  我不是先从代码里百分百确认的，而是分两步发现：
+
+  1. 先从 当前问题.txt 看到了你之前已经意识到 L1 token 计数有问题
+  2. 我继续为它补了回归测试，并真正跑起来后，确认这个问题确实存在，而且比表面更复杂
+
+  新增测试在：
+
+  - vortex-storage/src/test/java/com/vortex/storage/l1/CaffeineHotStoreTest.java:10
+
+  问题现象
+
+  currentTokens 是 L1 当前 token 占用量，它直接影响：
+
+  - 是否触发 evictionThreshold
+  - maybeEvict() 判断是否接近容量上限
+  - 整个 L1 负载是否准确
+
+  如果这个值漂移，后果会是：
+
+  - 明明没满却触发淘汰
+  - 明明超了却不淘汰
+  - 长时间运行后容量感知越来越不准
+
+  问题原因
+
+  这个 bug 的本质是：
+  put/remove 主流程和 Caffeine removalListener 同时都在改 currentTokens，但不同移除场景行为不一样，导致计数逻辑不统一。
+
+  具体分成两个子问题。
+
+  子问题 A：同 id 覆盖更新时，旧 token 和新 token 会重复参与计算
+
+  假设旧 fragment 是 10 token，新 fragment 是 25 token。
+
+  错误思路会是：
+
+  - put() 里手动只加差值 +15
+  - 但 cache.put() 替换旧值时，removalListener 又会把旧值 -10
+
+  最后得到：
+
+  - 原本应该是 25
+  - 实际可能变成 15
+
+  也就是旧值被算了两次。
+
+  子问题 B：显式 remove 时，不能再依赖 listener 统一扣减
+
+  我最开始也尝试过“把扣减逻辑全部交给 removalListener”，但真正跑测试后发现不成立：
+
+  - 显式 invalidate() 这条路径，不适合再依赖统一 listener 扣减
+  - 否则 currentTokens 可能保持原值不变
+
+  这个现象我是通过测试直接复现出来的，不是猜的。
+
+  解决方案
+
+  最终修法在 vortex-storage/src/main/java/com/vortex/storage/l1/CaffeineHotStore.java:43：
+
+  1. removalListener 只处理非 EXPLICIT 移除的 token 扣减
+      - vortex-storage/src/main/java/com/vortex/storage/l1/CaffeineHotStore.java:45
+  2. put() 更新时只加“新值 token”
+      - vortex-storage/src/main/java/com/vortex/storage/l1/CaffeineHotStore.java:64
+      - 替换旧值带来的旧 token 扣减，交给 replacement 触发的 listener 完成
+  3. remove() 显式删除时，先手动扣减，再 invalidate()
+      - vortex-storage/src/main/java/com/vortex/storage/l1/CaffeineHotStore.java:89
+  4. clear(namespace) 不再直接 invalidate，而是统一走 remove()
+      - vortex-storage/src/main/java/com/vortex/storage/l1/CaffeineHotStore.java:109
+
+  为什么这个方案正确
+
+  因为现在 3 条路径的责任被拆清楚了：
+
+  - 显式删除：调用方负   扣减
+  - 替换旧值：listener 负责回收旧值
+  - Caffeine 自身淘汰：listener 负责回收并触发下沉
+
+  这就避免了“有的路径重复减，有的路径没减”的混乱。
+
+  验证结果
+
+  我补了两个回归测试：
+
+  - vortex-storage/src/test/java/com/vortex/storage/l1/CaffeineHotStoreTest.java:11
+      - 验证同 id 更新后 token 总量应为新值，而不是漂移值
+  - vortex-storage/src/test/java/com/vortex/storage/l1/CaffeineHotStoreTest.java:20
+      - 验证显式删除后 token 总量归零
+
+  这两个测试都通过了。
+
+  ———
+
+  六、问题 5：构建环境默认是 JDK 17，会导致你误判“代码有问题”
+
+  这个不是业务代码 bug，但它是一个非常实际的工程问题。
+
+  发现方式
+
+  我第一次直接跑 mvn test 时失败，错误是：
+
+  - invalid target release: 21
+
+  然后我检查了 Maven 运行环境，发现：
+
+  - pom.xml 明确要求 Java 21
+  - 但当前 mvn 默认跑在 JDK 17
+
+  问题原因
+
+  项目编译目标是 21，但 Maven 实际绑定的是 17。
+  这会造成一种很糟糕的假象：明明代码没问题，但你会误以为是改坏了。
+
+  解决方案
+
+  本次验证时我是临时切换到 JDK 21 后跑通的。
+  建议你把下面两处统一固定为 21：
+
+  - 系统 JAVA_HOME
+  - IDE 里 Maven Runner / Project SDK
+
+  为什么这个问题值得写进报告
+
+  因为如果不说明这一点，后续任何人接手这个项目，都可能在“构建失败”和“代码失败”之间浪费时间。
+
+  ———
+
+  七、最终验证结论
+
+  这次我做了实际验证，不是只做代码审阅：
+
+  - 使用 JDK 21 运行 mvn test
+  - 结果：BUILD SUCCESS
+
+  通过的范围包括：
+
+  - vortex-storage
+  - vortex-kernel
+  - vortex-app
+
+  八、当前问题状态总表
+
+  - RecallQuery.tags 未参与真实召回过滤
+  - token 启发式估算导致预算失真
+  - L1 currentTokens 统计漂移
+  - JDK 版本不匹配导致的构建失败定位
+
+  仍建议后续继续做：
+
+  - HMC 端到端集成测试：store -> recall -> evict -> checkpoint -> recover
+  - L2/L3 异步写入失败重试与监控
+  - Milvus/MinIO 的真实集成测试，而不只是假实现单测

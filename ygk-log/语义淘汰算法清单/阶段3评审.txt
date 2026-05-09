@@ -1,0 +1,277 @@
+ 阶段 3 专家级代码审查报告
+
+  总结结论
+
+  阶段 3 的三项清单要求（#9 硬配额、#10 Pin & 组淘汰、#11
+  冗余度）在代码层面都有实现，但存在若干缺陷、设计问题和边界风险。距离"完美完成"还有明显差距。
+
+  下面按清单逐项审查，每项给出：实现现状、发现的问题、严重性评级。
+
+  ---
+  #9 硬配额 + 弹性借用
+
+  实现现状
+
+  NamespaceQuotaManager.java (96行) 和 HierarchicalMemoryController.java:310-365 的 enforceQuotaBeforeInsert()
+  构成了完整的配额执行链。
+
+  发现的问题
+
+  问题 9-A：enforceQuotaBeforeInsert() 中 quota snapshot 被反复重复计算（性能）
+
+  HierarchicalMemoryController.java:340-343
+
+  for (String otherNamespace : namespaceQuotaManager.evictionPriorityNamespaces(
+          allFragments, l1.maxTokenCapacity(), incomingFragment.getNamespace())) {
+      List<MemoryFragment> namespaceFragments = l1.getAll(otherNamespace);
+      NamespaceQuotaManager.QuotaSnapshot currentSnapshot = namespaceQuotaManager.snapshot(
+              namespaceFragments,         // ← 只传了一个 namespace 的 fragments
+              l1.maxTokenCapacity(),      // ← 但 globalCapacity 是全部容量
+              otherNamespace);
+
+  问题：evictionPriorityNamespaces() 内部已经算过一次 snapshot(allFragments, globalCapacity)（第 72
+  行），但循环体内部对每个超额 namespace 又调用 snapshot() 传入的是该 namespace 的 fragments 而非全部
+  fragments。这导致：
+  - namespaceCount 变成 1（因为传入的 collection 只有一个 namespace 的 fragment）
+  - fairShareHardQuota = globalCapacity / 1 = globalCapacity（一个 namespace 独占全部容量）
+  - hardQuotaPerNamespace = min(defaultHardQuota, globalCapacity) = defaultHardQuota（恰好一致，但这只是巧合）
+  - protectedTokens 计算不准确，因为只看到一个 namespace
+
+  影响：当前配置下 defaultHardQuota = max(256, 8192 * 0.25) = 2048，fairShareHardQuota = globalCapacity，min(2048,
+  globalCapacity) = 2048，最终结果碰巧一样。但这依赖于硬配额小于公平份额这个隐含前提，一旦配置变更或 namespace
+  数量变化就会出 bug。
+
+  严重性：中等（当前不会出错，但代码逻辑与意图不一致）
+
+  问题 9-B：弹性借用的回收时机是"写入时"而非独立的后台任务
+
+  enforceQuotaBeforeInsert() 只在 storeFragment() 时触发（第 149 行），这意味着：
+  - 如果一个 namespace A 已经占满借用额度，但没有人向其他 namespace 写入数据，A 的超额状态不会被回收
+  - 借用的"快速回收"能力依赖于竞争写入，而非系统自主驱动
+
+  影响：清单要求"允许短时借用空闲容量但可被快速回收"，当前实现的回收是被动的。
+
+  严重性：低（MVP 可接受，但与清单的主动回收承诺有差距）
+
+  问题 9-C：evictionPriorityNamespaces() 过滤掉了 focusNamespace 但逻辑方向可能反了
+
+  NamespaceQuotaManager.java:74
+
+  .filter(entry -> !Objects.equals(entry.getKey(), focusNamespace))
+
+  这是正确的——回收时不应回收自己。但接下来的逻辑：先尝试回收自己的超额（quota-self-reclaim），再回收其他 namespace
+  的借用（quota-borrow-reclaim）。这两步的分离是好的。
+
+  不过，evictionPriorityNamespaces 排除 focusNamespace 的同时，enforceQuotaBeforeInsert 第 325-333 行先用 ownCandidates
+  做 quota-self-reclaim。如果自己的 candidates 不够（比如自己只有 1 个 fragment
+  但借了很多），就会走到回收别人的逻辑。这个跨 namespace 回收本身是正确的，但没有做跨 namespace 的 pinned
+  检查——被回收的其他 namespace 的 fragment 如果是 pinned 的，会被跳过（evictCandidateGroup 第 389 行），但
+  quota-self-reclaim 中 ownCandidates 里的 pinned fragment 也被跳过后，可能导致 self-reclaim 部分释放不足，然后进入
+  cross-namespace 回收。这是设计正确的行为，没问题。
+
+  严重性：无
+
+  ---
+  #10 Pin 机制 & 组淘汰
+
+  实现现状
+
+  MemoryFragment.java:132-142 有 pinForMillis() 和 isPinned()；SemanticEvictionPolicy.java:87 过滤 pinned
+  fragments；HMC.java:389-391 在 evictCandidateGroup() 中跳过 pinned。
+
+  发现的问题
+
+  问题 10-A（严重）：Pin 无法通过 API 触发，只能在 store() 时由 SemanticTextSplitter 设置
+
+  HMC.store() 签名（第 119-124 行）接受 pinTtlMillis 参数，SemanticTextSplitter.buildFragment() 第 98-100 行会调用
+  fragment.pinForMillis(pinTtlMillis)。
+
+  但：MemoryController.store() 和 REST API 并没有暴露 pinTtlMillis 参数（需要确认 Controller 的调用）。即使 Controller
+  暴露了，一旦 fragment 存入 L1 后，没有任何 API 可以对已有 fragment 进行 pin 或 unpin。
+
+  影响：清单说"关键结论片段支持 pin(ttl) 短期不可淘汰"——但用户只能在 store 时 pin，无法在运行时 pin
+  已有的关键片段。这是功能完整性缺口。
+
+  严重性：中等
+
+  问题 10-B（严重）：pinnedUntil 没有 TTL 过期清理机制
+
+  MemoryFragment.java:73 的 pinnedUntil 是一个绝对时间戳。isPinned() 只检查是否超时。但：
+
+  - 没有定时任务清理过期的 pin 状态：虽然 isPinned() 在运行时能正确判断，但 pinnedUntil 字段永远留在序列化的 fragment 中
+  - CaffeineHotStore 中没有过期 pin 的主动扫描：如果一个 fragment 被 pin 了但很久不被访问，它会一直占用 L1 空间，即使
+  pin 已经过期
+  - 只有在该 fragment 被访问时（get()/getAll() 后被评分），才会通过 isPinned() 发现它已过期
+
+  影响：过期的 pinned fragment 会"幽灵般"占用 L1 容量直到下次被访问或自然淘汰。在极端情况下，如果大量 fragment 被 pin
+  后长时间不被访问，L1 容量会被锁死。
+
+  严重性：中高
+
+  问题 10-C：组淘汰中 resolveEvictionGroup() 会重新查 L1 但可能拿到空结果
+
+  HMC.java:410-418：
+
+  private List<MemoryFragment> resolveEvictionGroup(SemanticEvictionPolicy.EvictionCandidate candidate) {
+      String groupId = candidate.reasoningChainId();
+      if (groupId == null || groupId.isBlank()) {
+          return List.of(candidate.fragment());
+      }
+      return l1.getAll(candidate.fragment().Namespace()).stream()
+              .filter(fragment -> groupId.equals(fragment.getReasoningChainId()))
+              .filter(fragment -> !fragment.isPinned())
+              .toList();
+  }
+
+  问题：在 evictCandidateGroup() 中（第 397-406 行），循环遍历 evictionGroup 并逐个 l1.remove()。当 remove 掉组内第一个
+  fragment 后，如果 resolveEvictionGroup() 被再次调用（虽然当前不会，因为 group 只解析一次），已经部分删除的 group
+  会出现不一致。当前代码只解析一次所以没这个风险，但代码意图不够清晰。
+
+  另一个问题：如果 group 中所有 fragment 都是 pinned 的，resolveEvictionGroup() 返回空列表，evictedTokens 为
+  0。这是正确的。
+
+  严重性：低
+
+  问题 10-D：组淘汰的 groupTokenCount 计算逻辑有疑问
+
+  SemanticEvictionPolicy.java:133：
+
+  Math.max(fragment.getTokenCount(), groupTokenCount)
+
+  这里用 Math.max 意味着 group 的 token count 只在大于单个 fragment 时才生效。但 groupTokenCount 是整个 reasoning chain
+  的 token 总和（第 117 行 sum()）。也就是说：
+
+  - 如果 group 有 3 个 fragment（100 + 200 + 300 = 600 token），单个 fragment 100 token
+  - groupTokenCount = max(100, 600) = 600
+
+  这个值被填入 EvictionCandidate.groupTokenCount，但只在 EvictionDecisionLogger
+  中记录用于日志，不参与任何淘汰决策。也就是说，rankCandidates() 按单个 fragment 的 density（第 118 行 totalScore /
+  max(1, fragment.getTokenCount())）排序，但实际淘汰时按 group 释放 600 token。
+
+  影响：排序用单个 fragment 的 token，实际释放用 group 的 token。这导致 density 排序对有 reasoning chain 的 fragment
+  来说是一种"误排"——单个小 fragment 可能因为 density 高而排在前面，但实际淘汰它会连带删除整个 group（释放很多
+  token），可能过度淘汰。
+
+  严重性：中等（算法正确性问题）
+
+  ---
+  #11 冗余度维度
+
+  实现现状
+
+  MemoryFragment.java:144-162 有 redundancyPenaltyAgainst() 和
+  noveltyBonusAgainst()；SemanticEvictionPolicy.java:102-111 在 scoreFragment() 中使用。
+
+  发现的问题
+
+  问题 11-A（严重）：noveltyBonus 的语义完全反了
+
+  SemanticEvictionPolicy.java:107-111：
+
+  double noveltyBonus = candidatePool.stream()
+          .filter(other -> other != fragment)
+          .mapToDouble(fragment::noveltyBonusAgainst)
+          .min()          // ← 取 MIN
+          .orElse(0.15);  // ← 无其他 fragment 时默认 0.15
+
+  MemoryFragment.java:159-161：
+
+  public double noveltyBonusAgainst(MemoryFragment other) {
+      double similarity = redundancySimilarityTo(other);
+      return Math.min(MAX_NOVELTY_BONUS, Math.max(0.0, 1.0 - similarity) * MAX_NOVELTY_BONUS);
+  }
+
+  分析：
+  - 与所有其他 fragment 的 novelty 中取 min
+  - 如果有一个 fragment 和它很相似（similarity=0.9），novelty = min(0.1) × 0.15 = 很小
+  - 但如果还有另一个 fragment 和它完全不相似（similarity=0），novelty = min(0.15) = 0.15
+  - 取 min 意味着只要有一个 fragment 和它相似，novelty 就被拉低
+
+  这个设计意图应该是取 min——因为一个 fragment 的"新颖性"取决于它与最近邻的差异，而非与最远邻的差异。如果它与任何一个其他
+   fragment 高度相似，它的新颖性就低。取 min 是正确的。
+
+  但问题是：默认值 .orElse(0.15) 意味着当候选池只有 1 个 fragment 时，它自动获得 0.15 的满分 novelty
+  bonus。这是不合理的——一个孤独的 fragment 没有参照物来判断是否新颖。
+
+  影响：单 fragment 候选池中每个 fragment 都自动获得 +0.15 的加分，扭曲淘汰分数。
+
+  严重性：中等
+
+  问题 11-B：冗余度计算只考虑 L1 embedding，不考虑 L2 embedding
+
+  redundancySimilarityTo() 第 144-149 行用 this.embedding（L1 BGE-Small 512d）。但 Milvus
+  中存储的是同一向量空间的向量（当云 embedding 未启用时），所以当前是正确的。
+
+  但当云 embedding 启用时，L1 和 L2 使用不同向量空间。如果两个 fragment 在 L1 空间中不冗余但在 L2
+  空间中冗余（或反之），当前的冗余检测会有盲区。
+
+  影响：仅在双 embedding 启用时触发，当前 MVP 不启用云 embedding 时无影响。
+
+  严重性：低（MVP 可接受）
+
+  问题 11-C：redundancy penalty 的计算是 O(n^2) 且无缓存
+
+  scoreFragment() 第 102-111 行对每个 fragment 都遍历整个 candidatePool 计算 redundancyPenalty 和
+  noveltyBonus。rankCandidates() 对 n 个 candidate 调用 scoreFragment()，每次 O(n)。总复杂度 O(n^2)。
+
+  对于 L1 缓存的典型规模（8192 token / 平均 200 token per fragment ≈ 40 个 fragment），O(40^2) = 1600
+  次余弦相似度计算，每次 512 维，总计算量约 820K 次浮点乘加。这在 CPU 上约 5-10ms，可接受但不优雅。
+
+  严重性：低（性能可接受）
+
+  ---
+  意外发现：清单之外的新类
+
+  审查过程中发现 HMC 引用了几个清单未提及但已实现的类：
+
+  ┌───────────────────────┬──────────────────────────────────┬──────────────────┐
+  │          类           │               用途               │       状态       │
+  ├───────────────────────┼──────────────────────────────────┼──────────────────┤
+  │ AdaptiveWeightLearner │ α/β/γ 按场景在线学习             │ 已实现（118 行） │
+  ├───────────────────────┼──────────────────────────────────┼──────────────────┤
+  │ MemorySloTracker      │ store/recall p99 延迟 + SLO 指标 │ 已实现（104 行） │
+  ├───────────────────────┼──────────────────────────────────┼──────────────────┤
+  │ MemoryFeedbackRequest │ 反馈 DTO（answer accepted）      │ 已实现           │
+  ├───────────────────────┼──────────────────────────────────┼──────────────────┤
+  │ RecallSessionRecord   │ recall session 记录              │ 已实现           │
+  └───────────────────────┴──────────────────────────────────┴──────────────────┘
+
+  这意味着清单阶段 4 的部分项（#12 权重学习、#14
+  SLO）实际上已经有了基础实现，但清单打勾时没考虑到这些。不过这些实现的完成度需要进一步审查（本次审查范围是阶段 3）。
+
+  ---
+  问题汇总表
+
+  ┌──────┬───────────────────────────────────────────────────────────────────────────┬────────┬────────────┐
+  │  #   │                                   问题                                    │ 严重性 │   清单项   │
+  ├──────┼───────────────────────────────────────────────────────────────────────────┼────────┼────────────┤
+  │ 9-A  │ quota snapshot 在跨 namespace 回收时重复计算且参数不完整                  │ 中     │ #9 硬配额  │
+  ├──────┼───────────────────────────────────────────────────────────────────────────┼────────┼────────────┤
+  │ 9-B  │ 弹性借用回收是被动触发，非独立后台任务                                    │ 低     │ #9 硬配额  │
+  ├──────┼───────────────────────────────────────────────────────────────────────────┼────────┼────────────┤
+  │ 10-A │ Pin 只能在 store 时设置，无运行时 pin/unpin API                           │ 中     │ #10 Pin    │
+  ├──────┼───────────────────────────────────────────────────────────────────────────┼────────┼────────────┤
+  │ 10-B │ pinnedUntil 无 TTL 过期清理，过期 pin 幽灵占用 L1 容量                    │ 中高   │ #10 Pin    │
+  ├──────┼───────────────────────────────────────────────────────────────────────────┼────────┼────────────┤
+  │ 10-C │ resolveEvictionGroup 与逐个 remove 的交互边界模糊                         │ 低     │ #10 组淘汰 │
+  ├──────┼───────────────────────────────────────────────────────────────────────────┼────────┼────────────┤
+  │ 10-D │ 组淘汰排序用单 fragment token，实际释放用 group token，density 语义不一致 │ 中     │ #10 组淘汰 │
+  ├──────┼───────────────────────────────────────────────────────────────────────────┼────────┼────────────┤
+  │ 11-A │ noveltyBonus 无参照物时默认满分 0.15                                      │ 中     │ #11 冗余度 │
+  ├──────┼───────────────────────────────────────────────────────────────────────────┼────────┼────────────┤
+  │ 11-B │ 冗余度计算只考虑 L1 embedding                                             │ 低     │ #11 冗余度 │
+  ├──────┼───────────────────────────────────────────────────────────────────────────┼────────┼────────────┤
+  │ 11-C │ 冗余度 O(n^2) 无缓存                                                      │ 低     │ #11 冗余度 │
+  └──────┴───────────────────────────────────────────────────────────────────────────┴────────┴────────────┘
+
+  ---
+  最终判定
+
+  阶段 3 没有完美完成。 3 个清单项都有实现，但：
+
+  - #9 硬配额：核心功能正确，但跨 namespace 回收时 snapshot 参数有误（碰巧不出错）
+  - #10 Pin & 组淘汰：功能框架完整，但 pinned fragment 过期清理缺失（10-B 最严重），Pin 无法运行时触发，组淘汰的 density
+   排序与实际释放量不一致
+  - #11 冗余度：算法正确，但 novelty 默认值设计不合理
+
+  如果评分的话，阶段 3 大约完成了 75-80%，剩余的是边界缺陷和设计一致性问题，不是核心功能缺失。

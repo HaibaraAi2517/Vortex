@@ -1,0 +1,607 @@
+E:\1projects\claude\Vortex\ygk-log\语义淘汰算法清单\阶段2-3新问题.txt,这是暴露出的新问题专家级评审。你先阅读，随后进
+  行专家级别的修复。如果需要使用redis或者mq消息队列，你可以进行扩展。有需要告诉我
+
+
+• 我已经核对完新评审对应的实现。结论先说明：B-1 其实代码里已经有容量裁剪，不是未修；真正要动手的是 B-2、B-4、B-5，我会顺
+  手把 pin 元数据更新对 recency 的副作用也一起修掉。
+
+• Updated Plan
+  └ 优先修实际存在的性能与一致性问题，并补回归测试。
+    □ 为 pin 过期清理引入到期索引，去掉全量扫描并避免 metadata 更新污染 recency
+    □ 重构淘汰路径的 namespace token 统计与 recall 多轮冗余度计算
+    □ 补充 processed key 与 HMC 性能回归测试，执行全量验证
+
+• 我开始做这轮修复的底层重构：先把 L1 写入拆成“触碰访问时间”和“仅更新元数据”两条路径，再把 pin 到期索引挂进去。这样能同
+  时解决 B-2 的扫描问题和 pin 更新污染 recency 的隐性问题。
+
+• Edited vortex-storage\src\main\java\com\vortex\storage\api\L1HotStore.java (+5 -0)
+    17
+    18 +    /** Store or update a fragment, optionally preserving its existing last-access timestamp. */
+    19 +    default void put(MemoryFragment fragment, boolean recordAccess) {
+    20 +        put(fragment);
+    21 +    }
+    22 +
+    23      /** Retrieve by id. */
+
+• Edited vortex-storage\src\main\java\com\vortex\storage\l1\CaffeineHotStore.java (+8 -1)
+    64      public void put(MemoryFragment fragment) {
+    68 +    @Override
+    69 +    public void put(MemoryFragment fragment, boolean recordAccess) {
+    70          MemoryFragment existing = cache.getIfPresent(fragment.getId());
+       ⋮
+    73          currentTokens.addAndGet(fragment.getTokenCount());
+    69 -        fragment.recordAccess();
+    74 +        if (recordAccess) {
+    75 +            fragment.recordAccess();
+    76 +        }
+    77          cache.put(fragment.getId(), fragment);
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• L1 接口已经拆开。现在我把 HMC 的 pin 到期管理改成基于到期时间索引，只处理真正已到期的 fragment，不再每 30 秒扫全量
+  L1。
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我在收这次重构时，发现 HierarchicalMemoryController 需要分段改，不能一口气整块覆盖。我先读取当前源码关键区间，按小块安
+  全修改，避免把已经稳定的行为打坏。
+
+• Running Get-Content -LiteralPath 'vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java'
+  │ | Select-Object -Skip 240 -First 260
+
+• Running Get-Content -LiteralPath 'vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java'
+  │ -TotalCount 240
+
+• Ran Get-Content -LiteralPath 'vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java'
+  │ -TotalCount 240
+  └ package com.vortex.kernel.hmc;
+
+    … +236 lines (ctrl + t to view transcript)
+                    l1QueryEmbedding,
+                    baselineProfile);
+
+• Ran Get-Content -LiteralPath 'vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java' |
+  │ Select-Object -Skip 240 -First 260
+  └
+            for (ScoredCandidate sc : activeRanked) {
+    … +256 lines (ctrl + t to view transcript)
+                        triggerNamespace,
+                        targetTokens,
+
+• Ran Get-Content -LiteralPath 'vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java' |
+  │ Select-Object -Skip 500 -First 260
+  └                     reason,
+                        evictedGroups,
+    … +203 lines (ctrl + t to view transcript)
+        }
+    }
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 源码已经定位清楚。我会分三步改：先加 pin 到期索引和无 recency 污染更新，再改淘汰时的 namespace token 统计，最后把
+  recall 的冗余度从反复流式计算改成一次预计算。
+
+• Edited vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java (+6 -2)
+     21  import jakarta.annotation.PostConstruct;
+     22 +import java.util.concurrent.ConcurrentHashMap;
+     23 +import java.util.concurrent.ConcurrentMap;
+     24 +import java.util.concurrent.PriorityBlockingQueue;
+     25  import java.util.*;
+        ⋮
+     53      private final SemanticTextSplitter splitter;
+     51 -    private final long pinCleanupIntervalMillis;
+     54 +    private final PriorityBlockingQueue<PinnedFragmentRef> pinExpirations = new PriorityBlockingQueue<>();
+     55 +    private final ConcurrentMap<String, Long> pinnedFragmentDeadlines = new ConcurrentHashMap<>();
+     56
+        ⋮
+    132          this.evictionThreshold = evictionThreshold;
+    129 -        this.pinCleanupIntervalMillis = pinCleanupIntervalMillis;
+    133          if (l1 instanceof CaffeineHotStore caffeineStore) {
+        ⋮
+    149      void cleanPinsOnStartup() {
+    150 +        rebuildPinIndex();
+    151          clearExpiredPins();
+
+• Edited vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java (+36 -14)
+    198          l1.put(fragment);
+    199 +        indexPin(fragment);
+    200          // Async: persist to L2 and L3
+        ⋮
+    278                  l1.put(candidate);
+    279 +                indexPin(candidate);
+    280                  persistenceManager.persistAsync(candidate, "recall-reinforcement");
+    281                  regretTracker.recordRecall(candidate, "L2");
+    280 -                double score = scoreForRecall(candidate, l1QueryEmbedding, profileSelection.active(), filteredL
+         1Candidates);
+    282 +                Map<String, RedundancyStats> updatedStats = computeRedundancyStats(appendCandidate(filteredL1Ca
+         ndidates, candidate));
+    283 +                double score = scoreForRecall(candidate, l1QueryEmbedding, profileSelection.active(), updatedSt
+         ats);
+    284                  results.add(RecallResult.ScoredFragment.builder()
+        ⋮
+    350              found.pinForMillis(ttlMillis);
+    348 -            l1.put(found);
+    351 +            l1.put(found, false);
+    352 +            indexPin(found);
+    353              persistenceManager.persistAsync(found, "pin-update");
+        ⋮
+    364              found.unpin();
+    361 -            l1.put(found);
+    365 +            l1.put(found, false);
+    366 +            indexPin(found);
+    367              persistenceManager.persistAsync(found, "pin-update");
+        ⋮
+    373      public void clearExpiredPins() {
+    369 -        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
+    370 -            return;
+    374 +        long now = System.currentTimeMillis();
+    375 +        int cleared = 0;
+    376 +        while (true) {
+    377 +            PinnedFragmentRef ref = pinExpirations.peek();
+    378 +            if (ref == null || ref.pinnedUntilEpochMillis() > now) {
+    379 +                break;
+    380 +            }
+    381 +            pinExpirations.poll();
+    382 +            Long currentDeadline = pinnedFragmentDeadlines.get(ref.fragmentId());
+    383 +            if (currentDeadline == null || currentDeadline.longValue() != ref.pinnedUntilEpochMillis()) {
+    384 +                continue;
+    385 +            }
+    386 +            Optional<MemoryFragment> fragment = findFragment(ref.fragmentId());
+    387 +            if (fragment.isEmpty()) {
+    388 +                pinnedFragmentDeadlines.remove(ref.fragmentId(), currentDeadline);
+    389 +                continue;
+    390 +            }
+    391 +            MemoryFragment found = fragment.get();
+    392 +            if (!found.clearExpiredPin()) {
+    393 +                indexPin(found);
+    394 +                continue;
+    395 +            }
+    396 +            l1.put(found, false);
+    397 +            indexPin(found);
+    398 +            persistenceManager.persistAsync(found, "pin-expired");
+    399 +            cleared++;
+    400          }
+    372 -        List<MemoryFragment> expired = caffeineStore.getAllFragments().stream()
+    373 -                .filter(MemoryFragment::clearExpiredPin)
+    374 -                .toList();
+    375 -        expired.forEach(fragment -> {
+    376 -            l1.put(fragment);
+    377 -            persistenceManager.persistAsync(fragment, "pin-expired");
+    378 -        });
+    379 -        if (!expired.isEmpty()) {
+    380 -            log.debug("Cleared expired pins count={}", expired.size());
+    401 +        if (cleared > 0) {
+    402 +            log.debug("Cleared expired pins count={}", cleared);
+    403          }
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• pin 索引和无副作用更新已经接进主路径。现在我改淘汰路径，去掉 evictCandidateGroup() 里每次重新扫描 namespace token 的
+  O(n) 行为。
+
+• Edited vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java (+19 -6)
+    426          Set<String> evictedGroups = new HashSet<>();
+    427 +        Map<String, Long> namespaceTokenUsage = computeNamespaceTokenUsage(candidates);
+    428          for (SemanticEvictionPolicy.EvictionCandidate candidate : toEvict) {
+    428 -            evictedTokens += evictCandidateGroup(candidate, namespace, targetEvict, "semantic", evictedGroups,
+         0L);
+    429 +            evictedTokens += evictCandidateGroup(
+    430 +                    candidate,
+    431 +                    namespace,
+    432 +                    targetEvict,
+    433 +                    "semantic",
+    434 +                    evictedGroups,
+    435 +                    0L,
+    436 +                    namespaceTokenUsage);
+    437              if (evictedTokens >= targetEvict) break;
+        ⋮
+    529          long evictedTokens = 0;
+    530 +        Map<String, Long> namespaceTokenUsage = computeNamespaceTokenUsage(
+    531 +                candidates.stream().map(SemanticEvictionPolicy.EvictionCandidate::fragment).toList());
+    532          for (SemanticEvictionPolicy.EvictionCandidate candidate : candidates) {
+        ⋮
+    538                      evictedGroups,
+    529 -                    minRemainingTokens);
+    539 +                    minRemainingTokens,
+    540 +                    namespaceTokenUsage);
+    541              if (evictedTokens >= targetTokens) {
+        ⋮
+    553              Set<String> evictedGroups,
+    543 -            long minRemainingTokens) {
+    554 +            long minRemainingTokens,
+    555 +            Map<String, Long> namespaceTokenUsage) {
+    556          if (candidate.pinned()) {
+        ⋮
+    567          }
+    556 -        long currentNamespaceTokens = l1.getAll(candidate.fragment().getNamespace()).stream()
+    557 -                .mapToLong(MemoryFragment::getTokenCount)
+    558 -                .sum();
+    568 +        String namespace = candidate.fragment().getNamespace();
+    569 +        long currentNamespaceTokens = namespaceTokenUsage.getOrDefault(namespace, 0L);
+    570          long groupTokens = evictionGroup.stream()
+        ⋮
+    581              l1.remove(fragment.getId());
+    582 +            pinnedFragmentDeadlines.remove(fragment.getId());
+    583              persistenceManager.persistAsync(fragment, reason);
+        ⋮
+    585          }
+    586 +        namespaceTokenUsage.compute(namespace, (key, value) -> Math.max(0L, (value == null ? 0L : value) - rele
+         ased));
+    587          return released;
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 接着收 rankForRecall()。我会把 recall 的冗余度从“每个 fragment 都重扫全体”改成单次预计算，避免重复 O(n²) 流式开销。
+
+• Edited vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java (+6 -14)
+    619              AdaptiveWeightProfile profile) {
+    620 +        Map<String, RedundancyStats> redundancyStats = computeRedundancyStats(candidates);
+    621          return candidates.stream()
+        ⋮
+    623                          fragment,
+    623 -                        scoreForRecall(fragment, queryEmbedding, profile, candidates)))
+    624 +                        scoreForRecall(fragment, queryEmbedding, profile, redundancyStats)))
+    625                  .sorted((a, b) -> Double.compare(b.score(), a.score()))
+        ⋮
+    632              AdaptiveWeightProfile profile,
+    632 -            Collection<MemoryFragment> candidatePool) {
+    633 -        double redundancyPenalty = candidatePool.stream()
+    634 -                .filter(other -> other != fragment)
+    635 -                .mapToDouble(fragment::redundancyPenaltyAgainst)
+    636 -                .max()
+    637 -                .orElse(0.0);
+    638 -        double noveltyBonus = candidatePool.stream()
+    639 -                .filter(other -> other != fragment)
+    640 -                .mapToDouble(fragment::noveltyBonusAgainst)
+    641 -                .min()
+    642 -                .orElse(0.15);
+    633 +            Map<String, RedundancyStats> redundancyStats) {
+    634 +        RedundancyStats stats = redundancyStats.getOrDefault(fragment.getId(), new RedundancyStats(0.0, 0.0));
+    635          return fragment.describeEvictionScore(
+        ⋮
+    639                  profile.getGamma(),
+    648 -                redundancyPenalty,
+    649 -                noveltyBonus).totalScore();
+    640 +                stats.redundancyPenalty(),
+    641 +                stats.noveltyBonus()).totalScore();
+    642      }
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• HMC 主逻辑已改完。现在补辅助函数和 pin 索引维护，再加测试覆盖这轮性能修复点。
+
+• Edited vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java (+66 -0)
+    737      }
+    738 +
+    739 +    private void rebuildPinIndex() {
+    740 +        pinnedFragmentDeadlines.clear();
+    741 +        pinExpirations.clear();
+    742 +        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
+    743 +            return;
+    744 +        }
+    745 +        caffeineStore.getAllFragments().forEach(this::indexPin);
+    746 +    }
+    747 +
+    748 +    private void indexPin(MemoryFragment fragment) {
+    749 +        Long pinnedUntil = fragment.getPinnedUntil();
+    750 +        if (pinnedUntil == null) {
+    751 +            pinnedFragmentDeadlines.remove(fragment.getId());
+    752 +            return;
+    753 +        }
+    754 +        if (pinnedUntil <= System.currentTimeMillis()) {
+    755 +            fragment.clearExpiredPin();
+    756 +            pinnedFragmentDeadlines.remove(fragment.getId());
+    757 +            return;
+    758 +        }
+    759 +        pinnedFragmentDeadlines.put(fragment.getId(), pinnedUntil);
+    760 +        pinExpirations.offer(new PinnedFragmentRef(fragment.getId(), pinnedUntil));
+    761 +    }
+    762 +
+    763 +    private Map<String, Long> computeNamespaceTokenUsage(Collection<MemoryFragment> fragments) {
+    764 +        return fragments.stream()
+    765 +                .filter(fragment -> fragment.getNamespace() != null && !fragment.getNamespace().isBlank())
+    766 +                .collect(Collectors.groupingBy(
+    767 +                        MemoryFragment::getNamespace,
+    768 +                        Collectors.summingLong(MemoryFragment::getTokenCount)));
+    769 +    }
+    770 +
+    771 +    private Map<String, RedundancyStats> computeRedundancyStats(List<MemoryFragment> candidates) {
+    772 +        if (candidates.isEmpty()) {
+    773 +            return Map.of();
+    774 +        }
+    775 +        Map<String, RedundancyStats> stats = new HashMap<>();
+    776 +        for (MemoryFragment fragment : candidates) {
+    777 +            double maxPenalty = 0.0;
+    778 +            double minNovelty = Double.POSITIVE_INFINITY;
+    779 +            boolean hasPeer = false;
+    780 +            for (MemoryFragment other : candidates) {
+    781 +                if (other == fragment) {
+    782 +                    continue;
+    783 +                }
+    784 +                hasPeer = true;
+    785 +                maxPenalty = Math.max(maxPenalty, fragment.redundancyPenaltyAgainst(other));
+    788 +            stats.put(fragment.getId(), new RedundancyStats(
+    789 +                    maxPenalty,
+    790 +                    hasPeer ? minNovelty : 0.0));
+    791 +        }
+    792 +        return stats;
+    793 +    }
+    794 +
+    795 +    private record RedundancyStats(double redundancyPenalty, double noveltyBonus) {}
+    796 +
+    797 +    private record PinnedFragmentRef(String fragmentId, long pinnedUntilEpochMillis)
+    798 +            implements Comparable<PinnedFragmentRef> {
+    799 +        @Override
+    800 +        public int compareTo(PinnedFragmentRef other) {
+    801 +            return Long.compare(this.pinnedUntilEpochMillis, other.pinnedUntilEpochMillis);
+    802 +        }
+    803 +    }
+    804  }
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我还要修两个边角：
+
+  1. resolveEvictionGroup() 在 pin 过期时不要刷新 recency。
+  2. processed key 这块要补测试，明确它确实有上限，不让错误评审以后再回流。
+
+• Edited vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java (+9 -2)
+    597                  }
+    598 -                l1.put(fragment);
+    598 +                l1.put(fragment, false);
+    599 +                indexPin(fragment);
+    600              }
+        ⋮
+    603          return l1.getAll(candidate.fragment().getNamespace()).stream()
+    603 -                .peek(MemoryFragment::clearExpiredPin)
+    604 +                .map(fragment -> {
+    605 +                    if (fragment.clearExpiredPin()) {
+    606 +                        l1.put(fragment, false);
+    607 +                        indexPin(fragment);
+    608 +                    }
+    609 +                    return fragment;
+    610 +                })
+    611                  .filter(fragment -> groupId.equals(fragment.getReasoningChainId()))
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 现在补测试。会覆盖三类：processed key 容量上限、pin 更新不应刷新 recency、过期 pin 清理与 recall 预计算路径不回退。
+
+• Edited vortex-kernel\src\test\java\com\vortex\kernel\hmc\FileBackedProcessedTaskStoreTest.java (+21 -0)
+     5
+     6 +import java.nio.charset.StandardCharsets;
+     7 +import java.nio.file.Files;
+     8  import java.nio.file.Path;
+     9 +import java.util.List;
+    10
+       ⋮
+    32      }
+    33 +
+    34 +    @Test
+    35 +    void rewritesStoreFileWhenEntryCountExceedsCapacity() throws Exception {
+    36 +        Path storeFile = tempDir.resolve("processed-keys.jsonl");
+    37 +        FileBackedProcessedTaskStore store = new FileBackedProcessedTaskStore(storeFile, 2);
+    38 +
+    39 +        store.markProcessed("k1");
+    40 +        store.markProcessed("k2");
+    41 +        store.markProcessed("k3");
+    42 +
+    43 +        List<String> lines = Files.readAllLines(storeFile, StandardCharsets.UTF_8).stream()
+    44 +                .filter(line -> !line.isBlank())
+    45 +                .toList();
+    46 +
+    47 +        assertThat(lines).hasSize(2);
+    48 +        assertThat(lines.getFirst()).contains("k2");
+    49 +        assertThat(lines.getLast()).contains("k3");
+    50 +    }
+    51  }
+
+• Edited vortex-kernel\src\test\java\com\vortex\kernel\hmc\HierarchicalMemoryControllerTest.java (+38 -0)
+    417      @Test
+    418 +    void pinAndUnpinDoNotRefreshLastAccessTime() {
+    419 +        CaffeineHotStore l1 = new CaffeineHotStore(256);
+    420 +        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+    421 +        FakeL3ColdStore l3 = new FakeL3ColdStore();
+    422 +        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+    423 +
+    424 +        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+    425 +                l1,
+    426 +                l2,
+    427 +                l3,
+    428 +                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
+    429 +                new NamespaceQuotaManager(0.25, 0.15, 16),
+    430 +                TEST_WEIGHT_LEARNER,
+    431 +                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+    432 +                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+    433 +                TEST_SLO_TRACKER,
+    434 +                persistenceManager(l2, l3),
+    435 +                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+    436 +                localEmbedding,
+    437 +                emptyProvider(),
+    445 +
+    446 +        hmc.pinFragment("pin-recency", 60_000L);
+    447 +        long afterPin = l1.get("pin-recency").orElseThrow().getLastAccessTime();
+    448 +        hmc.unpinFragment("pin-recency");
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 测试已经补好。我先跑一次全量 mvn test，看这轮重构有没有引入编译或行为回归，再继续收尾。
+
+• Ran mvn test
+  └ [INFO] Scanning for projects...
+    [INFO] ------------------------------------------------------------------------
+    … +143 lines (ctrl + t to view transcript)
+    [ERROR] After correcting the problems, you can resume the build with the command
+    [ERROR]   mvn <args> -rf :vortex-kernel
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 编译卡在一个很小的 Java 约束上：lambda 里引用了会被后续重新赋值的 released。我把这处收成显式变量，再重跑测试。
+
+• Ran $i=0; Get-Content -LiteralPath
+  │ 'vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java' | ForEach-Object { $i++;
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 这处修完就能继续验证。之后我会看是否还需要补一个针对“过期 pin 清理不扫全量”的结构性测试。
+
+• Edited vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java (+2 -1)
+    585          }
+    586 -        namespaceTokenUsage.compute(namespace, (key, value) -> Math.max(0L, (value == null ? 0L : value) - rele
+         ased));
+    586 +        long releasedTokens = released;
+    587 +        namespaceTokenUsage.compute(namespace, (key, value) -> Math.max(0L, (value == null ? 0L : value) - rele
+         asedTokens));
+    588          return released;
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我继续跑全量测试，确认这轮修复在编译和行为上都收干净。
+
+• Ran mvn test
+  └ [INFO] Scanning for projects...
+    [INFO] ------------------------------------------------------------------------
+    … +220 lines (ctrl + t to view transcript)
+    [ERROR] After correcting the problems, you can resume the build with the command
+    [ERROR]   mvn <args> -rf :vortex-kernel
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 这两个失败都说明测试里用了 l1.get(...) 去读取，而 get() 本身会刷新 lastAccessTime。问题不在实现，断言方式需要改成从原
+  对象或 getAll() 读取不触发访问刷新。我先修测试，再跑最终验证。
+
+• Edited vortex-kernel\src\test\java\com\vortex\kernel\hmc\HierarchicalMemoryControllerTest.java (+15 -4)
+    407          expired.setPinnedUntil(System.currentTimeMillis() - 1_000L);
+    408 -        l1.put(expired);
+    408 +        l1.put(expired, false);
+    409
+        ⋮
+    411
+    412 -        MemoryFragment refreshed = l1.get("expired").orElseThrow();
+    412 +        MemoryFragment refreshed = l1.getAll("ns").stream()
+    413 +                .filter(fragment -> "expired".equals(fragment.getId()))
+    452 +                .findFirst()
+    453 +                .orElseThrow()
+    454 +                .getLastAccessTime();
+    455          hmc.unpinFragment("pin-recency");
+    449 -        long afterUnpin = l1.get("pin-recency").orElseThrow().getLastAccessTime();
+    456 +        long afterUnpin = l1.getAll("ns").stream()
+    457 +                .filter(candidate -> "pin-recency".equals(candidate.getId()))
+    458 +                .findFirst()
+    459 +                .orElseThrow()
+    460 +                .getLastAccessTime();
+    461
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 最后一轮全量测试。通过后我会给你一个只针对这份“阶段2-3新问题”的处理结果，区分“评审准确”和“评审误判但已核实”。
+
+• Ran mvn test
+  └ [INFO] Scanning for projects...
+    [INFO] ------------------------------------------------------------------------
+    … +212 lines (ctrl + t to view transcript)
+    [ERROR] After correcting the problems, you can resume the build with the command
+    [ERROR]   mvn <args> -rf :vortex-kernel
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我定位到根因了，不是业务逻辑错，而是维护路径还在用 l1.get()，它会刷新访问时间。我要补一个“不触发 access 的读取”接口，
+  并把 pin/过期清理改用它；同时把那条测试改成更贴近真实路径的 TTL 过期场景。
+
+• Edited vortex-storage\src\main\java\com\vortex\storage\api\L1HotStore.java (+5 -0)
+    25
+    26 +    /** Retrieve by id without updating recency metadata when supported. */
+    27 +    default Optional<MemoryFragment> peek(String id) {
+    28 +        return get(id);
+    29 +    }
+    30 +
+    31      /** Return all fragments in the given namespace. */
+
+• Edited vortex-storage\src\main\java\com\vortex\storage\l1\CaffeineHotStore.java (+5 -0)
+    89      @Override
+    90 +    public Optional<MemoryFragment> peek(String id) {
+    91 +        return Optional.ofNullable(cache.getIfPresent(id));
+    92 +    }
+    93 +
+    94 +    @Override
+    95      public List<MemoryFragment> getAll(String namespace) {
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把 HMC 里所有“维护路径读取 fragment”切到 peek()，只保留真正 recall/get 场景才更新 recency。这样 pin/unpin、TTL 清
+  理、组解析都不会污染 LRU 信号。
+
+• Edited vortex-kernel\src\main\java\com\vortex\kernel\hmc\HierarchicalMemoryController.java (+2 -2)
+    593          if (groupId == null || groupId.isBlank()) {
+    594 -            MemoryFragment fragment = l1.get(candidate.fragment().getId()).orElse(candidate.fragment());
+    594 +            MemoryFragment fragment = l1.peek(candidate.fragment().getId()).orElse(candidate.fragment());
+    595              if (fragment.clearExpiredPin() || fragment.isPinned()) {
+        ⋮
+    722      private Optional<MemoryFragment> findFragment(String fragmentId) {
+    723 -        Optional<MemoryFragment> l1Fragment = l1.get(fragmentId);
+    723 +        Optional<MemoryFragment> l1Fragment = l1.peek(fragmentId);
+• Edited vortex-kernel\src\test\java\com\vortex\kernel\hmc\HierarchicalMemoryControllerTest.java (+7 -2)
+    406          MemoryFragment expired = fragment("expired", "ns", "expired", List.of(), 4);
+    407 -        expired.setPinnedUntil(System.currentTimeMillis() - 1_000L);
+    408 -        l1.put(expired, false);
+    407 +        hmc.storeFragment(expired);
+    408 +        hmc.pinFragment("expired", 10L);
+    409 +        try {
+    410 +            Thread.sleep(20L);
+    411 +        } catch (InterruptedException e) {
+    412 +            throw new IllegalStateException(e);
+    413 +        }
+    414
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 现在是最终验证轮。通过后我会给你一个精确结论：哪些新评审点已实修，哪些本来就是误报或低影响项。
+
+• Ran mvn test
+  └ [INFO] Scanning for projects...
+    [INFO] ------------------------------------------------------------------------
+    … +219 lines (ctrl + t to view transcript)
+    [INFO] Finished at: 2026-05-09T22:19:40+08:00
+    [INFO] ------------------------------------------------------------------------
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 这份“阶段2-3新问题”我已经读完并完成了针对性修复，mvn test 全模块通过。
+
+  先说评审结论的核对结果：
+
+  B-1 评审不成立。FileBackedProcessedTaskStore 本来就实现了 maxEntries 裁剪和超限重写，不是无界增长。我补了测试把这一点
+  固化，避免后续再误判。
+  B-2、B-4、B-5 是真实问题，我已经修掉。
+  B-3 严格说不是功能性 bug，但我顺手把维护路径做得更干净了。
+  B-6 仍然属于低影响项，当前不值得为它引入 Redis/MQ 复杂度；现有单线程 replay + idempotency key 已经够稳。
+
+  这次实际落地的修复有四块：
+
+  1. pin 过期清理不再全量扫描 L1。
+     现在 HMC 维护一个按 pinnedUntil 排序的到期队列和一个 deadline map，只处理真正到期的 fragment，替代原来每次
+     clearExpiredPins() 扫全量 L1 的方式。核心改动在 vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+     HierarchicalMemoryController.java:364 和 vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+     HierarchicalMemoryController.java:725。
+  2. pin/unpin/过期清理不再污染 recency。
+     我给 L1 增加了 put(fragment, recordAccess) 和 peek(id)，把维护型写入/读取和真正访问分开。这样 pin 元数据更新不会错
+     误提升 lastAccessTime，不会干扰 LRU/语义淘汰。改动在 vortex-storage/src/main/java/com/vortex/storage/api/
+     L1HotStore.java:14、vortex-storage/src/main/java/com/vortex/storage/l1/CaffeineHotStore.java:64、vortex-kernel/src/
+     main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:341。
+  3. 组淘汰时不再重复 O(n) 扫描 namespace token。
+     evictCandidateGroup() 现在接收预计算的 namespace token usage map，并在每次实际删除后原地扣减，不再每次
+     l1.getAll(namespace).sum()。核心改动在 vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+     HierarchicalMemoryController.java:425 到 vortex-kernel/src/main/java/com/vortex/kernel/hmc/
+     HierarchicalMemoryController.java:587。
+  4. recall 冗余度改成单次预计算。
+     rankForRecall() 不再为每个 fragment 都重新流式扫描全体候选算 redundancy/novelty，而是先一次性算出 RedundancyStats，
+     再复用。改动在 vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:614 和 vortex-
+     kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java:748。
+
+  另外我补了测试，覆盖：
+  FileBackedProcessedTaskStore 超限重写
+  pin/unpin 不刷新 recency
+  真实 TTL 过期后的 pin 清理
+  现有 HMC、淘汰、processed key 路径回归
+
+  如果你后面确实想把这块再做成更重型架构，我可以继续给你上第二层方案：
+  用 Redis ZSET 托管 pin 到期索引，或者用 MQ/延时队列驱动 pin 失效事件。
+  但就当前项目规模和 L1 语义缓存定位，这一步现在不是必须，现有内存索引方案已经足够专业且成本更低。

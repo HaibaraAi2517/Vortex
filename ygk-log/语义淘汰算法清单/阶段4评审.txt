@@ -1,0 +1,197 @@
+阶段 4 专家级代码审查：在线学习 & SLO 闭环
+
+  #12 α/β/γ 在线权重学习 — 审查结论：🟡 框架完整，但有严重设计问题
+
+  AdaptiveWeightLearner.java (118行) + AdaptiveWeightProfile.java (44行) + ShadowEvaluationTracker.java (120行)
+  构成了完整的在线学习链。
+
+  问题 12-A（严重）：recordFeedback() 中的权重更新方向有逻辑错误
+
+  AdaptiveWeightLearner.java 第 83-85 行：
+
+  pair.active.setBeta(pair.active.getBeta() + learningRate * successSignal * groundingRatio);
+  pair.active.setAlpha(pair.active.getAlpha() - learningRate * regretPenalty);
+  pair.active.setGamma(pair.active.getGamma() + learningRate * (answerAccepted ? 0.02 : -0.02));
+
+  问题分析：
+
+  1. beta 的更新：successSignal * groundingRatio
+    - answerAccepted=true 且 groundingRatio 高（召回的 fragment 被用到了）→ beta 增加
+    - 这意味着"召回结果被用到了就增强 similarity 权重"，逻辑上合理
+    - 但 groundingRatio 只反映"有多少召回结果被用到"，不反映"这些结果对回答质量的贡献度"。用到了不代表有用。
+  2. alpha 的更新：- learningRate * regretPenalty
+    - regret 越高，alpha 越低
+    - 这意味着"淘汰后悔多就降低 recency 权重"
+    - 但 regret 和 recency 的关系是间接的：regret 高可能是因为 similarity 权重太高导致低相似度但重要的 fragment
+  被淘汰了，降低 alpha 不一定能解决问题
+  3. gamma 的更新：answerAccepted ? 0.02 : -0.02
+    - 硬编码 0.02，不使用 learningRate，与其他两个权重的更新步长不一致
+    - 且只看 answerAccepted，不看 groundingRatio
+
+  核心问题：三个权重的更新信号来源不同（beta 看 groundingRatio，alpha 看 regret，gamma 看
+  answerAccepted），缺乏统一的优化目标。这会导致权重漂移不可预测。
+
+  严重性：高（学习算法的设计缺陷）
+
+  问题 12-B（严重）：权重无下界/上界保护在 normalize() 之前
+
+  pair.active.setBeta(pair.active.getBeta() + learningRate * successSignal * groundingRatio);
+  pair.active.setAlpha(pair.active.getAlpha() - learningRate * regretPenalty);
+  pair.active.setGamma(pair.active.getGamma() + learningRate * (answerAccepted ? 0.02 : -0.02));
+  pair.active.normalize();
+
+  虽然 normalize() 内部的 clamp() 方法（AdaptiveWeightProfile.java:41-43）会将单个权重限制在 [0.05, 0.90]，但这在
+  normalize() 之前不会生效。
+
+  实际问题：假设初始 beta=0.5，连续 20 次 answerAccepted=true, groundingRatio=1.0：
+  - 每次 + 0.05 * 1.0 * 1.0 = +0.05
+  - 20 次后 beta = 1.5
+  - normalize() 后 clamp 到 0.90
+
+  这不算严重 bug（因为 clamp 兜底了），但学习过程中的中间值可能极端。
+
+  严重性：中等
+
+  问题 12-C（严重）：影子 profile 提升后立即覆盖 active，无回滚机制
+
+  AdaptiveWeightLearner.java 第 95-100 行：
+
+  if (snapshot.eligibleForPromotion()) {
+      pair.active = pair.shadow.copyAs(scenario.name().toLowerCase() + "-active");
+      pair.shadow = pair.active.copyAs(scenario.name().toLowerCase() + "-shadow");
+      pair.shadow.setAlpha(Math.min(0.90, pair.active.getAlpha() + 0.04));
+      pair.shadow.setBeta(Math.max(0.05, pair.active.getBeta() - 0.02));
+      pair.shadow.normalize();
+  }
+
+  问题：
+  1. pair.active = pair.shadow.copyAs(...) 把 active 替换为 shadow
+  2. 紧接着 pair.shadow = pair.active.copyAs(...) — 但此时 pair.active 已经是 shadow 的拷贝了，所以新的 shadow
+  是基于刚提升的 active 创建的
+  3. 这意味着提升后的新 shadow 几乎与新 active 完全相同（只是 alpha +0.04, beta -0.02 的微小差异），丧失了 A/B
+  对比的意义
+  4. 且没有任何回滚机制——如果新 active 表现差，只能等下一轮 shadow 重新积累 14 天的证据
+
+  清单要求是"不达标自动回滚"，当前实现没有这个能力。
+
+  严重性：高（清单承诺未兑现）
+
+  问题 12-D（中等）：recallSessions 是内存 ConcurrentHashMap，进程重启后丢失
+
+  AdaptiveWeightLearner.java 第 18 行：recallSessions 存在内存中。如果进程重启，所有未处理的 recall session
+  都会丢失，对应的 feedback 无法关联。
+
+  严重性：中等（MVP 可接受，但生产环境需要持久化）
+
+  问题 12-E（低）：ShadowEvaluationTracker 的 DoubleAdderLike 是手写的线程安全包装
+
+  private static final class DoubleAdderLike {
+      private double value;
+      synchronized void add(double delta) { value += delta; }
+      synchronized double sum() { return value; }
+  }
+
+  Java 标准库有 java.util.concurrent.atomic.DoubleAdder，专门为高并发累加优化（使用 cell splitting）。这里手写了一个
+  synchronized 版本。功能正确但性能不如标准库。
+
+  严重性：低
+
+  评分：5/10（框架存在，但学习算法设计有严重逻辑缺陷，缺少回滚机制）
+
+  ---
+  #13 影子模式评估新权重 — 审查结论：🟡 部分实现，但不完整
+
+  ShadowEvaluationTracker.java 实现了：
+  - NDCG 计算（active/shadow/baseline 三个维度）
+  - 累积样本统计
+  - promotion window（14 天持续 shadow 优于 active 才提升）
+  - promotion threshold（相对提升 >= 20%）
+
+  问题 13-A（严重）：NDCG 计算中 baseline 的语义有问题
+
+  ShadowEvaluationTracker.java 第 41-43 行，recordEvaluation() 三参数版本：
+
+  public void recordEvaluation(String scenarioKey, List<String> activeRanked,
+          List<String> shadowRanked, Set<String> relevantIds) {
+      recordEvaluation(scenarioKey, activeRanked, shadowRanked, activeRanked, relevantIds);
+      //                                                         ^^^^^^^^^^^^^^^^
+      //                                     baseline 被设为与 active 相同！
+  }
+
+  而 HMC 的 recall() 方法（第 237 行）：
+
+  .shadowRankedFragmentIds(results.stream().map(sf -> sf.getFragment().getId()).toList())
+
+  两个严重问题：
+
+  1. shadowRankedFragmentIds 与 rankedFragmentIds 完全相同：第 236-237 行，两者都用 results（同一个排序列表）。这意味着
+  shadow 的 NDCG 永远等于 active 的 NDCG，relativeLift 永远为 0。
+  2. baselineRanked 用的也是 activeRanked（三参数版本的默认值）。这意味着 baseline 也不独立。
+
+  根本原因：HMC 在 recall 时只做了一次排序（用 active 的权重），shadow profile
+  的权重从未被用于实际的召回排序。所谓的"A/B 测试"只存在于数据结构中，实际执行时没有分离。
+
+  影响：ShadowEvaluationTracker 的所有统计数字都是基于同一个排序结果计算的，shadow 永远不可能优于 active，promotion
+  永远不会触发。在线学习实际上是一个空转系统。
+
+  严重性：致命（核心功能无效）
+
+  问题 13-B（中等）：promotion 后重置 shadow 的逻辑有问题
+
+  AdaptiveWeightLearner.java:97-100，提升后：
+
+  pair.active = pair.shadow.copyAs(scenario.name().toLowerCase() + "-active");
+  pair.shadow = pair.active.copyAs(scenario.name().toLowerCase() + "-shadow");
+  pair.shadow.setAlpha(Math.min(0.90, pair.active.getAlpha() + 0.04));
+  pair.shadow.setBeta(Math.max(0.05, pair.active.getBeta() - 0.02));
+  pair.shadow.normalize();
+
+  提升后 pair.shadow 的 alpha 被设为 min(0.90, active.alpha + 0.04)。但 normalize() 之后所有权重之和 = 1.0，所以 alpha
+  +0.04 意味着 beta 和 gamma 被压缩。但只有 beta 被显式减了 0.02，gamma 没调整。所以 normalize() 会重新分配 gamma，导致
+  gamma 的变化不可预测。
+
+  严重性：中等
+
+  评分：2/10（数据结构存在，但实际运行中 A/B 评估从未真正分离，影子模式是空壳）
+
+  ---
+  #14 建立固定 SLO 基准集 & 告警 — 审查结论：🟡 基础指标已就位，SLO 定义缺失
+
+  MemorySloTracker.java (104行) 通过 Micrometer 注册了 8 个 Gauge：
+  - eviction log coverage
+  - namespace isolation violations
+  - recovery success rate
+  - store/recall latency max
+  - regret rate
+  - shadow/baseline relative lift
+
+  加上 application.yml 暴露的 /actuator/metrics 端点，基础指标管道已通。
+
+  问题 14-A（中等）：只有 max 延迟，没有 p99/p95
+
+  MemorySloTracker 只记录了 storeLatencyNanosMax 和 recallLatencyNanosMax（第 49-50 行），用 accumulateAndGet(nanos,
+  Math::max) 只取最大值。
+
+  清单要求 "store / recall p99 延迟劣化 < 10ms"，但当前实现只能回答"历史最大延迟是多少"，不能回答"99 分位延迟是多少"。
+
+  严重性：中等
+
+  问题 14-B（中等）：recordRegretRate() 和 recordLearningLift() 是手动调用，没有被生产代码触发
+
+  搜索整个代码库，MemorySloTracker.recordRegretRate() 和 recordLearningLift() 在 HMC
+  或其他生产代码中没有被调用。它们只被声明了，但数据源没有接入。
+
+  也就是说，vortex.hmc.slo.eviction.regret.rate 和 vortex.hmc.slo.shadow.relative.lift 两个 Gauge 永远返回默认值 0.0。
+
+  严重性：中高（指标存在但数据为空）
+
+  问题 14-C（低）：没有告警配置
+
+  没有 Prometheus alerting rules、没有 Micrometer 的 MeterFilter、没有 @Timed
+  注解。指标暴露了但没有人会去看，除非手动配置外部监控。
+
+  严重性：低（清单要求"告警"，但这属于运维基础设施层面，MVP 不需要内置）
+
+  评分：5/10（Gauge 管道已通，但数据源未完全接入，p99 未实现，告警未配置）
+
+  ---
