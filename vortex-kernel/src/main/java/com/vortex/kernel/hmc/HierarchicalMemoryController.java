@@ -56,8 +56,8 @@ public class HierarchicalMemoryController {
     private final SemanticTextSplitter splitter;
     private final PriorityBlockingQueue<PinnedFragmentRef> pinExpirations = new PriorityBlockingQueue<>();
     private final ConcurrentMap<String, Long> pinnedFragmentDeadlines = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, NavigableSet<TieredFragmentRef>> hotTierIndex = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, NavigableSet<TieredFragmentRef>> coldTierIndex = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, NavigableSet<TieredGroupRef>> hotTierIndex = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, NavigableSet<TieredGroupRef>> coldTierIndex = new ConcurrentHashMap<>();
     private final AtomicBoolean clearingExpiredPins = new AtomicBoolean(false);
     private final AtomicLong pinnedTokenCount = new AtomicLong(0);
     private final ReentrantLock admissionLock = new ReentrantLock();
@@ -431,6 +431,11 @@ public class HierarchicalMemoryController {
         } finally {
             clearingExpiredPins.set(false);
         }
+    }
+
+    @Scheduled(fixedDelayString = "${vortex.kernel.eviction.tier-rebalance-interval-ms:120000}")
+    public void rebalanceTierIndexes() {
+        rebuildTierIndexes();
     }
 
     private record ScoredCandidate(MemoryFragment fragment, double score) {}
@@ -880,10 +885,16 @@ public class HierarchicalMemoryController {
         if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
             return;
         }
+        Map<String, List<MemoryFragment>> fragmentsByNamespace = new HashMap<>();
         caffeineStore.getAllFragments().forEach(fragment -> {
             indexPin(fragment);
-            reindexTierMembership(fragment);
+            if (fragment.getNamespace() != null && !fragment.getNamespace().isBlank()) {
+                fragmentsByNamespace
+                        .computeIfAbsent(fragment.getNamespace(), ignored -> new ArrayList<>())
+                        .add(fragment);
+            }
         });
+        fragmentsByNamespace.values().forEach(this::reindexNamespaceTierMembership);
     }
 
     private void indexPin(MemoryFragment fragment) {
@@ -961,8 +972,17 @@ public class HierarchicalMemoryController {
         }
         Map<String, MemoryFragment> candidateMap = candidates.stream()
                 .collect(Collectors.toMap(MemoryFragment::getId, fragment -> fragment, (left, right) -> left));
-        List<MemoryFragment> coldTier = collectTierMembers(coldTierIndex.get(namespace), candidateMap, maxColdTierCandidates);
-        List<MemoryFragment> hotTier = collectTierMembers(hotTierIndex.get(namespace), candidateMap, Integer.MAX_VALUE);
+        Map<String, List<MemoryFragment>> candidateGroups = groupFragments(candidates);
+        List<MemoryFragment> coldTier = collectTierMembers(
+                coldTierIndex.get(namespace),
+                candidateMap,
+                candidateGroups,
+                maxColdTierCandidates);
+        List<MemoryFragment> hotTier = collectTierMembers(
+                hotTierIndex.get(namespace),
+                candidateMap,
+                candidateGroups,
+                Integer.MAX_VALUE);
         if (coldTier.isEmpty() && hotTier.isEmpty()) {
             return buildTieredCandidatePool(candidates);
         }
@@ -970,44 +990,62 @@ public class HierarchicalMemoryController {
     }
 
     private TieredCandidatePool buildTieredCandidatePool(List<MemoryFragment> candidates) {
-        long now = System.currentTimeMillis();
-        List<MemoryFragment> coldTier = new ArrayList<>();
-        List<MemoryFragment> hotTier = new ArrayList<>();
-        for (MemoryFragment fragment : candidates) {
-            if (now - fragment.getLastAccessTime() <= hotTierRecencyWindowMillis) {
-                hotTier.add(fragment);
+        List<TieredGroupRef> hotGroups = new ArrayList<>();
+        List<TieredGroupRef> coldGroups = new ArrayList<>();
+        Map<String, List<MemoryFragment>> groups = groupFragments(candidates);
+        for (List<MemoryFragment> group : groups.values()) {
+            TieredGroupRef ref = TieredGroupRef.of(group, hotTierRecencyWindowMillis);
+            if (ref == null) {
+                continue;
+            }
+            if (ref.hot()) {
+                hotGroups.add(ref);
             } else {
-                coldTier.add(fragment);
+                coldGroups.add(ref);
             }
         }
-        Comparator<MemoryFragment> coldComparator = Comparator
-                .comparingLong(MemoryFragment::getLastAccessTime)
-                .thenComparingDouble(MemoryFragment::getImportance);
-        coldTier.sort(coldComparator);
-        if (coldTier.size() > maxColdTierCandidates) {
-            coldTier = new ArrayList<>(coldTier.subList(0, maxColdTierCandidates));
-        }
-        hotTier.sort(Comparator
-                .comparingLong(MemoryFragment::getLastAccessTime)
-                .thenComparingDouble(MemoryFragment::getImportance));
-        return new TieredCandidatePool(List.copyOf(coldTier), List.copyOf(hotTier));
+        Collections.sort(coldGroups);
+        Collections.sort(hotGroups);
+        return new TieredCandidatePool(
+                flattenTierGroups(coldGroups, groups, maxColdTierCandidates),
+                flattenTierGroups(hotGroups, groups, Integer.MAX_VALUE));
     }
 
     private List<MemoryFragment> collectTierMembers(
-            NavigableSet<TieredFragmentRef> index,
+            NavigableSet<TieredGroupRef> index,
             Map<String, MemoryFragment> candidateMap,
+            Map<String, List<MemoryFragment>> candidateGroups,
             int limit) {
         if (index == null || index.isEmpty()) {
             return List.of();
         }
         List<MemoryFragment> selected = new ArrayList<>();
-        for (TieredFragmentRef ref : index) {
-            MemoryFragment fragment = candidateMap.get(ref.fragmentId());
-            if (fragment == null || fragment.isPinned()) {
+        Set<String> selectedIds = new HashSet<>();
+        int selectedGroups = 0;
+        for (TieredGroupRef ref : index) {
+            List<MemoryFragment> group = candidateGroups.get(ref.groupKey());
+            if (group == null || group.isEmpty()) {
                 continue;
             }
-            selected.add(fragment);
-            if (selected.size() >= limit) {
+            List<MemoryFragment> activeMembers = group.stream()
+                    .map(fragment -> candidateMap.get(fragment.getId()))
+                    .filter(Objects::nonNull)
+                    .filter(fragment -> !fragment.isPinned())
+                    .sorted(Comparator
+                            .comparingLong(MemoryFragment::getLastAccessTime)
+                            .thenComparingDouble(MemoryFragment::getImportance)
+                            .thenComparing(MemoryFragment::getId))
+                    .toList();
+            if (activeMembers.isEmpty()) {
+                continue;
+            }
+            for (MemoryFragment fragment : activeMembers) {
+                if (selectedIds.add(fragment.getId())) {
+                    selected.add(fragment);
+                }
+            }
+            selectedGroups++;
+            if (selectedGroups >= limit) {
                 break;
             }
         }
@@ -1018,32 +1056,28 @@ public class HierarchicalMemoryController {
         if (fragment == null || fragment.getNamespace() == null || fragment.getNamespace().isBlank()) {
             return;
         }
-        removeFromTierIndexes(fragment);
-        if (fragment.isPinned()) {
+        List<MemoryFragment> namespaceFragments = l1.getAll(fragment.getNamespace());
+        if (namespaceFragments.isEmpty()) {
+            removeFromTierIndexes(fragment);
             return;
         }
-        TieredFragmentRef ref = TieredFragmentRef.of(fragment);
-        if (isHot(fragment)) {
-            hotTierIndex.computeIfAbsent(fragment.getNamespace(), ignored -> new TreeSet<>()).add(ref);
-        } else {
-            coldTierIndex.computeIfAbsent(fragment.getNamespace(), ignored -> new TreeSet<>()).add(ref);
-        }
+        reindexNamespaceTierMembership(namespaceFragments);
     }
 
     private void removeFromTierIndexes(MemoryFragment fragment) {
         if (fragment == null || fragment.getNamespace() == null || fragment.getNamespace().isBlank()) {
             return;
         }
-        TieredFragmentRef ref = TieredFragmentRef.of(fragment);
-        removeTierRef(hotTierIndex.get(fragment.getNamespace()), ref);
-        removeTierRef(coldTierIndex.get(fragment.getNamespace()), ref);
+        String groupKey = groupKey(fragment);
+        removeTierRef(hotTierIndex.get(fragment.getNamespace()), groupKey);
+        removeTierRef(coldTierIndex.get(fragment.getNamespace()), groupKey);
     }
 
-    private void removeTierRef(NavigableSet<TieredFragmentRef> index, TieredFragmentRef ref) {
-        if (index == null) {
+    private void removeTierRef(NavigableSet<TieredGroupRef> index, String groupKey) {
+        if (index == null || groupKey == null) {
             return;
         }
-        index.remove(ref);
+        index.removeIf(ref -> groupKey.equals(ref.groupKey()));
     }
 
     private boolean isHot(MemoryFragment fragment) {
@@ -1051,34 +1085,117 @@ public class HierarchicalMemoryController {
     }
 
     private List<MemoryFragment> limitHotTier(List<MemoryFragment> hotTier, long remainingTokens) {
-        int maxCount = Math.min(hotTier.size(), maxColdTierCandidates * hotTierExpansionFactor);
+        int maxGroups = Math.max(1, maxColdTierCandidates * hotTierExpansionFactor);
+        Map<String, List<MemoryFragment>> groups = hotTier.stream()
+                .collect(Collectors.groupingBy(this::groupKey, LinkedHashMap::new, Collectors.toList()));
         List<MemoryFragment> selected = new ArrayList<>();
         long covered = 0L;
-        for (MemoryFragment fragment : hotTier) {
-            if (selected.size() >= maxCount) {
+        int selectedGroups = 0;
+        for (List<MemoryFragment> group : groups.values()) {
+            if (selectedGroups >= maxGroups) {
                 break;
             }
-            selected.add(fragment);
-            covered += fragment.getTokenCount();
-            if (covered >= remainingTokens && selected.size() >= Math.min(hotTier.size(), hotTierExpansionFactor)) {
+            selected.addAll(group);
+            covered += group.stream().mapToLong(MemoryFragment::getTokenCount).sum();
+            selectedGroups++;
+            if (covered >= remainingTokens && selectedGroups >= Math.min(groups.size(), hotTierExpansionFactor)) {
                 break;
             }
         }
         return selected;
     }
 
+    private List<MemoryFragment> flattenTierGroups(
+            List<TieredGroupRef> groupOrder,
+            Map<String, List<MemoryFragment>> groups,
+            int maxGroups) {
+        List<MemoryFragment> selected = new ArrayList<>();
+        int selectedGroups = 0;
+        for (TieredGroupRef ref : groupOrder) {
+            List<MemoryFragment> members = groups.get(ref.groupKey());
+            if (members == null || members.isEmpty()) {
+                continue;
+            }
+            selected.addAll(members.stream()
+                    .filter(fragment -> !fragment.isPinned())
+                    .sorted(Comparator
+                            .comparingLong(MemoryFragment::getLastAccessTime)
+                            .thenComparingDouble(MemoryFragment::getImportance)
+                            .thenComparing(MemoryFragment::getId))
+                    .toList());
+            selectedGroups++;
+            if (selectedGroups >= maxGroups) {
+                break;
+            }
+        }
+        return List.copyOf(selected);
+    }
+
     private long coveredTokens(List<SemanticEvictionPolicy.EvictionCandidate> ranked) {
         long covered = 0L;
         Set<String> groups = new HashSet<>();
         for (SemanticEvictionPolicy.EvictionCandidate candidate : ranked) {
-            String groupKey = candidate.reasoningChainId() == null || candidate.reasoningChainId().isBlank()
-                    ? "__self__:" + candidate.fragment().getId()
-                    : candidate.reasoningChainId();
+            String groupKey = groupKey(candidate.fragment());
             if (groups.add(groupKey)) {
                 covered += candidate.groupTokenCount();
             }
         }
         return covered;
+    }
+
+    private void rebuildTierIndexes() {
+        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
+            return;
+        }
+        Map<String, List<MemoryFragment>> fragmentsByNamespace = caffeineStore.getAllFragments().stream()
+                .filter(fragment -> fragment.getNamespace() != null && !fragment.getNamespace().isBlank())
+                .collect(Collectors.groupingBy(MemoryFragment::getNamespace));
+        hotTierIndex.clear();
+        coldTierIndex.clear();
+        fragmentsByNamespace.values().forEach(this::reindexNamespaceTierMembership);
+    }
+
+    private void reindexNamespaceTierMembership(List<MemoryFragment> namespaceFragments) {
+        if (namespaceFragments == null || namespaceFragments.isEmpty()) {
+            return;
+        }
+        String namespace = namespaceFragments.getFirst().getNamespace();
+        if (namespace == null || namespace.isBlank()) {
+            return;
+        }
+        NavigableSet<TieredGroupRef> hotGroups = new TreeSet<>();
+        NavigableSet<TieredGroupRef> coldGroups = new TreeSet<>();
+        for (List<MemoryFragment> group : groupFragments(namespaceFragments).values()) {
+            TieredGroupRef ref = TieredGroupRef.of(group, hotTierRecencyWindowMillis);
+            if (ref == null) {
+                continue;
+            }
+            if (ref.hot()) {
+                hotGroups.add(ref);
+            } else {
+                coldGroups.add(ref);
+            }
+        }
+        if (hotGroups.isEmpty()) {
+            hotTierIndex.remove(namespace);
+        } else {
+            hotTierIndex.put(namespace, hotGroups);
+        }
+        if (coldGroups.isEmpty()) {
+            coldTierIndex.remove(namespace);
+        } else {
+            coldTierIndex.put(namespace, coldGroups);
+        }
+    }
+
+    private Map<String, List<MemoryFragment>> groupFragments(Collection<MemoryFragment> fragments) {
+        return fragments.stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.groupingBy(this::groupKey));
+    }
+
+    private String groupKey(MemoryFragment fragment) {
+        return groupKeyOf(fragment);
     }
 
     private Map<String, RedundancyStats> computeRedundancyStats(List<MemoryFragment> candidates) {
@@ -1117,14 +1234,44 @@ public class HierarchicalMemoryController {
 
     private record TieredCandidatePool(List<MemoryFragment> coldTier, List<MemoryFragment> hotTier) {}
 
-    private record TieredFragmentRef(String fragmentId, long lastAccessTime, double importance)
-            implements Comparable<TieredFragmentRef> {
-        private static TieredFragmentRef of(MemoryFragment fragment) {
-            return new TieredFragmentRef(fragment.getId(), fragment.getLastAccessTime(), fragment.getImportance());
+    private record TieredGroupRef(
+            String groupKey,
+            long lastAccessTime,
+            double importance,
+            boolean hot)
+            implements Comparable<TieredGroupRef> {
+        private static TieredGroupRef of(List<MemoryFragment> group, long hotTierRecencyWindowMillis) {
+            if (group == null || group.isEmpty()) {
+                return null;
+            }
+            List<MemoryFragment> activeMembers = group.stream()
+                    .filter(fragment -> !fragment.isPinned())
+                    .toList();
+            if (activeMembers.isEmpty()) {
+                return null;
+            }
+            long mostRecentAccess = activeMembers.stream()
+                    .mapToLong(MemoryFragment::getLastAccessTime)
+                    .max()
+                    .orElse(0L);
+            double averageImportance = activeMembers.stream()
+                    .mapToDouble(MemoryFragment::getImportance)
+                    .average()
+                    .orElse(0.0);
+            MemoryFragment representative = activeMembers.stream()
+                    .max(Comparator.comparingLong(MemoryFragment::getLastAccessTime)
+                            .thenComparingDouble(MemoryFragment::getImportance)
+                            .thenComparing(MemoryFragment::getId))
+                    .orElse(activeMembers.getFirst());
+            return new TieredGroupRef(
+                    groupKeyOf(representative),
+                    mostRecentAccess,
+                    averageImportance,
+                    System.currentTimeMillis() - mostRecentAccess <= hotTierRecencyWindowMillis);
         }
 
         @Override
-        public int compareTo(TieredFragmentRef other) {
+        public int compareTo(TieredGroupRef other) {
             int byAccess = Long.compare(this.lastAccessTime, other.lastAccessTime);
             if (byAccess != 0) {
                 return byAccess;
@@ -1133,8 +1280,16 @@ public class HierarchicalMemoryController {
             if (byImportance != 0) {
                 return byImportance;
             }
-            return this.fragmentId.compareTo(other.fragmentId);
+            return this.groupKey.compareTo(other.groupKey);
         }
+    }
+
+    private static String groupKeyOf(MemoryFragment fragment) {
+        String reasoningChainId = fragment.getReasoningChainId();
+        if (reasoningChainId == null || reasoningChainId.isBlank()) {
+            return "__self__:" + fragment.getId();
+        }
+        return reasoningChainId;
     }
 
     private static final class IncrementalRedundancyState {

@@ -260,6 +260,69 @@ class HierarchicalMemoryControllerTest {
     }
 
     @Test
+    void maybeEvictTreatsRecentlyTouchedReasoningGroupAsSingleHotTierUnit() {
+        CaffeineHotStore l1 = new CaffeineHotStore(160);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1,
+                l2,
+                l3,
+                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
+                new NamespaceQuotaManager(1.0, 1.0, 1),
+                TEST_WEIGHT_LEARNER,
+                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+                TEST_SLO_TRACKER,
+                persistenceManager(l2, l3),
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding,
+                emptyProvider(),
+                0.5,
+                30_000L,
+                60_000L,
+                1,
+                2
+        );
+
+        long now = System.currentTimeMillis();
+        MemoryFragment coldSolo = fragment("cold-solo", "ns", "cold-solo", List.of(), 4);
+        coldSolo.setTokenCount(40);
+        coldSolo.setImportance(0.0);
+        coldSolo.setLastAccessTime(now - 600_000L);
+        MemoryFragment chainOld = fragment("chain-old", "ns", "chain-old", List.of(), 4);
+        chainOld.setReasoningChainId("chain-hot");
+        chainOld.setTokenCount(20);
+        chainOld.setImportance(0.0);
+        chainOld.setLastAccessTime(now - 600_000L);
+        MemoryFragment chainFresh = fragment("chain-fresh", "ns", "chain-fresh", List.of(), 4);
+        chainFresh.setReasoningChainId("chain-hot");
+        chainFresh.setTokenCount(20);
+        chainFresh.setImportance(0.0);
+        chainFresh.setLastAccessTime(now);
+        MemoryFragment hotSolo = fragment("hot-solo", "ns", "hot-solo", List.of(), 4);
+        hotSolo.setTokenCount(40);
+        hotSolo.setImportance(0.9);
+        hotSolo.setLastAccessTime(now);
+
+        l1.put(coldSolo, false);
+        l1.put(chainOld, false);
+        l1.put(chainFresh, false);
+        l1.put(hotSolo, false);
+        hmc.rebalanceTierIndexes();
+
+        hmc.maybeEvict("ns", vector(4));
+
+        assertThat(l1.peek("cold-solo")).isEmpty();
+        assertThat(l1.peek("chain-old")).isPresent();
+        assertThat(l1.peek("chain-fresh")).isPresent();
+        assertThat(l1.peek("hot-solo")).isPresent();
+        assertThat(hmc.sloSnapshot().tieredColdOnlySelections()).isGreaterThan(0);
+    }
+
+    @Test
     void recallFromL2WithinWindowCountsAsEvictionRegret() {
         CaffeineHotStore l1 = new CaffeineHotStore(256);
         FakeL2WarmStore l2 = new FakeL2WarmStore(4);
@@ -812,6 +875,80 @@ class HierarchicalMemoryControllerTest {
 
         assertThat(l1.peek("incoming-expand")).isPresent();
         assertThat(hmc.sloSnapshot().tieredExpandedSelections()).isGreaterThan(0);
+    }
+
+    @Test
+    void rebalanceTierIndexesMovesStaleReasoningGroupIntoColdPoolAfterTimeDrift() {
+        CaffeineHotStore l1 = new CaffeineHotStore(160);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1,
+                l2,
+                l3,
+                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
+                new NamespaceQuotaManager(1.0, 1.0, 1),
+                TEST_WEIGHT_LEARNER,
+                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+                TEST_SLO_TRACKER,
+                persistenceManager(l2, l3),
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding,
+                emptyProvider(),
+                0.5,
+                30_000L,
+                60_000L,
+                1,
+                2
+        );
+
+        long now = System.currentTimeMillis();
+        MemoryFragment driftingA = fragment("drift-a", "ns", "drift-a", List.of(), 4);
+        driftingA.setReasoningChainId("drift-group");
+        driftingA.setTokenCount(20);
+        driftingA.setImportance(0.0);
+        driftingA.setLastAccessTime(now);
+        MemoryFragment driftingB = fragment("drift-b", "ns", "drift-b", List.of(), 4);
+        driftingB.setReasoningChainId("drift-group");
+        driftingB.setTokenCount(20);
+        driftingB.setImportance(0.0);
+        driftingB.setLastAccessTime(now);
+        MemoryFragment coldVictim = fragment("rebalance-cold", "ns", "rebalance-cold", List.of(), 4);
+        coldVictim.setTokenCount(40);
+        coldVictim.setImportance(0.0);
+        coldVictim.setLastAccessTime(now - 700_000L);
+        MemoryFragment survivor = fragment("rebalance-survivor", "ns", "rebalance-survivor", List.of(), 4);
+        survivor.setTokenCount(40);
+        survivor.setImportance(0.9);
+        survivor.setLastAccessTime(now);
+
+        l1.put(driftingA, false);
+        l1.put(driftingB, false);
+        l1.put(coldVictim, false);
+        l1.put(survivor, false);
+        hmc.rebalanceTierIndexes();
+
+        driftingA.setLastAccessTime(now - 700_000L);
+        driftingB.setLastAccessTime(now - 700_000L);
+        l1.put(driftingA, false);
+        l1.put(driftingB, false);
+
+        hmc.maybeEvict("ns", vector(4));
+
+        assertThat(l1.peek("rebalance-cold")).isEmpty();
+        assertThat(l1.peek("drift-a")).isPresent();
+        assertThat(l1.peek("drift-b")).isPresent();
+
+        hmc.rebalanceTierIndexes();
+        hmc.maybeEvict("ns", vector(4));
+
+        assertThat(l1.peek("drift-a")).isEmpty();
+        assertThat(l1.peek("drift-b")).isEmpty();
+        assertThat(l1.peek("rebalance-survivor")).isPresent();
+        assertThat(hmc.sloSnapshot().tieredColdOnlySelections()).isGreaterThan(0);
     }
 
     @Test
