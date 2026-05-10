@@ -200,6 +200,65 @@ class HierarchicalMemoryControllerTest {
     }
 
     @Test
+    void maybeEvictPrefersColdTierBeforeTouchingRecentlyAccessedFragments() {
+        CaffeineHotStore l1 = new CaffeineHotStore(120);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1,
+                l2,
+                l3,
+                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
+                new NamespaceQuotaManager(1.0, 1.0, 1),
+                TEST_WEIGHT_LEARNER,
+                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+                TEST_SLO_TRACKER,
+                persistenceManager(l2, l3),
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding,
+                emptyProvider(),
+                0.5,
+                30_000L,
+                60_000L,
+                2,
+                2
+        );
+
+        long now = System.currentTimeMillis();
+        MemoryFragment coldLow = fragment("cold-low", "ns", "cold-low", List.of(), 4);
+        coldLow.setTokenCount(30);
+        coldLow.setImportance(0.0);
+        coldLow.setLastAccessTime(now - 600_000L);
+        MemoryFragment coldHigh = fragment("cold-high", "ns", "cold-high", List.of(), 4);
+        coldHigh.setTokenCount(30);
+        coldHigh.setImportance(0.2);
+        coldHigh.setLastAccessTime(now - 500_000L);
+        MemoryFragment hotLow = fragment("hot-low", "ns", "hot-low", List.of(), 4);
+        hotLow.setTokenCount(30);
+        hotLow.setImportance(0.0);
+        hotLow.setLastAccessTime(now);
+        MemoryFragment hotHigh = fragment("hot-high", "ns", "hot-high", List.of(), 4);
+        hotHigh.setTokenCount(30);
+        hotHigh.setImportance(0.9);
+        hotHigh.setLastAccessTime(now);
+
+        l1.put(coldLow, false);
+        l1.put(coldHigh, false);
+        l1.put(hotLow, false);
+        l1.put(hotHigh, false);
+
+        hmc.maybeEvict("ns", vector(4));
+
+        assertThat(l1.peek("cold-low")).isEmpty();
+        assertThat(l1.peek("cold-high")).isPresent();
+        assertThat(l1.peek("hot-low")).isPresent();
+        assertThat(l1.peek("hot-high")).isPresent();
+    }
+
+    @Test
     void recallFromL2WithinWindowCountsAsEvictionRegret() {
         CaffeineHotStore l1 = new CaffeineHotStore(256);
         FakeL2WarmStore l2 = new FakeL2WarmStore(4);
@@ -645,6 +704,60 @@ class HierarchicalMemoryControllerTest {
         assertThat(l1.peek("stale")).isEmpty();
         assertThat(l1.peek("incoming")).isPresent();
         assertThat(l3.retrieveFragment("stale")).isPresent();
+    }
+
+    @Test
+    void admissionReclaimPrefersColdVictimsBeforeExpandingIntoHotTier() {
+        CaffeineHotStore l1 = new CaffeineHotStore(12);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1,
+                l2,
+                l3,
+                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
+                new NamespaceQuotaManager(1.0, 1.0, 1),
+                TEST_WEIGHT_LEARNER,
+                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+                TEST_SLO_TRACKER,
+                persistenceManager(l2, l3),
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding,
+                emptyProvider(),
+                0.95,
+                30_000L,
+                60_000L,
+                1,
+                2
+        );
+
+        long now = System.currentTimeMillis();
+        MemoryFragment coldVictim = fragment("cold-victim", "ns", "cold", List.of(), 4);
+        coldVictim.setTokenCount(4);
+        coldVictim.setImportance(0.0);
+        coldVictim.setLastAccessTime(now - 600_000L);
+        MemoryFragment hotVictim = fragment("hot-victim", "ns", "hot", List.of(), 4);
+        hotVictim.setTokenCount(4);
+        hotVictim.setImportance(0.0);
+        hotVictim.setLastAccessTime(now);
+        MemoryFragment pinned = fragment("pinned-admission", "ns", "pin", List.of(), 4);
+        pinned.setTokenCount(4);
+        pinned.pinForMillis(60_000L);
+        MemoryFragment incoming = fragment("incoming-tiered", "ns", "incoming", List.of(), 4);
+        incoming.setTokenCount(4);
+        incoming.setImportance(0.9);
+
+        l1.put(coldVictim, false);
+        l1.put(hotVictim, false);
+        hmc.storeFragment(pinned);
+        hmc.storeFragment(incoming);
+
+        assertThat(l1.peek("cold-victim")).isEmpty();
+        assertThat(l1.peek("hot-victim")).isPresent();
+        assertThat(l1.peek("incoming-tiered")).isPresent();
     }
 
     @Test

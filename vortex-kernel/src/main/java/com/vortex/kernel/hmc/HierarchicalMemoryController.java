@@ -72,6 +72,9 @@ public class HierarchicalMemoryController {
 
     /** Fraction of L1 capacity that triggers proactive eviction. */
     private final double evictionThreshold;
+    private final long hotTierRecencyWindowMillis;
+    private final int maxColdTierCandidates;
+    private final int hotTierExpansionFactor;
 
     public HierarchicalMemoryController(
             L1HotStore l1,
@@ -103,7 +106,10 @@ public class HierarchicalMemoryController {
                 l1EmbeddingService,
                 cloudEmbeddingProvider,
                 evictionThreshold,
-                30_000L);
+                30_000L,
+                300_000L,
+                64,
+                2);
     }
 
     public HierarchicalMemoryController(
@@ -121,7 +127,10 @@ public class HierarchicalMemoryController {
             @Qualifier("bgeSmallEmbeddingService") EmbeddingService l1EmbeddingService,
             @Qualifier("cloudEmbeddingService") ObjectProvider<EmbeddingService> cloudEmbeddingProvider,
             @Value("${vortex.kernel.eviction.threshold:0.85}") double evictionThreshold,
-            @Value("${vortex.kernel.pin.cleanup-interval-ms:30000}") long pinCleanupIntervalMillis) {
+            @Value("${vortex.kernel.pin.cleanup-interval-ms:30000}") long pinCleanupIntervalMillis,
+            @Value("${vortex.kernel.eviction.hot-tier-window-ms:300000}") long hotTierRecencyWindowMillis,
+            @Value("${vortex.kernel.eviction.max-cold-tier-candidates:64}") int maxColdTierCandidates,
+            @Value("${vortex.kernel.eviction.hot-tier-expansion-factor:2}") int hotTierExpansionFactor) {
         this.l1 = l1;
         this.l2 = l2;
         this.l3 = l3;
@@ -136,6 +145,9 @@ public class HierarchicalMemoryController {
         this.l1EmbeddingService = l1EmbeddingService;
         this.l2EmbeddingService = cloudEmbeddingProvider.getIfAvailable();
         this.evictionThreshold = evictionThreshold;
+        this.hotTierRecencyWindowMillis = Math.max(1L, hotTierRecencyWindowMillis);
+        this.maxColdTierCandidates = Math.max(8, maxColdTierCandidates);
+        this.hotTierExpansionFactor = Math.max(1, hotTierExpansionFactor);
         if (l1 instanceof CaffeineHotStore caffeineStore) {
             caffeineStore.setEvictionListener(this::handleCaffeineEviction);
         }
@@ -433,8 +445,10 @@ public class HierarchicalMemoryController {
         if (candidates.isEmpty()) return;
 
         long targetEvict = Math.max(1L, (long) Math.ceil(max * 0.10));
-        List<SemanticEvictionPolicy.EvictionCandidate> toEvict = evictionPolicy.selectDetailedForEviction(
-                candidates, queryEmbedding, targetEvict);
+        List<SemanticEvictionPolicy.EvictionCandidate> toEvict = rankTieredCandidates(
+                candidates,
+                queryEmbedding,
+                targetEvict);
         long evictedTokens = 0;
         Set<String> evictedGroups = new HashSet<>();
         Map<String, Long> namespaceTokenUsage = computeNamespaceTokenUsage(candidates);
@@ -483,8 +497,10 @@ public class HierarchicalMemoryController {
         }
 
         long requiredTokens = projectedUsage - snapshot.hardQuotaPerNamespace();
-        List<SemanticEvictionPolicy.EvictionCandidate> ownCandidates = evictionPolicy.rankCandidates(
-                l1.getAll(incomingFragment.getNamespace()), incomingFragment.getEmbedding());
+        List<SemanticEvictionPolicy.EvictionCandidate> ownCandidates = rankTieredCandidates(
+                l1.getAll(incomingFragment.getNamespace()),
+                incomingFragment.getEmbedding(),
+                requiredTokens);
         long released = evictCandidatesUntil(
                 ownCandidates,
                 incomingFragment.getNamespace(),
@@ -506,11 +522,13 @@ public class HierarchicalMemoryController {
             long borrowedTokens = Math.max(0L,
                     namespaceFragments.stream().mapToLong(MemoryFragment::getTokenCount).sum()
                             - currentSnapshot.hardQuotaPerNamespace());
-            if (borrowedTokens <= 0) {
-                continue;
-            }
-            List<SemanticEvictionPolicy.EvictionCandidate> ranked = evictionPolicy.rankCandidates(
-                    namespaceFragments, incomingFragment.getEmbedding());
+                if (borrowedTokens <= 0) {
+                    continue;
+                }
+            List<SemanticEvictionPolicy.EvictionCandidate> ranked = rankTieredCandidates(
+                    namespaceFragments,
+                    incomingFragment.getEmbedding(),
+                    Math.min(remainingRequired, borrowedTokens));
             long evicted = evictCandidatesUntil(
                     ranked,
                     otherNamespace,
@@ -579,9 +597,10 @@ public class HierarchicalMemoryController {
     }
 
     private long reclaimAdmissionGap(MemoryFragment incomingFragment, long gap) {
-        List<SemanticEvictionPolicy.EvictionCandidate> localCandidates = evictionPolicy.rankCandidates(
+        List<SemanticEvictionPolicy.EvictionCandidate> localCandidates = rankTieredCandidates(
                 l1.getAll(incomingFragment.getNamespace()),
-                incomingFragment.getEmbedding());
+                incomingFragment.getEmbedding(),
+                gap);
         long released = evictCandidatesUntil(
                 localCandidates,
                 incomingFragment.getNamespace(),
@@ -596,11 +615,12 @@ public class HierarchicalMemoryController {
         }
         long remaining = gap - released;
         List<MemoryFragment> allFragments = new ArrayList<>(caffeineStore.getAllFragments());
-        List<SemanticEvictionPolicy.EvictionCandidate> globalCandidates = evictionPolicy.rankCandidates(
+        List<SemanticEvictionPolicy.EvictionCandidate> globalCandidates = rankTieredCandidates(
                 allFragments.stream()
                         .filter(fragment -> !Objects.equals(fragment.getNamespace(), incomingFragment.getNamespace()))
                         .toList(),
-                incomingFragment.getEmbedding());
+                incomingFragment.getEmbedding(),
+                remaining);
         return released + evictCandidatesUntil(
                 globalCandidates,
                 incomingFragment.getNamespace(),
@@ -886,6 +906,87 @@ public class HierarchicalMemoryController {
                         Collectors.summingLong(MemoryFragment::getTokenCount)));
     }
 
+    private List<SemanticEvictionPolicy.EvictionCandidate> rankTieredCandidates(
+            Collection<MemoryFragment> candidates,
+            float[] queryEmbedding,
+            long targetTokens) {
+        List<MemoryFragment> filtered = candidates.stream()
+                .filter(Objects::nonNull)
+                .filter(fragment -> !fragment.isPinned())
+                .toList();
+        if (filtered.isEmpty()) {
+            return List.of();
+        }
+        TieredCandidatePool pool = buildTieredCandidatePool(filtered);
+        List<MemoryFragment> scoped = pool.coldTier();
+        if (scoped.isEmpty()) {
+            scoped = pool.hotTier();
+        }
+        List<SemanticEvictionPolicy.EvictionCandidate> ranked = evictionPolicy.rankCandidates(scoped, queryEmbedding);
+        long coldCoverage = coveredTokens(ranked);
+        if (coldCoverage >= targetTokens || pool.hotTier().isEmpty()) {
+            return ranked;
+        }
+        List<MemoryFragment> expanded = new ArrayList<>(pool.coldTier());
+        expanded.addAll(limitHotTier(pool.hotTier(), targetTokens - coldCoverage));
+        return evictionPolicy.rankCandidates(expanded, queryEmbedding);
+    }
+
+    private TieredCandidatePool buildTieredCandidatePool(List<MemoryFragment> candidates) {
+        long now = System.currentTimeMillis();
+        List<MemoryFragment> coldTier = new ArrayList<>();
+        List<MemoryFragment> hotTier = new ArrayList<>();
+        for (MemoryFragment fragment : candidates) {
+            if (now - fragment.getLastAccessTime() <= hotTierRecencyWindowMillis) {
+                hotTier.add(fragment);
+            } else {
+                coldTier.add(fragment);
+            }
+        }
+        Comparator<MemoryFragment> coldComparator = Comparator
+                .comparingLong(MemoryFragment::getLastAccessTime)
+                .thenComparingDouble(MemoryFragment::getImportance);
+        coldTier.sort(coldComparator);
+        if (coldTier.size() > maxColdTierCandidates) {
+            coldTier = new ArrayList<>(coldTier.subList(0, maxColdTierCandidates));
+        }
+        hotTier.sort(Comparator
+                .comparingLong(MemoryFragment::getLastAccessTime)
+                .thenComparingDouble(MemoryFragment::getImportance));
+        return new TieredCandidatePool(List.copyOf(coldTier), List.copyOf(hotTier));
+    }
+
+    private List<MemoryFragment> limitHotTier(List<MemoryFragment> hotTier, long remainingTokens) {
+        int maxCount = Math.min(hotTier.size(), maxColdTierCandidates * hotTierExpansionFactor);
+        List<MemoryFragment> selected = new ArrayList<>();
+        long covered = 0L;
+        for (MemoryFragment fragment : hotTier) {
+            if (selected.size() >= maxCount) {
+                break;
+            }
+            selected.add(fragment);
+            covered += fragment.getTokenCount();
+            if (covered >= remainingTokens && selected.size() >= Math.min(hotTier.size(), hotTierExpansionFactor)) {
+                break;
+            }
+        }
+        return selected;
+    }
+
+    private long coveredTokens(List<SemanticEvictionPolicy.EvictionCandidate> ranked) {
+        long covered = 0L;
+        Set<String> groups = new HashSet<>();
+        for (SemanticEvictionPolicy.EvictionCandidate candidate : ranked) {
+            String groupKey = candidate.reasoningChainId() == null || candidate.reasoningChainId().isBlank()
+                    ? "__self__:" + candidate.fragment().getId()
+                    : candidate.reasoningChainId();
+            if (groups.add(groupKey)) {
+                covered += candidate.groupTokenCount();
+            }
+        }
+        return covered;
+    }
+
     private Map<String, RedundancyStats> computeRedundancyStats(List<MemoryFragment> candidates) {
         if (candidates.isEmpty()) {
             return Map.of();
@@ -919,6 +1020,8 @@ public class HierarchicalMemoryController {
     }
 
     private record RedundancyStats(double redundancyPenalty, double noveltyBonus) {}
+
+    private record TieredCandidatePool(List<MemoryFragment> coldTier, List<MemoryFragment> hotTier) {}
 
     private static final class IncrementalRedundancyState {
         private final List<MemoryFragment> fragments = new ArrayList<>();
