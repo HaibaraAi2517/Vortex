@@ -56,6 +56,8 @@ public class HierarchicalMemoryController {
     private final SemanticTextSplitter splitter;
     private final PriorityBlockingQueue<PinnedFragmentRef> pinExpirations = new PriorityBlockingQueue<>();
     private final ConcurrentMap<String, Long> pinnedFragmentDeadlines = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, NavigableSet<TieredFragmentRef>> hotTierIndex = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, NavigableSet<TieredFragmentRef>> coldTierIndex = new ConcurrentHashMap<>();
     private final AtomicBoolean clearingExpiredPins = new AtomicBoolean(false);
     private final AtomicLong pinnedTokenCount = new AtomicLong(0);
     private final ReentrantLock admissionLock = new ReentrantLock();
@@ -368,6 +370,7 @@ public class HierarchicalMemoryController {
             found.pinForMillis(ttlMillis);
             l1.put(found, false);
             indexPin(found);
+            reindexTierMembership(found);
             persistenceManager.persistAsync(found, "pin-update");
         });
         return fragment;
@@ -382,6 +385,7 @@ public class HierarchicalMemoryController {
             found.unpin();
             l1.put(found, false);
             indexPin(found);
+            reindexTierMembership(found);
             persistenceManager.persistAsync(found, "pin-update");
         });
         return fragment;
@@ -417,6 +421,7 @@ public class HierarchicalMemoryController {
             }
             l1.put(found, false);
             indexPin(found);
+            reindexTierMembership(found);
             persistenceManager.persistAsync(found, "pin-expired");
             cleared++;
         }
@@ -478,6 +483,7 @@ public class HierarchicalMemoryController {
         MemoryFragment refreshed = l1.get(fragment.getId()).orElse(fragment);
         refreshed.clearExpiredPin();
         refreshed.reinforceImportanceOnRecall();
+        reindexTierMembership(refreshed);
         return refreshed;
     }
 
@@ -550,9 +556,10 @@ public class HierarchicalMemoryController {
             if (!ensureCapacityForAdmission(fragment, context)) {
                 return false;
             }
-            l1.put(fragment);
-            indexPin(fragment);
-            return true;
+        l1.put(fragment);
+        indexPin(fragment);
+        reindexTierMembership(fragment);
+        return true;
         } finally {
             admissionLock.unlock();
         }
@@ -697,6 +704,7 @@ public class HierarchicalMemoryController {
             regretTracker.recordEviction(fragment, reason);
             l1.remove(fragment.getId());
             removePinIndex(fragment);
+            removeFromTierIndexes(fragment);
             persistenceManager.persistAsync(fragment, reason);
             released += fragment.getTokenCount();
         }
@@ -715,6 +723,7 @@ public class HierarchicalMemoryController {
                 }
                 l1.put(fragment, false);
                 indexPin(fragment);
+                reindexTierMembership(fragment);
             }
             return fragment.isPinned() ? List.of() : List.of(fragment);
         }
@@ -723,6 +732,7 @@ public class HierarchicalMemoryController {
                     if (fragment.clearExpiredPin()) {
                         l1.put(fragment, false);
                         indexPin(fragment);
+                        reindexTierMembership(fragment);
                     }
                     return fragment;
                 })
@@ -865,10 +875,15 @@ public class HierarchicalMemoryController {
         pinnedTokenCount.set(0L);
         pinnedFragmentDeadlines.clear();
         pinExpirations.clear();
+        hotTierIndex.clear();
+        coldTierIndex.clear();
         if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
             return;
         }
-        caffeineStore.getAllFragments().forEach(this::indexPin);
+        caffeineStore.getAllFragments().forEach(fragment -> {
+            indexPin(fragment);
+            reindexTierMembership(fragment);
+        });
     }
 
     private void indexPin(MemoryFragment fragment) {
@@ -917,19 +932,41 @@ public class HierarchicalMemoryController {
         if (filtered.isEmpty()) {
             return List.of();
         }
-        TieredCandidatePool pool = buildTieredCandidatePool(filtered);
+        TieredCandidatePool pool = resolveTieredCandidatePool(filtered);
         List<MemoryFragment> scoped = pool.coldTier();
         if (scoped.isEmpty()) {
             scoped = pool.hotTier();
         }
         List<SemanticEvictionPolicy.EvictionCandidate> ranked = evictionPolicy.rankCandidates(scoped, queryEmbedding);
         long coldCoverage = coveredTokens(ranked);
-        if (coldCoverage >= targetTokens || pool.hotTier().isEmpty()) {
+        boolean coldOnly = !pool.coldTier().isEmpty() && (coldCoverage >= targetTokens || pool.hotTier().isEmpty());
+        boolean hotOnly = pool.coldTier().isEmpty() && !pool.hotTier().isEmpty();
+        if (coldOnly || hotOnly) {
+            sloTracker.recordTieredSelection(coldOnly, hotOnly, false);
             return ranked;
         }
         List<MemoryFragment> expanded = new ArrayList<>(pool.coldTier());
         expanded.addAll(limitHotTier(pool.hotTier(), targetTokens - coldCoverage));
+        sloTracker.recordTieredSelection(false, false, true);
         return evictionPolicy.rankCandidates(expanded, queryEmbedding);
+    }
+
+    private TieredCandidatePool resolveTieredCandidatePool(List<MemoryFragment> candidates) {
+        if (candidates.isEmpty()) {
+            return new TieredCandidatePool(List.of(), List.of());
+        }
+        String namespace = candidates.getFirst().getNamespace();
+        if (namespace == null || namespace.isBlank()) {
+            return buildTieredCandidatePool(candidates);
+        }
+        Map<String, MemoryFragment> candidateMap = candidates.stream()
+                .collect(Collectors.toMap(MemoryFragment::getId, fragment -> fragment, (left, right) -> left));
+        List<MemoryFragment> coldTier = collectTierMembers(coldTierIndex.get(namespace), candidateMap, maxColdTierCandidates);
+        List<MemoryFragment> hotTier = collectTierMembers(hotTierIndex.get(namespace), candidateMap, Integer.MAX_VALUE);
+        if (coldTier.isEmpty() && hotTier.isEmpty()) {
+            return buildTieredCandidatePool(candidates);
+        }
+        return new TieredCandidatePool(List.copyOf(coldTier), List.copyOf(hotTier));
     }
 
     private TieredCandidatePool buildTieredCandidatePool(List<MemoryFragment> candidates) {
@@ -954,6 +991,63 @@ public class HierarchicalMemoryController {
                 .comparingLong(MemoryFragment::getLastAccessTime)
                 .thenComparingDouble(MemoryFragment::getImportance));
         return new TieredCandidatePool(List.copyOf(coldTier), List.copyOf(hotTier));
+    }
+
+    private List<MemoryFragment> collectTierMembers(
+            NavigableSet<TieredFragmentRef> index,
+            Map<String, MemoryFragment> candidateMap,
+            int limit) {
+        if (index == null || index.isEmpty()) {
+            return List.of();
+        }
+        List<MemoryFragment> selected = new ArrayList<>();
+        for (TieredFragmentRef ref : index) {
+            MemoryFragment fragment = candidateMap.get(ref.fragmentId());
+            if (fragment == null || fragment.isPinned()) {
+                continue;
+            }
+            selected.add(fragment);
+            if (selected.size() >= limit) {
+                break;
+            }
+        }
+        return selected;
+    }
+
+    private void reindexTierMembership(MemoryFragment fragment) {
+        if (fragment == null || fragment.getNamespace() == null || fragment.getNamespace().isBlank()) {
+            return;
+        }
+        removeFromTierIndexes(fragment);
+        if (fragment.isPinned()) {
+            return;
+        }
+        TieredFragmentRef ref = TieredFragmentRef.of(fragment);
+        if (isHot(fragment)) {
+            hotTierIndex.computeIfAbsent(fragment.getNamespace(), ignored -> new TreeSet<>()).add(ref);
+        } else {
+            coldTierIndex.computeIfAbsent(fragment.getNamespace(), ignored -> new TreeSet<>()).add(ref);
+        }
+    }
+
+    private void removeFromTierIndexes(MemoryFragment fragment) {
+        if (fragment == null || fragment.getNamespace() == null || fragment.getNamespace().isBlank()) {
+            return;
+        }
+        TieredFragmentRef ref = TieredFragmentRef.of(fragment);
+        removeTierRef(hotTierIndex.get(fragment.getNamespace()), ref);
+        removeTierRef(coldTierIndex.get(fragment.getNamespace()), ref);
+    }
+
+    private void removeTierRef(NavigableSet<TieredFragmentRef> index, TieredFragmentRef ref) {
+        if (index == null) {
+            return;
+        }
+        index.remove(ref);
+    }
+
+    private boolean isHot(MemoryFragment fragment) {
+        return System.currentTimeMillis() - fragment.getLastAccessTime() <= hotTierRecencyWindowMillis;
     }
 
     private List<MemoryFragment> limitHotTier(List<MemoryFragment> hotTier, long remainingTokens) {
@@ -1022,6 +1116,26 @@ public class HierarchicalMemoryController {
     private record RedundancyStats(double redundancyPenalty, double noveltyBonus) {}
 
     private record TieredCandidatePool(List<MemoryFragment> coldTier, List<MemoryFragment> hotTier) {}
+
+    private record TieredFragmentRef(String fragmentId, long lastAccessTime, double importance)
+            implements Comparable<TieredFragmentRef> {
+        private static TieredFragmentRef of(MemoryFragment fragment) {
+            return new TieredFragmentRef(fragment.getId(), fragment.getLastAccessTime(), fragment.getImportance());
+        }
+
+        @Override
+        public int compareTo(TieredFragmentRef other) {
+            int byAccess = Long.compare(this.lastAccessTime, other.lastAccessTime);
+            if (byAccess != 0) {
+                return byAccess;
+            }
+            int byImportance = Double.compare(this.importance, other.importance);
+            if (byImportance != 0) {
+                return byImportance;
+            }
+            return this.fragmentId.compareTo(other.fragmentId);
+        }
+    }
 
     private static final class IncrementalRedundancyState {
         private final List<MemoryFragment> fragments = new ArrayList<>();

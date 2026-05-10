@@ -256,6 +256,7 @@ class HierarchicalMemoryControllerTest {
         assertThat(l1.peek("cold-high")).isPresent();
         assertThat(l1.peek("hot-low")).isPresent();
         assertThat(l1.peek("hot-high")).isPresent();
+        assertThat(hmc.sloSnapshot().tieredColdOnlySelections()).isGreaterThan(0);
     }
 
     @Test
@@ -758,6 +759,59 @@ class HierarchicalMemoryControllerTest {
         assertThat(l1.peek("cold-victim")).isEmpty();
         assertThat(l1.peek("hot-victim")).isPresent();
         assertThat(l1.peek("incoming-tiered")).isPresent();
+    }
+
+    @Test
+    void tieredExpansionMetricIncrementsWhenColdTierCannotCoverGap() {
+        CaffeineHotStore l1 = new CaffeineHotStore(16);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1,
+                l2,
+                l3,
+                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
+                new NamespaceQuotaManager(1.0, 1.0, 1),
+                TEST_WEIGHT_LEARNER,
+                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+                TEST_SLO_TRACKER,
+                persistenceManager(l2, l3),
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding,
+                emptyProvider(),
+                0.95,
+                30_000L,
+                60_000L,
+                1,
+                2
+        );
+
+        long now = System.currentTimeMillis();
+        MemoryFragment coldVictim = fragment("cold-expand", "ns", "cold", List.of(), 4);
+        coldVictim.setTokenCount(2);
+        coldVictim.setImportance(0.0);
+        coldVictim.setLastAccessTime(now - 600_000L);
+        MemoryFragment hotVictim = fragment("hot-expand", "ns", "hot", List.of(), 4);
+        hotVictim.setTokenCount(6);
+        hotVictim.setImportance(0.0);
+        hotVictim.setLastAccessTime(now);
+        MemoryFragment pinned = fragment("pinned-expand", "ns", "pin", List.of(), 4);
+        pinned.setTokenCount(8);
+        pinned.pinForMillis(60_000L);
+        MemoryFragment incoming = fragment("incoming-expand", "ns", "incoming", List.of(), 4);
+        incoming.setTokenCount(6);
+        incoming.setImportance(0.9);
+
+        l1.put(coldVictim, false);
+        l1.put(hotVictim, false);
+        hmc.storeFragment(pinned);
+        hmc.storeFragment(incoming);
+
+        assertThat(l1.peek("incoming-expand")).isPresent();
+        assertThat(hmc.sloSnapshot().tieredExpandedSelections()).isGreaterThan(0);
     }
 
     @Test

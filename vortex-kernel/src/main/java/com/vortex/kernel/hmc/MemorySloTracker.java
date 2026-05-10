@@ -21,6 +21,9 @@ public class MemorySloTracker {
     private final AtomicLong recoveryFailureCount = new AtomicLong();
     private final AtomicLong storeLatencyNanosMax = new AtomicLong();
     private final AtomicLong recallLatencyNanosMax = new AtomicLong();
+    private final AtomicLong tieredColdOnlySelections = new AtomicLong();
+    private final AtomicLong tieredHotOnlySelections = new AtomicLong();
+    private final AtomicLong tieredExpandedSelections = new AtomicLong();
     private final AtomicReference<Double> regretRate = new AtomicReference<>(0.0);
     private final AtomicReference<Double> shadowLift = new AtomicReference<>(0.0);
     private final AtomicReference<Double> baselineLift = new AtomicReference<>(0.0);
@@ -40,6 +43,12 @@ public class MemorySloTracker {
         Gauge.builder("vortex.hmc.slo.store.latency.max.ms", storeLatencyNanosMax, nanos -> nanos.get() / 1_000_000.0)
                 .register(meterRegistry);
         Gauge.builder("vortex.hmc.slo.recall.latency.max.ms", recallLatencyNanosMax, nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.eviction.tier.cold.only.count", tieredColdOnlySelections, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.eviction.tier.hot.only.count", tieredHotOnlySelections, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.eviction.tier.expansion.count", tieredExpandedSelections, AtomicLong::get)
                 .register(meterRegistry);
         Gauge.builder("vortex.hmc.slo.eviction.regret.rate", regretRate, AtomicReference::get)
                 .register(meterRegistry);
@@ -88,6 +97,18 @@ public class MemorySloTracker {
         baselineLift.set(currentBaselineLift);
     }
 
+    public void recordTieredSelection(boolean coldOnly, boolean hotOnly, boolean expanded) {
+        if (coldOnly) {
+            tieredColdOnlySelections.incrementAndGet();
+        }
+        if (hotOnly) {
+            tieredHotOnlySelections.incrementAndGet();
+        }
+        if (expanded) {
+            tieredExpandedSelections.incrementAndGet();
+        }
+    }
+
     public SloSnapshot snapshot() {
         return new SloSnapshot(
                 storeCount.get(),
@@ -99,7 +120,10 @@ public class MemorySloTracker {
                 namespaceIsolationViolations.get(),
                 recoverySuccessRate(),
                 storeLatencyNanosMax.get() / 1_000_000.0,
-                recallLatencyNanosMax.get() / 1_000_000.0
+                recallLatencyNanosMax.get() / 1_000_000.0,
+                tieredColdOnlySelections.get(),
+                tieredHotOnlySelections.get(),
+                tieredExpandedSelections.get()
         );
     }
 
@@ -123,6 +147,9 @@ public class MemorySloTracker {
             long namespaceIsolationViolations,
             double recoverySuccessRate,
             double storeLatencyMaxMs,
-            double recallLatencyMaxMs) {
+            double recallLatencyMaxMs,
+            long tieredColdOnlySelections,
+            long tieredHotOnlySelections,
+            long tieredExpandedSelections) {
     }
 }
