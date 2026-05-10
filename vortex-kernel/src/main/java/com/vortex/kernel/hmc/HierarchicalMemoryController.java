@@ -20,9 +20,11 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -55,6 +57,8 @@ public class HierarchicalMemoryController {
     private final PriorityBlockingQueue<PinnedFragmentRef> pinExpirations = new PriorityBlockingQueue<>();
     private final ConcurrentMap<String, Long> pinnedFragmentDeadlines = new ConcurrentHashMap<>();
     private final AtomicBoolean clearingExpiredPins = new AtomicBoolean(false);
+    private final AtomicLong pinnedTokenCount = new AtomicLong(0);
+    private final ReentrantLock admissionLock = new ReentrantLock();
 
     /** BGE-Small: always available, used for L1 fast scoring. */
     private final EmbeddingService l1EmbeddingService;
@@ -195,10 +199,7 @@ public class HierarchicalMemoryController {
         if (l2EmbeddingService != null && fragment.getL2Embedding() == null) {
             fragment.setL2Embedding(l2EmbeddingService.embed(fragment.getContent()));
         }
-        enforceQuotaBeforeInsert(fragment);
-        enforceGlobalCapacityBeforeInsert(fragment);
-        maybeEvict(fragment.getNamespace(), fragment.getEmbedding());
-        tryAdmitToL1(fragment, "initial-store");
+        admitToL1(fragment, "initial-store");
         // Async: persist to L2 and L3
         persistenceManager.persistAsync(fragment, "initial-store");
         sloTracker.recordStoreLatency(System.nanoTime() - startedAt);
@@ -276,10 +277,8 @@ public class HierarchicalMemoryController {
                     candidate.setEmbedding(l1EmbeddingService.embed(candidate.getContent()));
                 }
                 candidate.reinforceImportanceOnRecall();
-                enforceGlobalCapacityBeforeInsert(candidate);
-                maybeEvict(candidate.getNamespace(), candidate.getEmbedding());
                 // Prefetch back to L1 for future calls
-                tryAdmitToL1(candidate, "recall-reinforcement");
+                admitToL1(candidate, "recall-reinforcement");
                 persistenceManager.persistAsync(candidate, "recall-reinforcement");
                 regretTracker.recordRecall(candidate, "L2");
                 redundancyState.add(candidate);
@@ -525,88 +524,88 @@ public class HierarchicalMemoryController {
         }
     }
 
-    private void enforceGlobalCapacityBeforeInsert(MemoryFragment incomingFragment) {
-        clearExpiredPins();
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
-            return;
+    private boolean admitToL1(MemoryFragment fragment, String context) {
+        admissionLock.lock();
+        try {
+            enforceQuotaBeforeInsert(fragment);
+            maybeEvict(fragment.getNamespace(), fragment.getEmbedding());
+            if (!ensureCapacityForAdmission(fragment, context)) {
+                return false;
+            }
+            l1.put(fragment);
+            indexPin(fragment);
+            return true;
+        } finally {
+            admissionLock.unlock();
         }
-        long overflow = (caffeineStore.currentTokenCount() + incomingFragment.getTokenCount())
-                - l1.maxTokenCapacity();
-        if (overflow <= 0) {
-            return;
+    }
+
+    private boolean ensureCapacityForAdmission(MemoryFragment incomingFragment, String context) {
+        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
+            return true;
+        }
+        long capacity = l1.maxTokenCapacity();
+        long pinnedTokens = pinnedTokenCount.get();
+        long requiredTokens = incomingFragment.getTokenCount();
+        if (pinnedTokens + requiredTokens > capacity) {
+            log.warn(
+                    "Skipped L1 admission due to insufficient effective capacity fragmentId={} namespace={} context={} pinnedTokens={} requiredTokens={} capacity={}",
+                    incomingFragment.getId(),
+                    incomingFragment.getNamespace(),
+                    context,
+                    pinnedTokens,
+                    requiredTokens,
+                    capacity);
+            return false;
         }
 
+        long gap = (caffeineStore.currentTokenCount() + requiredTokens) - capacity;
+        if (gap <= 0) {
+            return true;
+        }
+
+        long released = reclaimAdmissionGap(incomingFragment, gap);
+        if (released < gap) {
+            log.warn(
+                    "Skipped L1 admission after unsuccessful victim search fragmentId={} namespace={} context={} gap={} released={}",
+                    incomingFragment.getId(),
+                    incomingFragment.getNamespace(),
+                    context,
+                    gap,
+                    released);
+            return false;
+        }
+        return true;
+    }
+
+    private long reclaimAdmissionGap(MemoryFragment incomingFragment, long gap) {
         List<SemanticEvictionPolicy.EvictionCandidate> localCandidates = evictionPolicy.rankCandidates(
                 l1.getAll(incomingFragment.getNamespace()),
                 incomingFragment.getEmbedding());
         long released = evictCandidatesUntil(
                 localCandidates,
                 incomingFragment.getNamespace(),
-                overflow,
+                gap,
                 "capacity-self-reclaim");
-        if (released >= overflow) {
-            return;
+        if (released >= gap) {
+            return released;
         }
 
-        long remaining = overflow - released;
+        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
+            return released;
+        }
+        long remaining = gap - released;
         List<MemoryFragment> allFragments = new ArrayList<>(caffeineStore.getAllFragments());
         List<SemanticEvictionPolicy.EvictionCandidate> globalCandidates = evictionPolicy.rankCandidates(
                 allFragments.stream()
                         .filter(fragment -> !Objects.equals(fragment.getNamespace(), incomingFragment.getNamespace()))
                         .toList(),
                 incomingFragment.getEmbedding());
-        evictCandidatesUntil(
+        return released + evictCandidatesUntil(
                 globalCandidates,
                 incomingFragment.getNamespace(),
                 remaining,
                 "capacity-global-reclaim");
-    }
-
-    private void enforceGlobalCapacityAfterInsert(MemoryFragment anchorFragment) {
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
-            return;
-        }
-        long overflow = caffeineStore.currentTokenCount() - l1.maxTokenCapacity();
-        if (overflow <= 0) {
-            return;
-        }
-        List<SemanticEvictionPolicy.EvictionCandidate> candidates = evictionPolicy.rankCandidates(
-                caffeineStore.getAllFragments().stream()
-                        .filter(fragment -> !Objects.equals(fragment.getId(), anchorFragment.getId()))
-                        .toList(),
-                anchorFragment.getEmbedding());
-        long released = evictCandidatesUntil(
-                candidates,
-                anchorFragment.getNamespace(),
-                overflow,
-                "capacity-post-insert-reclaim");
-        if (released < overflow) {
-            l1.remove(anchorFragment.getId());
-            pinnedFragmentDeadlines.remove(anchorFragment.getId());
-            log.warn(
-                    "Rejected L1 admission after insert due to saturated pinned working set fragmentId={} namespace={} overflow={} released={}",
-                    anchorFragment.getId(),
-                    anchorFragment.getNamespace(),
-                    overflow,
-                    released);
-        }
-    }
-
-    private void tryAdmitToL1(MemoryFragment fragment, String context) {
-        long projectedTokens = l1.currentTokenCount() + fragment.getTokenCount();
-        if (projectedTokens > l1.maxTokenCapacity()) {
-            log.warn(
-                    "Skipped L1 admission due to saturated pinned working set fragmentId={} namespace={} context={} projectedTokens={} capacity={}",
-                    fragment.getId(),
-                    fragment.getNamespace(),
-                    context,
-                    projectedTokens,
-                    l1.maxTokenCapacity());
-            return;
-        }
-        l1.put(fragment);
-        indexPin(fragment);
-        enforceGlobalCapacityAfterInsert(fragment);
     }
 
     private long evictCandidatesUntil(
@@ -677,7 +676,7 @@ public class HierarchicalMemoryController {
             evictionDecisionLogger.logSemanticDecision(scored, triggerNamespace, targetTokens);
             regretTracker.recordEviction(fragment, reason);
             l1.remove(fragment.getId());
-            pinnedFragmentDeadlines.remove(fragment.getId());
+            removePinIndex(fragment);
             persistenceManager.persistAsync(fragment, reason);
             released += fragment.getTokenCount();
         }
@@ -843,6 +842,7 @@ public class HierarchicalMemoryController {
     }
 
     private void rebuildPinIndex() {
+        pinnedTokenCount.set(0L);
         pinnedFragmentDeadlines.clear();
         pinExpirations.clear();
         if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
@@ -852,19 +852,30 @@ public class HierarchicalMemoryController {
     }
 
     private void indexPin(MemoryFragment fragment) {
+        Long previousDeadline = pinnedFragmentDeadlines.get(fragment.getId());
         Long pinnedUntil = fragment.getPinnedUntil();
         if (pinnedUntil == null) {
-            pinnedFragmentDeadlines.remove(fragment.getId());
+            removePinIndex(fragment);
             return;
         }
         if (pinnedUntil <= System.currentTimeMillis()) {
             fragment.clearExpiredPin();
-            pinnedFragmentDeadlines.remove(fragment.getId());
+            removePinIndex(fragment);
             return;
+        }
+        if (previousDeadline == null) {
+            pinnedTokenCount.addAndGet(fragment.getTokenCount());
         }
         pinnedFragmentDeadlines.put(fragment.getId(), pinnedUntil);
         pinExpirations.offer(new PinnedFragmentRef(fragment.getId(), pinnedUntil));
         trimStalePinEntries(fragment.getId(), pinnedUntil);
+    }
+
+    private void removePinIndex(MemoryFragment fragment) {
+        Long removed = pinnedFragmentDeadlines.remove(fragment.getId());
+        if (removed != null) {
+            pinnedTokenCount.addAndGet(-fragment.getTokenCount());
+        }
     }
 
     private Map<String, Long> computeNamespaceTokenUsage(Collection<MemoryFragment> fragments) {

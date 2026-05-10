@@ -604,6 +604,93 @@ class HierarchicalMemoryControllerTest {
     }
 
     @Test
+    void nonPinnedVictimIsEvictedToAdmitHigherValueFragmentWithinEffectiveCapacity() {
+        CaffeineHotStore l1 = new CaffeineHotStore(12);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1,
+                l2,
+                l3,
+                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
+                new NamespaceQuotaManager(1.0, 1.0, 1),
+                TEST_WEIGHT_LEARNER,
+                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+                TEST_SLO_TRACKER,
+                persistenceManager(l2, l3),
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding,
+                emptyProvider(),
+                0.95
+        );
+
+        MemoryFragment pinned = fragment("pinned-core", "ns", "pin-a", List.of(), 4);
+        pinned.setTokenCount(4);
+        pinned.pinForMillis(60_000L);
+        MemoryFragment stale = fragment("stale", "ns", "stale", List.of(), 4);
+        stale.setTokenCount(8);
+        stale.setImportance(0.0);
+        MemoryFragment incoming = fragment("incoming", "ns", "incoming", List.of(), 4);
+        incoming.setTokenCount(8);
+        incoming.setImportance(0.9);
+
+        hmc.storeFragment(pinned);
+        hmc.storeFragment(stale);
+        hmc.storeFragment(incoming);
+
+        assertThat(l1.peek("pinned-core")).isPresent();
+        assertThat(l1.peek("stale")).isEmpty();
+        assertThat(l1.peek("incoming")).isPresent();
+        assertThat(l3.retrieveFragment("stale")).isPresent();
+    }
+
+    @Test
+    void admissionIsRejectedWhenPinnedTokensLeaveNoEffectiveCapacity() {
+        CaffeineHotStore l1 = new CaffeineHotStore(12);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1,
+                l2,
+                l3,
+                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
+                new NamespaceQuotaManager(1.0, 1.0, 1),
+                TEST_WEIGHT_LEARNER,
+                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+                TEST_SLO_TRACKER,
+                persistenceManager(l2, l3),
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding,
+                emptyProvider(),
+                0.95
+        );
+
+        MemoryFragment pinnedA = fragment("pinned-a", "ns", "aaaa", List.of(), 4);
+        pinnedA.setTokenCount(6);
+        pinnedA.pinForMillis(60_000L);
+        MemoryFragment pinnedB = fragment("pinned-b", "ns", "bbbb", List.of(), 4);
+        pinnedB.setTokenCount(6);
+        pinnedB.pinForMillis(60_000L);
+        MemoryFragment incoming = fragment("incoming-reject", "ns", "ccc", List.of(), 4);
+        incoming.setTokenCount(2);
+
+        hmc.storeFragment(pinnedA);
+        hmc.storeFragment(pinnedB);
+        hmc.storeFragment(incoming);
+
+        assertThat(l1.peek("incoming-reject")).isEmpty();
+        assertThat(l1.peek("pinned-a")).isPresent();
+        assertThat(l1.peek("pinned-b")).isPresent();
+        assertThat(l1.currentTokenCount()).isEqualTo(12);
+    }
+
+    @Test
     void recallFromL2UsesIncrementalRedundancyUpdatesInsteadOfFullRecomputePerHit() {
         CaffeineHotStore l1 = new CaffeineHotStore(512);
         CountingL2WarmStore l2 = new CountingL2WarmStore(4);
