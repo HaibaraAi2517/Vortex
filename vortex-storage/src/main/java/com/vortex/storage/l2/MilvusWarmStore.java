@@ -56,14 +56,17 @@ public class MilvusWarmStore implements L2WarmStore {
     private final MilvusServiceClient client;
     private final int embeddingDim;
     private final boolean dropCollectionOnStartup;
+    private final String dropCollectionConfirmToken;
 
     public MilvusWarmStore(
             @Value("${vortex.storage.l2.milvus.host:localhost}") String host,
             @Value("${vortex.storage.l2.milvus.port:19530}") int port,
             @Value("${vortex.storage.l2.embedding-dim:512}") int embeddingDim,
-            @Value("${vortex.storage.l2.milvus.drop-collection-on-startup:false}") boolean dropCollectionOnStartup) {
+            @Value("${vortex.storage.l2.milvus.drop-collection-on-startup:false}") boolean dropCollectionOnStartup,
+            @Value("${vortex.storage.l2.milvus.drop-collection-confirm-token:}") String dropCollectionConfirmToken) {
         this.embeddingDim = embeddingDim;
         this.dropCollectionOnStartup = dropCollectionOnStartup;
+        this.dropCollectionConfirmToken = dropCollectionConfirmToken;
         this.client = new MilvusServiceClient(
                 ConnectParam.newBuilder().withHost(host).withPort(port).build());
     }
@@ -75,6 +78,11 @@ public class MilvusWarmStore implements L2WarmStore {
         boolean exists = Boolean.TRUE.equals(hasCollection.getData());
 
         if (exists && dropCollectionOnStartup) {
+            if (!"I-KNOW-WHAT-I-AM-DOING".equals(dropCollectionConfirmToken)) {
+                log.error("drop-collection-on-startup=true but confirm token missing or invalid; refusing to drop '{}'", COLLECTION);
+                throw new IllegalStateException(
+                        "Set MILVUS_DROP_CONFIRM_TOKEN=I-KNOW-WHAT-I-AM-DOING to confirm collection drop");
+            }
             log.warn("drop-collection-on-startup=true: dropping Milvus collection '{}' for dim migration", COLLECTION);
             client.dropCollection(
                     DropCollectionParam.newBuilder()

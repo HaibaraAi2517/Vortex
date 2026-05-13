@@ -30,6 +30,7 @@ vortex:
         # Set to true ONCE when changing embedding-dim (e.g. 512→1024 migration).
         # Drops and recreates the Milvus collection. Reset to false after first startup.
         drop-collection-on-startup: ${MILVUS_DROP_COLLECTION:false}
+        drop-collection-confirm-token: ${MILVUS_DROP_CONFIRM_TOKEN:}
       # Safe local default is 512 (BGE-Small). Switch to 1024 only when
       # cloud embedding is enabled and the Milvus collection has been migrated.
       embedding-dim: ${VORTEX_L2_EMBEDDING_DIM:512}
