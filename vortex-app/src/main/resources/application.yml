@@ -13,7 +13,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: always
@@ -42,12 +42,26 @@ vortex:
 
   # ---- Kernel config ----
   kernel:
+    slo:
+      min-eviction-log-coverage: ${VORTEX_SLO_MIN_EVICTION_LOG_COVERAGE:1.0}
+      max-eviction-regret-rate: ${VORTEX_SLO_MAX_EVICTION_REGRET_RATE:0.05}
+      max-namespace-isolation-violations: ${VORTEX_SLO_MAX_NAMESPACE_ISOLATION_VIOLATIONS:0}
+      min-recovery-success-rate: ${VORTEX_SLO_MIN_RECOVERY_SUCCESS_RATE:1.0}
+      max-store-latency-p99-ms: ${VORTEX_SLO_MAX_STORE_LATENCY_P99_MS:10.0}
+      max-recall-latency-p99-ms: ${VORTEX_SLO_MAX_RECALL_LATENCY_P99_MS:10.0}
+      min-shadow-relative-lift: ${VORTEX_SLO_MIN_SHADOW_RELATIVE_LIFT:-1.0}
+      min-baseline-relative-lift: ${VORTEX_SLO_MIN_BASELINE_RELATIVE_LIFT:0.20}
+      min-baseline-sustained-ratio: ${VORTEX_SLO_MIN_BASELINE_SUSTAINED_RATIO:0.90}
     eviction:
       alpha: 0.3
       beta: 0.5
       gamma: 0.2
       threshold: 0.85
       regret-window-ms: ${VORTEX_EVICTION_REGRET_WINDOW_MS:3600000}
+    learning:
+      rate: ${VORTEX_LEARNING_RATE:0.08}
+      min-samples-before-promotion: ${VORTEX_MIN_SAMPLES_BEFORE_PROMOTION:20}
+      shadow-persistence-path: ${VORTEX_SHADOW_PERSISTENCE_PATH:${java.io.tmpdir}/vortex-hmc-shadow-eval.json}
     persistence:
       dlq:
         path: ${VORTEX_PERSISTENCE_DLQ_PATH:${java.io.tmpdir}/vortex-hmc-dlq.jsonl}
@@ -60,6 +74,25 @@ vortex:
       cleanup-interval-ms: ${VORTEX_PIN_CLEANUP_INTERVAL_MS:30000}
     splitter:
       max-tokens-per-chunk: 512
+    snapshot:
+      wal:
+        dir: ${VORTEX_WAL_DIR:${java.io.tmpdir}/vortex-wal}
+      checkpoint:
+        format: kryo
+        compression: gzip
+        max-deltas-before-full: 10
+        rotation:
+          max-per-task: 20
+          max-age-days: 7
+          max-hourly-snapshots: 48
+      scheduler:
+        enabled: ${VORTEX_SCHEDULER_ENABLED:true}
+        max-actions-between: 50
+        max-millis-between: 60000
+        initial-delay-ms: 30000
+        fixed-delay-ms: 10000
+      branch:
+        max-branches-per-task: 10
     embedding:
       bge:
         # Local directory containing model.onnx and tokenizer.json
@@ -70,6 +103,28 @@ vortex:
         enabled: ${CLOUD_EMBEDDING_ENABLED:false}
         api-key: ${DEEPSEEK_API_KEY:}
         provider: deepseek
+    paging:
+      enabled: ${VORTEX_PAGING_ENABLED:true}
+      page-size: 10
+      prefetch:
+        dag-topology:
+          enabled: true
+          max-depth: 2
+          max-pages: 3
+        semantic-neighborhood:
+          enabled: true
+          max-pages: 3
+          centroid-similarity-threshold: 0.7
+        branch-speculative:
+          enabled: true
+          max-pages-per-branch: 1
+      eviction:
+        recency-weight: 0.25
+        similarity-weight: 0.25
+        dag-distance-weight: 0.25
+        semantic-distance-weight: 0.25
+      initial-build:
+        max-fragments: 1000
 
 logging:
   level:

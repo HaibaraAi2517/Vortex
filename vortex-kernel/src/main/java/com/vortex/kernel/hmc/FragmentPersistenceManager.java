@@ -24,7 +24,7 @@ public class FragmentPersistenceManager {
     private final FileBackedProcessedTaskStore processedTaskStore;
     private final MemorySloTracker sloTracker;
     private final boolean replayOnStartup;
-    private final Executor asyncExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    private final Executor asyncExecutor;
 
     public FragmentPersistenceManager(
             L2WarmStore l2,
@@ -33,12 +33,25 @@ public class FragmentPersistenceManager {
             FileBackedProcessedTaskStore processedTaskStore,
             MemorySloTracker sloTracker,
             @Value("${vortex.kernel.persistence.replay-on-startup:true}") boolean replayOnStartup) {
+        this(l2, l3, deadLetterQueue, processedTaskStore, sloTracker, replayOnStartup,
+                Executors.newVirtualThreadPerTaskExecutor());
+    }
+
+    FragmentPersistenceManager(
+            L2WarmStore l2,
+            L3ColdStore l3,
+            FileBackedDeadLetterQueue deadLetterQueue,
+            FileBackedProcessedTaskStore processedTaskStore,
+            MemorySloTracker sloTracker,
+            boolean replayOnStartup,
+            Executor asyncExecutor) {
         this.l2 = l2;
         this.l3 = l3;
         this.deadLetterQueue = deadLetterQueue;
         this.processedTaskStore = processedTaskStore;
         this.sloTracker = sloTracker;
         this.replayOnStartup = replayOnStartup;
+        this.asyncExecutor = asyncExecutor;
     }
 
     @PostConstruct

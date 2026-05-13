@@ -1,11 +1,13 @@
 package com.vortex.app.controller;
 
-import com.vortex.common.model.TaskState;
+import com.vortex.common.model.*;
 import com.vortex.kernel.snapshot.SnapshotService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -15,22 +17,18 @@ public class TaskController {
 
     private final SnapshotService snapshotService;
 
-    /**
-     * Create a new task.
-     *
-     * POST /api/v1/tasks
-     * { "description": "...", "namespace": "session-abc" }
-     */
+    // ---- Task Lifecycle ----
+
     @PostMapping
     public ResponseEntity<TaskState> createTask(@RequestBody CreateTaskRequest req) {
         return ResponseEntity.ok(snapshotService.createTask(req.description(), req.namespace()));
     }
 
-    /**
-     * Get current task state.
-     *
-     * GET /api/v1/tasks/{taskId}
-     */
+    @GetMapping
+    public ResponseEntity<List<TaskState>> listTasks() {
+        return ResponseEntity.ok(snapshotService.listActiveTasks());
+    }
+
     @GetMapping("/{taskId}")
     public ResponseEntity<TaskState> getTask(@PathVariable String taskId) {
         return snapshotService.getTask(taskId)
@@ -38,54 +36,59 @@ public class TaskController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    /**
-     * Append a thought/action node to the task.
-     *
-     * POST /api/v1/tasks/{taskId}/nodes
-     * { "type": "THOUGHT", "content": "..." }
-     */
+    @PostMapping("/{taskId}/complete")
+    public ResponseEntity<Map<String, String>> completeTask(@PathVariable String taskId) {
+        snapshotService.completeTask(taskId);
+        return ResponseEntity.ok(Map.of("taskId", taskId, "status", "COMPLETED"));
+    }
+
+    // ---- DAG Node Operations ----
+
     @PostMapping("/{taskId}/nodes")
-    public ResponseEntity<Map<String, String>> appendNode(
+    public ResponseEntity<DagNode> appendNode(
             @PathVariable String taskId,
             @RequestBody AppendNodeRequest req) {
-        snapshotService.appendNode(taskId, req.type(), req.content());
-        return ResponseEntity.ok(Map.of("taskId", taskId, "status", "node appended"));
+        if (req.targetNodeId() != null) {
+            DagEdge.EdgeType edgeType = req.edgeType() != null
+                    ? DagEdge.EdgeType.valueOf(req.edgeType().toUpperCase())
+                    : DagEdge.EdgeType.CONTROL_DEP;
+            return ResponseEntity.ok(snapshotService.appendNodeWithTarget(
+                    taskId, req.type(), req.content(), req.targetNodeId(), edgeType));
+        }
+        return ResponseEntity.ok(snapshotService.appendNode(taskId, req.type(), req.content()));
     }
 
-    /**
-     * Complete the current node with a result.
-     *
-     * POST /api/v1/tasks/{taskId}/nodes/complete
-     * { "result": "..." }
-     */
     @PostMapping("/{taskId}/nodes/complete")
-    public ResponseEntity<Map<String, String>> completeNode(
+    public ResponseEntity<DagNode> completeNode(
             @PathVariable String taskId,
-            @RequestBody Map<String, String> body) {
-        snapshotService.completeNode(taskId, body.get("result"));
-        return ResponseEntity.ok(Map.of("taskId", taskId, "status", "node completed"));
+            @RequestBody CompleteNodeRequest req) {
+        return ResponseEntity.ok(snapshotService.completeNode(taskId, req.nodeId(), req.result()));
     }
 
-    /**
-     * Create a checkpoint for the task.
-     *
-     * POST /api/v1/tasks/{taskId}/checkpoint
-     */
+    @PostMapping("/{taskId}/nodes/edge")
+    public ResponseEntity<DagEdge> addEdge(
+            @PathVariable String taskId,
+            @RequestBody AddEdgeRequest req) {
+        DagEdge.EdgeType edgeType = req.dependencyType() != null
+                ? DagEdge.EdgeType.valueOf(req.dependencyType().toUpperCase())
+                : DagEdge.EdgeType.CONTROL_DEP;
+        return ResponseEntity.ok(snapshotService.addEdge(
+                taskId, req.sourceNodeId(), req.targetNodeId(), edgeType, req.condition()));
+    }
+
+    // ---- Checkpoint & Recovery ----
+
     @PostMapping("/{taskId}/checkpoint")
     public ResponseEntity<Map<String, String>> checkpoint(@PathVariable String taskId) {
         String checkpointId = snapshotService.checkpoint(taskId);
-        return ResponseEntity.ok(Map.of(
-                "taskId", taskId,
-                "checkpointId", checkpointId
-        ));
+        return ResponseEntity.ok(Map.of("taskId", taskId, "checkpointId", checkpointId));
     }
 
-    /**
-     * Recover a task from a checkpoint.
-     *
-     * POST /api/v1/tasks/{taskId}/recover
-     * { "checkpointId": "..." }   (optional — omit to use latest)
-     */
+    @GetMapping("/{taskId}/checkpoints")
+    public ResponseEntity<List<CheckpointMetadata>> listCheckpoints(@PathVariable String taskId) {
+        return ResponseEntity.ok(snapshotService.listCheckpoints(taskId));
+    }
+
     @PostMapping("/{taskId}/recover")
     public ResponseEntity<TaskState> recover(
             @PathVariable String taskId,
@@ -94,17 +97,61 @@ public class TaskController {
         return ResponseEntity.ok(snapshotService.recover(taskId, checkpointId));
     }
 
-    /**
-     * Mark a task as completed.
-     *
-     * POST /api/v1/tasks/{taskId}/complete
-     */
-    @PostMapping("/{taskId}/complete")
-    public ResponseEntity<Map<String, String>> completeTask(@PathVariable String taskId) {
-        snapshotService.completeTask(taskId);
-        return ResponseEntity.ok(Map.of("taskId", taskId, "status", "COMPLETED"));
+    // ---- Branching ----
+
+    @GetMapping("/{taskId}/branches")
+    public ResponseEntity<List<TaskBranch>> listBranches(@PathVariable String taskId) {
+        return ResponseEntity.ok(snapshotService.listBranches(taskId));
     }
 
+    @PostMapping("/{taskId}/branch")
+    public ResponseEntity<TaskBranch> createBranch(
+            @PathVariable String taskId,
+            @RequestBody CreateBranchRequest req) {
+        return ResponseEntity.ok(snapshotService.createBranch(taskId, req.branchName(), req.sourceNodeId()));
+    }
+
+    @PostMapping("/{taskId}/merge")
+    public ResponseEntity<TaskBranch> mergeBranch(
+            @PathVariable String taskId,
+            @RequestBody MergeBranchRequest req) {
+        return ResponseEntity.ok(snapshotService.mergeBranch(
+                taskId, req.sourceBranchId(), req.targetBranchId()));
+    }
+
+    // ---- DAG Visualization ----
+
+    @GetMapping(value = "/{taskId}/dag", produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<String> exportDag(
+            @PathVariable String taskId,
+            @RequestParam(required = false) String branchId) {
+        String dot = branchId != null
+                ? snapshotService.exportDag(taskId, branchId)
+                : snapshotService.exportDag(taskId);
+        return ResponseEntity.ok(dot);
+    }
+
+    // ---- Request DTOs ----
+
     public record CreateTaskRequest(String description, String namespace) {}
-    public record AppendNodeRequest(String type, String content) {}
+
+    public record AppendNodeRequest(
+            String type,
+            String content,
+            /** Optional: create edge to this existing node. */
+            String targetNodeId,
+            /** Optional: edge type (CONTROL_DEP, DATA_DEP, BRANCH). Defaults to CONTROL_DEP. */
+            String edgeType) {}
+
+    public record CompleteNodeRequest(String nodeId, String result) {}
+
+    public record AddEdgeRequest(
+            String sourceNodeId,
+            String targetNodeId,
+            String dependencyType,
+            String condition) {}
+
+    public record CreateBranchRequest(String branchName, String sourceNodeId) {}
+
+    public record MergeBranchRequest(String sourceBranchId, String targetBranchId) {}
 }

@@ -1,11 +1,14 @@
 package com.vortex.storage.l3;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vortex.common.model.CheckpointMetadata;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.model.TaskState;
+import com.vortex.common.serialization.JacksonCompatibilityBridge;
+import com.vortex.common.serialization.KryoSerializer;
 import com.vortex.storage.api.L3ColdStore;
 import io.minio.*;
-import io.minio.errors.MinioException;
+import io.minio.messages.Item;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -15,15 +18,15 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * L3 Cold Store backed by MinIO (S3-compatible).
  *
  * Object key layout:
  *   fragments/{id}.json
- *   checkpoints/{taskId}/{checkpointId}.json
+ *   checkpoints/{taskId}/{checkpointId}.kryo   (Kryo binary, default)
+ *   checkpoints/{taskId}/{checkpointId}.json   (Jackson JSON, legacy)
  */
 @Slf4j
 @Component
@@ -31,10 +34,16 @@ public class MinioColdStore implements L3ColdStore {
 
     private static final String PREFIX_FRAGMENT = "fragments/";
     private static final String PREFIX_CHECKPOINT = "checkpoints/";
+    private static final String METADATA_SUFFIX = ".meta.json";
+    private static final String KRYO_SUFFIX = ".kryo";
+    private static final String JSON_SUFFIX = ".json";
+    private static final String CONTENT_TYPE_JSON = "application/json";
+    private static final String CONTENT_TYPE_BINARY = "application/octet-stream";
 
     private final MinioClient minioClient;
     private final String bucket;
     private final ObjectMapper objectMapper;
+    private final KryoSerializer kryoSerializer;
 
     public MinioColdStore(
             @Value("${vortex.storage.l3.minio.endpoint:http://localhost:9000}") String endpoint,
@@ -43,6 +52,7 @@ public class MinioColdStore implements L3ColdStore {
             @Value("${vortex.storage.l3.minio.bucket:vortex}") String bucket) {
         this.bucket = bucket;
         this.objectMapper = new ObjectMapper().findAndRegisterModules();
+        this.kryoSerializer = new KryoSerializer();
         this.minioClient = MinioClient.builder()
                 .endpoint(endpoint)
                 .credentials(accessKey, secretKey)
@@ -63,6 +73,8 @@ public class MinioColdStore implements L3ColdStore {
         }
     }
 
+    // ---- Fragment archival (unchanged) ----
+
     @Override
     public void archiveFragment(MemoryFragment fragment) {
         String key = PREFIX_FRAGMENT + fragment.getId() + ".json";
@@ -75,36 +87,241 @@ public class MinioColdStore implements L3ColdStore {
         return getJson(key, MemoryFragment.class);
     }
 
+    // ---- Checkpoint (Kryo binary with Jackson fallback) ----
+
     @Override
     public String saveCheckpoint(TaskState state) {
         String checkpointId = UUID.randomUUID().toString();
         state.setLatestCheckpointId(checkpointId);
         state.setLastCheckpointAt(Instant.now());
-        String key = PREFIX_CHECKPOINT + state.getTaskId() + "/" + checkpointId + ".json";
-        putJson(key, state);
-        log.info("Checkpoint saved taskId={} checkpointId={}", state.getTaskId(), checkpointId);
+        String key = checkpointDataKey(state.getTaskId(), checkpointId);
+
+        byte[] compressed = kryoSerializer.serializeCompressed(state);
+        putBinary(key, compressed);
+        putJson(checkpointMetadataKey(state.getTaskId(), checkpointId), buildMetadata(state, checkpointId, key, compressed.length));
+
+        log.info("Checkpoint saved taskId={} checkpointId={} sizeBytes={}",
+                state.getTaskId(), checkpointId, compressed.length);
         return checkpointId;
+    }
+
+    /**
+     * Save checkpoint with explicit metadata, returning CheckpointMetadata.
+     */
+    public CheckpointMetadata saveCheckpointWithMetadata(TaskState state, CheckpointMetadata meta) {
+        String checkpointId = meta.getCheckpointId();
+        state.setLatestCheckpointId(checkpointId);
+        state.setLastCheckpointAt(Instant.now());
+        String key = checkpointDataKey(state.getTaskId(), checkpointId);
+
+        byte[] compressed = kryoSerializer.serializeCompressed(state);
+        putBinary(key, compressed);
+
+        meta.setSizeBytes(compressed.length);
+        meta.setL3Key(key);
+        meta.setCompressed(true);
+        meta.setCompressionAlgorithm("gzip");
+        meta.setCreatedAt(Instant.now());
+        putJson(checkpointMetadataKey(state.getTaskId(), checkpointId), meta);
+
+        log.info("Checkpoint saved taskId={} checkpointId={} type={} sizeBytes={}",
+                state.getTaskId(), checkpointId, meta.getType(), compressed.length);
+        return meta;
     }
 
     @Override
     public Optional<TaskState> loadCheckpoint(String checkpointId) {
-        // checkpointId format: taskId/uuid — stored as checkpoints/{taskId}/{uuid}.json
-        // For MVP we accept the full key suffix
-        String key = PREFIX_CHECKPOINT + checkpointId + ".json";
-        return getJson(key, TaskState.class);
+        // Try Kryo format first
+        String kryoKey = PREFIX_CHECKPOINT + checkpointId + KRYO_SUFFIX;
+        byte[] data = getBinary(kryoKey);
+        if (data != null && data.length > 0) {
+            if (KryoSerializer.isKryoFormat(data)) {
+                try {
+                    TaskState state = kryoSerializer.deserializeCompressed(data, TaskState.class);
+                    log.debug("Checkpoint loaded via Kryo: {}", checkpointId);
+                    return Optional.of(state);
+                } catch (Exception e) {
+                    log.warn("Kryo deserialization failed for {}, trying decompress fallback", checkpointId, e);
+                    // Try uncompressed Kryo
+                    try {
+                        return Optional.of(kryoSerializer.deserialize(data, TaskState.class));
+                    } catch (Exception e2) {
+                        log.error("All Kryo fallbacks failed for {}", checkpointId, e2);
+                    }
+                }
+            } else if (JacksonCompatibilityBridge.isJacksonFormat(data)) {
+                log.info("Detected legacy Jackson format for checkpoint {}, migrating...", checkpointId);
+                try {
+                    String json = new String(data, StandardCharsets.UTF_8);
+                    return Optional.of(JacksonCompatibilityBridge.migrateFromJackson(data));
+                } catch (Exception e) {
+                    log.error("Jackson migration failed for {}", checkpointId, e);
+                }
+            }
+        }
+
+        // Try legacy Jackson JSON format
+        String jsonKey = PREFIX_CHECKPOINT + checkpointId + JSON_SUFFIX;
+        byte[] jsonData = getBinary(jsonKey);
+        if (jsonData != null && jsonData.length > 0) {
+            try {
+                return Optional.of(JacksonCompatibilityBridge.migrateFromJackson(jsonData));
+            } catch (Exception e) {
+                log.error("Legacy JSON load failed for {}", checkpointId, e);
+            }
+        }
+
+        log.debug("Checkpoint not found in L3: {}", checkpointId);
+        return Optional.empty();
     }
 
     @Override
     public void deleteCheckpoint(String checkpointId) {
-        String key = PREFIX_CHECKPOINT + checkpointId + ".json";
+        // Try both formats
+        String kryoKey = PREFIX_CHECKPOINT + checkpointId + KRYO_SUFFIX;
+        String jsonKey = PREFIX_CHECKPOINT + checkpointId + JSON_SUFFIX;
+        String metaKey = PREFIX_CHECKPOINT + checkpointId + METADATA_SUFFIX;
         try {
-            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(key).build());
+            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(kryoKey).build());
         } catch (Exception e) {
-            log.warn("Failed to delete checkpoint key={}: {}", key, e.getMessage());
+            log.debug("No .kryo checkpoint to delete for {}", checkpointId);
+        }
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(jsonKey).build());
+        } catch (Exception e) {
+            log.debug("No .json checkpoint to delete for {}", checkpointId);
+        }
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(metaKey).build());
+        } catch (Exception e) {
+            log.debug("No metadata checkpoint to delete for {}", checkpointId);
         }
     }
 
-    // ---- helpers ----
+    @Override
+    public void putBytes(String key, byte[] data) {
+        putBinary(key, data);
+    }
+
+    @Override
+    public byte[] getBytes(String key) {
+        return getBinary(key);
+    }
+
+    @Override
+    public List<CheckpointMetadata> listCheckpointMetadata(String taskId) {
+        String prefix = PREFIX_CHECKPOINT + taskId + "/";
+        List<String> keys = listObjects(prefix);
+        Map<String, CheckpointMetadata> metadataById = new HashMap<>();
+
+        for (String key : keys) {
+            if (key.endsWith(METADATA_SUFFIX)) {
+                extractCheckpointId(taskId, key, METADATA_SUFFIX)
+                        .flatMap(id -> getJson(key, CheckpointMetadata.class)
+                                .map(meta -> {
+                                    if (meta.getCheckpointId() == null) {
+                                        meta.setCheckpointId(id);
+                                    }
+                                    if (meta.getTaskId() == null) {
+                                        meta.setTaskId(taskId);
+                                    }
+                                    if (meta.getL3Key() == null) {
+                                        meta.setL3Key(checkpointDataKey(taskId, id));
+                                    }
+                                    return meta;
+                                }))
+                        .ifPresent(meta -> metadataById.put(meta.getCheckpointId(), meta));
+            }
+        }
+
+        for (String key : keys) {
+            if (key.endsWith(METADATA_SUFFIX)) {
+                continue;
+            }
+            if (!key.endsWith(KRYO_SUFFIX) && !key.endsWith(JSON_SUFFIX)) {
+                continue;
+            }
+            String suffix = key.endsWith(KRYO_SUFFIX) ? KRYO_SUFFIX : JSON_SUFFIX;
+            extractCheckpointId(taskId, key, suffix).ifPresent(id ->
+                    metadataById.computeIfAbsent(id, cpId -> buildFallbackMetadata(taskId, cpId, key)));
+        }
+
+        List<CheckpointMetadata> metadata = new ArrayList<>(metadataById.values());
+        metadata.sort(Comparator.comparing(CheckpointMetadata::getCreatedAt,
+                Comparator.nullsLast(Comparator.naturalOrder())));
+        return metadata;
+    }
+
+    @Override
+    public Set<String> listTaskIdsWithCheckpoints() {
+        List<String> keys = listObjects(PREFIX_CHECKPOINT);
+        Set<String> taskIds = new LinkedHashSet<>();
+        for (String key : keys) {
+            String remainder = key.substring(PREFIX_CHECKPOINT.length());
+            int separator = remainder.indexOf('/');
+            if (separator > 0) {
+                taskIds.add(remainder.substring(0, separator));
+            }
+        }
+        return taskIds;
+    }
+
+    // ---- Object listing ----
+
+    /**
+     * List all object keys under a given prefix.
+     */
+    public List<String> listObjects(String prefix) {
+        List<String> keys = new ArrayList<>();
+        try {
+            Iterable<Result<Item>> results = minioClient.listObjects(
+                    ListObjectsArgs.builder().bucket(bucket).prefix(prefix).recursive(true).build());
+            for (Result<Item> result : results) {
+                keys.add(result.get().objectName());
+            }
+        } catch (Exception e) {
+            log.error("Failed to list objects with prefix '{}': {}", prefix, e.getMessage());
+        }
+        return keys;
+    }
+
+    /**
+     * List all checkpoint keys for a given task.
+     */
+    public List<String> listCheckpointsForTask(String taskId) {
+        String prefix = PREFIX_CHECKPOINT + taskId + "/";
+        return listObjects(prefix);
+    }
+
+    /**
+     * Delete all objects under a given prefix.
+     */
+    public void deleteObjectsByPrefix(String prefix) {
+        List<String> keys = listObjects(prefix);
+        for (String key : keys) {
+            try {
+                minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(key).build());
+            } catch (Exception e) {
+                log.warn("Failed to delete object {}: {}", key, e.getMessage());
+            }
+        }
+        log.info("Deleted {} objects with prefix '{}'", keys.size(), prefix);
+    }
+
+    /**
+     * Get the byte size of an object, or 0 if not found.
+     */
+    public long getObjectSize(String key) {
+        try {
+            StatObjectResponse stat = minioClient.statObject(
+                    StatObjectArgs.builder().bucket(bucket).object(key).build());
+            return stat.size();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    // ---- Helpers ----
 
     private void putJson(String key, Object value) {
         try {
@@ -113,7 +330,7 @@ public class MinioColdStore implements L3ColdStore {
                     .bucket(bucket)
                     .object(key)
                     .stream(new ByteArrayInputStream(bytes), bytes.length, -1)
-                    .contentType("application/json")
+                    .contentType(CONTENT_TYPE_JSON)
                     .build());
         } catch (Exception e) {
             log.error("MinIO put failed key={}: {}", key, e.getMessage());
@@ -121,16 +338,97 @@ public class MinioColdStore implements L3ColdStore {
         }
     }
 
+    private void putBinary(String key, byte[] data) {
+        try {
+            minioClient.putObject(PutObjectArgs.builder()
+                    .bucket(bucket)
+                    .object(key)
+                    .stream(new ByteArrayInputStream(data), data.length, -1)
+                    .contentType(CONTENT_TYPE_BINARY)
+                    .build());
+        } catch (Exception e) {
+            log.error("MinIO binary put failed key={}: {}", key, e.getMessage());
+            throw new IllegalStateException("MinIO put failed for key " + key, e);
+        }
+    }
+
+    private CheckpointMetadata buildMetadata(TaskState state, String checkpointId, String l3Key, long sizeBytes) {
+        return CheckpointMetadata.builder()
+                .checkpointId(checkpointId)
+                .taskId(state.getTaskId())
+                .sequenceNumber(state.getWalSequenceNumber())
+                .type(CheckpointMetadata.CheckpointType.FULL)
+                .nodeCount(state.getGraph().nodeCount())
+                .edgeCount(state.getGraph().edgeCount())
+                .sizeBytes(sizeBytes)
+                .compressed(true)
+                .compressionAlgorithm("gzip")
+                .branchId(state.getCurrentBranchId())
+                .createdAt(Optional.ofNullable(state.getLastCheckpointAt()).orElse(Instant.now()))
+                .l3Key(l3Key)
+                .build();
+    }
+
+    private CheckpointMetadata buildFallbackMetadata(String taskId, String checkpointId, String key) {
+        return CheckpointMetadata.builder()
+                .checkpointId(checkpointId)
+                .taskId(taskId)
+                .type(CheckpointMetadata.CheckpointType.FULL)
+                .sizeBytes(getObjectSize(key))
+                .createdAt(getLastModified(key).orElse(Instant.EPOCH))
+                .l3Key(key)
+                .build();
+    }
+
+    private String checkpointDataKey(String taskId, String checkpointId) {
+        return PREFIX_CHECKPOINT + taskId + "/" + checkpointId + KRYO_SUFFIX;
+    }
+
+    private String checkpointMetadataKey(String taskId, String checkpointId) {
+        return PREFIX_CHECKPOINT + taskId + "/" + checkpointId + METADATA_SUFFIX;
+    }
+
+    private Optional<String> extractCheckpointId(String taskId, String key, String suffix) {
+        String prefix = PREFIX_CHECKPOINT + taskId + "/";
+        if (!key.startsWith(prefix) || !key.endsWith(suffix)) {
+            return Optional.empty();
+        }
+        return Optional.of(key.substring(prefix.length(), key.length() - suffix.length()));
+    }
+
+    private Optional<Instant> getLastModified(String key) {
+        try {
+            StatObjectResponse stat = minioClient.statObject(
+                    StatObjectArgs.builder().bucket(bucket).object(key).build());
+            return Optional.ofNullable(stat.lastModified()).map(t -> t.toInstant());
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
     private <T> Optional<T> getJson(String key, Class<T> type) {
         try (InputStream is = minioClient.getObject(
                 GetObjectArgs.builder().bucket(bucket).object(key).build())) {
             return Optional.of(objectMapper.readValue(is, type));
-        } catch (MinioException e) {
+        } catch (io.minio.errors.MinioException e) {
             log.debug("MinIO object not found key={}", key);
             return Optional.empty();
         } catch (Exception e) {
             log.error("MinIO get failed key={}: {}", key, e.getMessage());
             return Optional.empty();
+        }
+    }
+
+    private byte[] getBinary(String key) {
+        try (InputStream is = minioClient.getObject(
+                GetObjectArgs.builder().bucket(bucket).object(key).build())) {
+            return is.readAllBytes();
+        } catch (io.minio.errors.MinioException e) {
+            log.debug("MinIO binary object not found key={}", key);
+            return null;
+        } catch (Exception e) {
+            log.error("MinIO binary get failed key={}: {}", key, e.getMessage());
+            return null;
         }
     }
 }

@@ -13,6 +13,7 @@ import ai.djl.repository.zoo.ZooModel;
 import ai.djl.translate.Batchifier;
 import ai.djl.translate.Translator;
 import ai.djl.translate.TranslatorContext;
+import com.vortex.common.exception.EmbeddingException;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +22,12 @@ import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Local embedding service using BGE-Small-ZH (BAAI/bge-small-zh-v1.5).
@@ -46,6 +52,7 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
     private static final int MAX_SEQ_LEN = 512;
 
     private final String modelPath;
+    private final ExecutorService jniPool;
 
     private ZooModel<String, float[]> model;
     private Predictor<String, float[]> predictor;
@@ -54,6 +61,9 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
     public BgeSmallEmbeddingService(
             @Value("${vortex.kernel.embedding.bge.model-path:}") String modelPath) {
         this.modelPath = modelPath;
+        this.jniPool = Executors.newFixedThreadPool(
+                Runtime.getRuntime().availableProcessors(),
+                Thread.ofPlatform().name("onnx-jni-", 0).factory());
     }
 
     @PostConstruct
@@ -106,6 +116,7 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
 
     @PreDestroy
     public void close() {
+        jniPool.shutdown();
         if (predictor != null) predictor.close();
         if (model != null) model.close();
         if (tokenizer != null) tokenizer.close();
@@ -120,9 +131,57 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
             return l2Normalize(raw);
         } catch (Exception e) {
             log.error("Embedding failed for text (len={}): {}", text.length(), e.getMessage());
-            // Return zero vector on failure — caller should handle gracefully
-            return new float[DIMENSION];
+            throw new EmbeddingException("BGE embed failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Batch embedding using DJL batch predict with Batchifier.STACK.
+     * Groups inputs into sub-batches of {@link #BATCH_SIZE} to bound memory usage.
+     * Falls back to sequential embed() if batch predict fails.
+     */
+    @Override
+    public List<float[]> embedBatch(List<String> texts) {
+        if (texts == null || texts.isEmpty()) {
+            return List.of();
+        }
+        List<float[]> results = new ArrayList<>(texts.size());
+        // Prepend instruction prefix
+        List<String> prefixedTexts = texts.stream()
+                .map(t -> "为这个句子生成表示以用于检索相关文章：" + t)
+                .toList();
+
+        for (int offset = 0; offset < prefixedTexts.size(); offset += BATCH_SIZE) {
+            int end = Math.min(offset + BATCH_SIZE, prefixedTexts.size());
+            List<String> subBatch = prefixedTexts.subList(offset, end);
+            try {
+                List<float[]> batchResults = predictor.batchPredict(subBatch);
+                for (float[] raw : batchResults) {
+                    results.add(l2Normalize(raw));
+                }
+            } catch (Exception e) {
+                log.warn("Batch predict failed for sub-batch size={}, falling back to sequential: {}",
+                        subBatch.size(), e.getMessage());
+                // Fallback: sequential
+                for (String text : subBatch) {
+                    try {
+                        results.add(l2Normalize(predictor.predict(text)));
+                    } catch (Exception e2) {
+                        log.error("Sequential fallback embed failed: {}", e2.getMessage());
+                        throw new EmbeddingException("Sequential fallback also failed", e2);
+                    }
+                }
+            }
+        }
+        return results;
+    }
+
+    public CompletableFuture<float[]> embedAsync(String text) {
+        return CompletableFuture.supplyAsync(() -> embed(text), jniPool);
+    }
+
+    public CompletableFuture<List<float[]>> embedBatchAsync(List<String> texts) {
+        return CompletableFuture.supplyAsync(() -> embedBatch(texts), jniPool);
     }
 
     @Override
@@ -138,6 +197,30 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
         return tokenizer.encode(text).getIds().length;
     }
 
+    /**
+     * Compute the centroid (mean vector, L2-normalized) of a list of embeddings.
+     */
+    public static float[] computeCentroid(List<float[]> embeddings) {
+        if (embeddings == null || embeddings.isEmpty()) {
+            return new float[DIMENSION];
+        }
+        int dim = embeddings.get(0).length;
+        float[] centroid = new float[dim];
+        int count = 0;
+        for (float[] emb : embeddings) {
+            if (emb == null) continue;
+            for (int i = 0; i < dim; i++) {
+                centroid[i] += emb[i];
+            }
+            count++;
+        }
+        if (count == 0) return centroid;
+        for (int i = 0; i < dim; i++) {
+            centroid[i] /= count;
+        }
+        return l2Normalize(centroid);
+    }
+
     /** L2-normalise a vector so cosine similarity == dot product. */
     private static float[] l2Normalize(float[] v) {
         double norm = 0;
@@ -149,11 +232,17 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
         return out;
     }
 
+    private static final int BATCH_SIZE = 32;
+
     // ---- DJL Translator ----
 
     /**
-     * Translates a String → ONNX input tensors → float[] embedding.
+     * Translates String → ONNX input tensors → float[] embedding.
      * BGE-Small uses the [CLS] token representation as the sentence embedding.
+     *
+     * Batch mode: inputs are padded to MAX_SEQ_LEN so Batchifier.STACK can stack
+     * them along dim 0. DJL splits the output before calling processOutput, so
+     * each call still sees a single [1, MAX_SEQ_LEN, hidden] tensor.
      */
     private static final class BgeTranslator implements Translator<String, float[]> {
 
@@ -168,17 +257,22 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
             Encoding encoding = tokenizer.encode(input);
             NDManager manager = ctx.getNDManager();
 
-            long[] inputIds = encoding.getIds();
-            long[] attentionMask = encoding.getAttentionMask();
-            long[] tokenTypeIds = encoding.getTypeIds();
+            long[] rawIds = encoding.getIds();
+            long[] rawMask = encoding.getAttentionMask();
+            long[] rawTypeIds = encoding.getTypeIds();
 
-            // Truncate to MAX_SEQ_LEN
-            int len = Math.min(inputIds.length, MAX_SEQ_LEN);
-            inputIds = Arrays.copyOf(inputIds, len);
-            attentionMask = Arrays.copyOf(attentionMask, len);
-            tokenTypeIds = Arrays.copyOf(tokenTypeIds, len);
+            // Pad to exactly MAX_SEQ_LEN for batch stacking compatibility.
+            // Zero-padding: pad token = 0, attention mask = 0.
+            long[] inputIds = new long[MAX_SEQ_LEN];
+            long[] attentionMask = new long[MAX_SEQ_LEN];
+            long[] tokenTypeIds = new long[MAX_SEQ_LEN];
 
-            Shape shape = new Shape(1, len);
+            int len = Math.min(rawIds.length, MAX_SEQ_LEN);
+            System.arraycopy(rawIds, 0, inputIds, 0, len);
+            System.arraycopy(rawMask, 0, attentionMask, 0, len);
+            System.arraycopy(rawTypeIds, 0, tokenTypeIds, 0, len);
+
+            Shape shape = new Shape(1, MAX_SEQ_LEN);
             NDArray ids = manager.create(inputIds, shape).toType(DataType.INT64, false);
             NDArray mask = manager.create(attentionMask, shape).toType(DataType.INT64, false);
             NDArray typeIds = manager.create(tokenTypeIds, shape).toType(DataType.INT64, false);
@@ -195,6 +289,7 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
             // Avoid NDArray slicing here: on Windows the cross-engine fallback path
             // can jump into Rust-native tensor conversion and crash the JVM.
             // Read the dense output once and slice the CLS token in plain Java.
+            // DJL splits batch output before this call, so shape is always [1, N, hidden].
             NDArray lastHiddenState = list.get(0);
             long[] dims = lastHiddenState.getShape().getShape();
             if (dims.length != 3 || dims[0] != 1L) {
@@ -213,7 +308,7 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
 
         @Override
         public Batchifier getBatchifier() {
-            return null; // single-item inference
+            return Batchifier.STACK;
         }
     }
 }

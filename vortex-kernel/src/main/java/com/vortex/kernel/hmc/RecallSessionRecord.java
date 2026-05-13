@@ -20,8 +20,18 @@ public class RecallSessionRecord {
     private MemoryScenario scenario;
     private String activeProfileName;
     private String shadowProfileName;
+    private Integer activeArmIndex;
+    private Integer shadowArmIndex;
+    private double activeSelectionProbability;
+    private double shadowSelectionProbability;
     private List<String> rankedFragmentIds;
     private List<String> shadowRankedFragmentIds;
     private List<String> baselineRankedFragmentIds;
+    private List<String> activeEvictionRankedFragmentIds;
+    private List<String> shadowEvictionRankedFragmentIds;
+    private List<String> baselineEvictionRankedFragmentIds;
+    private double activeGroundingScore;
+    private double shadowGroundingScore;
+    private double baselineGroundingScore;
     private Instant createdAt;
 }

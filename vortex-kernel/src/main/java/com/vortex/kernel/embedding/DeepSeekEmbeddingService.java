@@ -2,6 +2,7 @@ package com.vortex.kernel.embedding;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vortex.common.exception.EmbeddingException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -67,13 +68,13 @@ public class DeepSeekEmbeddingService implements EmbeddingService {
 
             if (response.statusCode() != 200) {
                 log.error("DeepSeek API error status={} body={}", response.statusCode(), response.body());
-                return new float[DIMENSION];
+                throw new EmbeddingException("DeepSeek API error status=" + response.statusCode());
             }
 
             EmbeddingResponse resp = objectMapper.readValue(response.body(), EmbeddingResponse.class);
             if (resp.data() == null || resp.data().isEmpty()) {
                 log.error("DeepSeek returned empty data for text len={}", text.length());
-                return new float[DIMENSION];
+                throw new EmbeddingException("DeepSeek returned empty embedding payload");
             }
 
             List<Double> raw = resp.data().get(0).embedding();
@@ -84,10 +85,10 @@ public class DeepSeekEmbeddingService implements EmbeddingService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("DeepSeek embedding interrupted: {}", e.getMessage());
-            return new float[DIMENSION];
+            throw new EmbeddingException("DeepSeek embedding interrupted", e);
         } catch (Exception e) {
             log.error("DeepSeek embedding failed for text len={}: {}", text.length(), e.getMessage());
-            return new float[DIMENSION];
+            throw new EmbeddingException("DeepSeek embedding failed: " + e.getMessage(), e);
         }
     }
 

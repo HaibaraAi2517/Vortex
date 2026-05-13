@@ -7,6 +7,7 @@ import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.model.TaskState;
 import com.vortex.kernel.embedding.EmbeddingService;
+import com.vortex.kernel.paging.SemanticPagingManager;
 import com.vortex.storage.api.L2WarmStore;
 import com.vortex.storage.api.L3ColdStore;
 import com.vortex.storage.l1.CaffeineHotStore;
@@ -33,7 +34,7 @@ class HierarchicalMemoryControllerTest {
 
     private static final MemorySloTracker TEST_SLO_TRACKER = new MemorySloTracker(new SimpleMeterRegistry());
     private static final AdaptiveWeightLearner TEST_WEIGHT_LEARNER =
-            new AdaptiveWeightLearner(new ShadowEvaluationTracker(0.20, 14), 0.05, 0.3, 0.5, 0.2);
+            new AdaptiveWeightLearner(new ShadowEvaluationTracker(0.20, 14), 0.05, 100, 0.3, 0.5, 0.2);
 
     @Test
     void constructorFailsFastWhenL2DimensionDoesNotMatchActiveEmbeddingPath() {
@@ -57,6 +58,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> 1, 64),
                 localEmbedding,
                 cloudProvider,
+                emptyPagingProvider(),
                 0.85
         )).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("L2 vector dimension mismatch");
@@ -84,6 +86,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 cloudProvider,
+                emptyPagingProvider(),
                 0.85
         );
 
@@ -138,6 +141,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.85
         );
 
@@ -181,6 +185,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.5
         );
 
@@ -220,6 +225,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.5,
                 30_000L,
                 60_000L,
@@ -280,6 +286,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.5,
                 30_000L,
                 60_000L,
@@ -344,6 +351,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.85
         );
 
@@ -384,6 +392,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.5
         );
 
@@ -436,6 +445,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.95
         );
 
@@ -487,6 +497,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.85
         );
 
@@ -524,6 +535,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.85
         );
 
@@ -567,6 +579,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.85
         );
 
@@ -613,6 +626,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.85
         );
 
@@ -644,7 +658,7 @@ class HierarchicalMemoryControllerTest {
         FakeL2WarmStore l2 = new FakeL2WarmStore(4);
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
-        AdaptiveWeightLearner learner = new AdaptiveWeightLearner(new ShadowEvaluationTracker(0.20, 14), 0.05, 0.3, 0.5, 0.2);
+        AdaptiveWeightLearner learner = new AdaptiveWeightLearner(new ShadowEvaluationTracker(0.20, 14), 0.05, 100, 0.3, 0.5, 0.2);
         MemorySloTracker sloTracker = new MemorySloTracker(new SimpleMeterRegistry());
 
         HierarchicalMemoryController hmc = new HierarchicalMemoryController(
@@ -661,6 +675,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.85
         );
 
@@ -684,6 +699,79 @@ class HierarchicalMemoryControllerTest {
 
         AdaptiveWeightLearner.LearningSnapshot snapshot = hmc.learningSnapshot(MemoryScenario.CODING);
         assertThat(snapshot.active().getUpdateCount()).isGreaterThan(0);
+        assertThat(snapshot.shadowEvaluation().sampleCount()).isGreaterThan(0);
+    }
+
+    @Test
+    void recallEvaluatesShadowAndBaselineAgainstIndependentRankingOrders() {
+        CaffeineHotStore l1 = new CaffeineHotStore(256);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+        AdaptiveWeightLearner learner = new AdaptiveWeightLearner(new ShadowEvaluationTracker(0.20, 14), 0.05, 100, 0.3, 0.5, 0.2);
+        MemorySloTracker sloTracker = new MemorySloTracker(new SimpleMeterRegistry());
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1,
+                l2,
+                l3,
+                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
+                new NamespaceQuotaManager(0.25, 0.15, 16),
+                learner,
+                new EvictionDecisionLogger(sloTracker),
+                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+                sloTracker,
+                persistenceManager(l2, l3),
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding,
+                emptyProvider(),
+                emptyPagingProvider(),
+                0.85
+        );
+
+        long now = System.currentTimeMillis();
+        MemoryFragment recent = fragment("recent", "ns", "recent", List.of(), 4);
+        recent.setImportance(0.0);
+        recent.setEmbedding(new float[]{1.0f, 0.0f, 0.0f, 0.0f});
+        recent.setLastAccessTime(now - (2 * 86_400_000L));
+        MemoryFragment important = fragment("important", "ns", "important", List.of(), 4);
+        important.setImportance(1.0);
+        important.setEmbedding(new float[]{0.22f, 0.9755f, 0.0f, 0.0f});
+        important.setLastAccessTime(now);
+        l1.put(recent, false);
+        l1.put(important, false);
+
+        RecallResult result = hmc.recall(RecallQuery.builder()
+                .query("query")
+                .namespace("ns")
+                .scenario(MemoryScenario.CHAT)
+                .topK(2)
+                .tokenBudget(100)
+                .build());
+
+        RecallSessionRecord session = learner.peekRecallSession(result.getRecallSessionId());
+        assertThat(session).isNotNull();
+        assertThat(session.getActiveArmIndex()).isNotNull();
+        assertThat(session.getShadowArmIndex()).isNotNull();
+        assertThat(session.getActiveSelectionProbability()).isGreaterThan(0.0);
+        assertThat(session.getShadowSelectionProbability()).isGreaterThan(0.0);
+        assertThat(session.getRankedFragmentIds()).containsExactly("recent", "important");
+        assertThat(session.getShadowRankedFragmentIds()).containsExactlyInAnyOrder("important", "recent");
+        assertThat(session.getShadowRankedFragmentIds()).isNotEqualTo(session.getRankedFragmentIds());
+        assertThat(session.getBaselineRankedFragmentIds()).containsExactlyInAnyOrder("recent", "important");
+        assertThat(session.getActiveEvictionRankedFragmentIds()).containsExactlyInAnyOrder("recent", "important");
+        assertThat(session.getShadowEvictionRankedFragmentIds()).containsExactlyInAnyOrder("important", "recent");
+
+        hmc.recordFeedback(MemoryFeedbackRequest.builder()
+                .recallSessionId(result.getRecallSessionId())
+                .usedFragmentIds(List.of("important"))
+                .answerAccepted(true)
+                .build());
+
+        AdaptiveWeightLearner.LearningSnapshot snapshot = hmc.learningSnapshot(MemoryScenario.CHAT);
+        assertThat(snapshot.shadowEvaluation().sampleCount()).isEqualTo(1);
+        assertThat(snapshot.shadowEvaluation().baselineAverageNdcg()).isGreaterThan(0.0);
+        assertThat(snapshot.shadowEvaluation().shadowAverageNdcg()).isGreaterThan(snapshot.shadowEvaluation().activeAverageNdcg());
     }
 
     @Test
@@ -692,6 +780,8 @@ class HierarchicalMemoryControllerTest {
         FakeL2WarmStore l2 = new FakeL2WarmStore(4);
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+        AdaptiveWeightLearner learner = new AdaptiveWeightLearner(new ShadowEvaluationTracker(0.20, 14), 0.05, 100, 0.3, 0.5, 0.2);
+        MemorySloTracker sloTracker = new MemorySloTracker(new SimpleMeterRegistry());
 
         HierarchicalMemoryController hmc = new HierarchicalMemoryController(
                 l1,
@@ -699,14 +789,15 @@ class HierarchicalMemoryControllerTest {
                 l3,
                 new SemanticEvictionPolicy(0.0, 0.0, 1.0),
                 new NamespaceQuotaManager(1.0, 1.0, 1),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                learner,
+                new EvictionDecisionLogger(sloTracker),
                 new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
+                sloTracker,
                 persistenceManager(l2, l3),
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.95
         );
 
@@ -732,6 +823,8 @@ class HierarchicalMemoryControllerTest {
         FakeL2WarmStore l2 = new FakeL2WarmStore(4);
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+        AdaptiveWeightLearner learner = new AdaptiveWeightLearner(new ShadowEvaluationTracker(0.20, 14), 0.05, 100, 0.3, 0.5, 0.2);
+        MemorySloTracker sloTracker = new MemorySloTracker(new SimpleMeterRegistry());
 
         HierarchicalMemoryController hmc = new HierarchicalMemoryController(
                 l1,
@@ -739,14 +832,15 @@ class HierarchicalMemoryControllerTest {
                 l3,
                 new SemanticEvictionPolicy(0.0, 0.0, 1.0),
                 new NamespaceQuotaManager(1.0, 1.0, 1),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                learner,
+                new EvictionDecisionLogger(sloTracker),
                 new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
+                sloTracker,
                 persistenceManager(l2, l3),
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.95
         );
 
@@ -791,6 +885,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.95,
                 30_000L,
                 60_000L,
@@ -845,6 +940,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.95,
                 30_000L,
                 60_000L,
@@ -898,6 +994,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.5,
                 30_000L,
                 60_000L,
@@ -972,6 +1069,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.95
         );
 
@@ -1015,6 +1113,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.85
         );
 
@@ -1060,6 +1159,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.85
         );
 
@@ -1131,6 +1231,7 @@ class HierarchicalMemoryControllerTest {
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
                 localEmbedding,
                 emptyProvider(),
+                emptyPagingProvider(),
                 0.85
         );
 
@@ -1174,6 +1275,35 @@ class HierarchicalMemoryControllerTest {
         return vector;
     }
 
+    private static ObjectProvider<SemanticPagingManager> emptyPagingProvider() {
+        return new ObjectProvider<>() {
+            @Override
+            public SemanticPagingManager getObject(Object... args) {
+                return null;
+            }
+
+            @Override
+            public SemanticPagingManager getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public SemanticPagingManager getIfUnique() {
+                return null;
+            }
+
+            @Override
+            public SemanticPagingManager getObject() {
+                return null;
+            }
+
+            @Override
+            public Iterator<SemanticPagingManager> iterator() {
+                return Collections.emptyIterator();
+            }
+        };
+    }
+
     private static ObjectProvider<EmbeddingService> emptyProvider() {
         return new ObjectProvider<>() {
             @Override
@@ -1212,7 +1342,8 @@ class HierarchicalMemoryControllerTest {
                     new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules());
             FileBackedProcessedTaskStore processedTaskStore = new FileBackedProcessedTaskStore(processedFile);
             return new FragmentPersistenceManager(
-                    l2, l3, queue, processedTaskStore, new MemorySloTracker(new SimpleMeterRegistry()), false);
+                    l2, l3, queue, processedTaskStore, new MemorySloTracker(new SimpleMeterRegistry()), false,
+                    Runnable::run);
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }

@@ -1,20 +1,22 @@
 package com.vortex.common.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Represents the full runtime state of a long-running Agent task.
- * Serialised to L3 (MinIO) as a checkpoint.
+ *
+ * V2: Uses a true {@link DagGraph} instead of a flat node list.
+ * Serialised to L3 (MinIO) as a checkpoint via Kryo binary format.
  */
+@Slf4j
 @Data
 @Builder
 @NoArgsConstructor
@@ -31,13 +33,24 @@ public class TaskState {
     @Builder.Default
     private TaskStatus status = TaskStatus.RUNNING;
 
-    /** Ordered list of thought/action nodes (the DAG in linear form for MVP). */
+    /** The full DAG of thought/action nodes with edges. */
     @Builder.Default
-    private List<ThoughtNode> nodes = new ArrayList<>();
+    @JsonIgnore
+    private DagGraph graph = new DagGraph();
 
-    /** Index of the node currently being executed. */
+    /** Currently active node ID (replaces the old int cursor). */
+    private String currentNodeId;
+
+    /** Currently active branch ID. */
+    private String currentBranchId;
+
+    /** All branches created during this task's execution. */
     @Builder.Default
-    private int cursor = 0;
+    private List<TaskBranch> branches = new ArrayList<>();
+
+    /** Highest WAL sequence number written for this task. */
+    @Builder.Default
+    private long walSequenceNumber = 0;
 
     /** IDs of MemoryFragments referenced by this task. */
     @Builder.Default
@@ -63,6 +76,43 @@ public class TaskState {
     public enum TaskStatus {
         RUNNING, PAUSED, COMPLETED, FAILED, RECOVERING
     }
+
+    // ---- Backward compatibility delegates (deprecated, kept for old API consumers) ----
+
+    /**
+     * @deprecated Use {@link #graph} and {@link DagGraph#getNode(String)} instead.
+     */
+    @Deprecated
+    public List<ThoughtNode> getNodes() {
+        log.warn("TaskState.getNodes() is deprecated — use getGraph() instead. Returning empty list.");
+        return Collections.emptyList();
+    }
+
+    /**
+     * @deprecated Use {@link #graph} and {@link DagGraph#addNode(DagNode)} instead.
+     */
+    @Deprecated
+    public void setNodes(List<ThoughtNode> nodes) {
+        log.warn("TaskState.setNodes() is deprecated and no-op. Use getGraph().addNode() instead.");
+    }
+
+    /**
+     * @deprecated Use {@link #currentNodeId} instead.
+     */
+    @Deprecated
+    public int getCursor() {
+        return -1;
+    }
+
+    /**
+     * @deprecated Use {@link #currentNodeId} instead.
+     */
+    @Deprecated
+    public void setCursor(int cursor) {
+        // no-op for backward compat
+    }
+
+    // ---- V2 ThoughtNode (still used by deprecated getNodes / fromLegacy) ----
 
     @Data
     @Builder

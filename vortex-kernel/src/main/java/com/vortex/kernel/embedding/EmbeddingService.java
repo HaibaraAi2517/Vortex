@@ -1,6 +1,7 @@
 package com.vortex.kernel.embedding;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Converts text into a dense float vector (embedding).
@@ -29,6 +30,21 @@ public interface EmbeddingService {
      */
     default List<float[]> embedBatch(List<String> texts) {
         return texts.stream().map(this::embed).toList();
+    }
+
+    /**
+     * Async embedding hook.
+     * Default implementation keeps the interface decoupled from any specific executor policy.
+     */
+    default CompletableFuture<float[]> embedAsync(String text) {
+        return CompletableFuture.supplyAsync(() -> embed(text));
+    }
+
+    /**
+     * Async batch embedding hook.
+     */
+    default CompletableFuture<List<float[]>> embedBatchAsync(List<String> texts) {
+        return CompletableFuture.supplyAsync(() -> embedBatch(texts));
     }
 
     /** Dimensionality of the vectors produced by this service. */
