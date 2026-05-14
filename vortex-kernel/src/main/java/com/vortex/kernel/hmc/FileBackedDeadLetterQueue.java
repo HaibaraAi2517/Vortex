@@ -2,6 +2,7 @@ package com.vortex.kernel.hmc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -27,6 +28,7 @@ public class FileBackedDeadLetterQueue {
     private final int maxAttempts;
     private final ReentrantReadWriteLock queueLock = new ReentrantReadWriteLock();
 
+    @Autowired
     public FileBackedDeadLetterQueue(
             @Value("${vortex.kernel.persistence.dlq.path:${java.io.tmpdir}/vortex-hmc-dlq.jsonl}") String queuePath,
             @Value("${vortex.kernel.persistence.dlq.max-attempts:5}") int maxAttempts) {

@@ -1,6 +1,7 @@
 package com.vortex.kernel.hmc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +23,7 @@ public class FileBackedProcessedTaskStore {
     private final Object lock = new Object();
     private Map<String, ProcessedKeyRecord> processedKeys;
 
+    @Autowired
     public FileBackedProcessedTaskStore(
             @Value("${vortex.kernel.persistence.processed-keys.path:${java.io.tmpdir}/vortex-hmc-processed-keys.txt}") String storePath,
             @Value("${vortex.kernel.persistence.processed-keys.max-entries:10000}") int maxEntries) {

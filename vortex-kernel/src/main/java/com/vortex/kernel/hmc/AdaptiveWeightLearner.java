@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Ticker;
 import com.vortex.common.dto.MemoryScenario;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -38,6 +39,7 @@ public class AdaptiveWeightLearner {
     private final ShadowEvaluationTracker shadowEvaluationTracker;
     private final Ticker recallSessionTicker;
 
+    @Autowired
     public AdaptiveWeightLearner(
             ShadowEvaluationTracker shadowEvaluationTracker,
             @Value("${vortex.kernel.learning.rate:0.08}") double learningRate,

@@ -2,6 +2,7 @@ package com.vortex.app.health;
 
 import com.vortex.kernel.hmc.HierarchicalMemoryController;
 import com.vortex.kernel.hmc.MemorySloTracker;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -23,6 +24,7 @@ public class MemorySloHealthIndicator implements HealthIndicator {
     private final double minBaselineRelativeLift;
     private final double minBaselineSustainedRatio;
 
+    @Autowired
     public MemorySloHealthIndicator(
             HierarchicalMemoryController hmc,
             @Value("${vortex.kernel.slo.min-eviction-log-coverage:1.0}") double minEvictionLogCoverage,

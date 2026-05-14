@@ -4,10 +4,12 @@ import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.model.PageState;
 import com.vortex.common.model.SemanticPage;
 import com.vortex.kernel.embedding.EmbeddingService;
+import com.vortex.kernel.hmc.HierarchicalMemoryController;
 import com.vortex.storage.api.L1HotStore;
 import com.vortex.storage.api.L2WarmStore;
 import com.vortex.storage.api.L3ColdStore;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -32,6 +34,7 @@ public class PageFaultHandler {
     private final L2WarmStore l2;
     private final L3ColdStore l3;
     private final EmbeddingService embeddingService;
+    private final ObjectProvider<HierarchicalMemoryController> hmcProvider;
     private final ExecutorService virtualThreadExecutor;
 
     public PageFaultHandler(
@@ -39,12 +42,14 @@ public class PageFaultHandler {
             L1HotStore l1,
             L2WarmStore l2,
             L3ColdStore l3,
-            EmbeddingService embeddingService) {
+            EmbeddingService embeddingService,
+            ObjectProvider<HierarchicalMemoryController> hmcProvider) {
         this.pageTable = pageTable;
         this.l1 = l1;
         this.l2 = l2;
         this.l3 = l3;
         this.embeddingService = embeddingService;
+        this.hmcProvider = hmcProvider;
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     }
 
@@ -151,6 +156,13 @@ public class PageFaultHandler {
      * should wrap this in a single admissionLock for atomicity.
      */
     void admitPageToL1(SemanticPage page, List<MemoryFragment> fragments) {
+        HierarchicalMemoryController hmc = hmcProvider.getIfAvailable();
+        if (hmc != null) {
+            hmc.admitPage(page, fragments);
+            page.recordAccess();
+            log.debug("Page admitted to L1 via HMC pageId={} fragmentCount={}", page.getPageId(), fragments.size());
+            return;
+        }
         for (MemoryFragment fragment : fragments) {
             fragment.recordAccess();
             l1.put(fragment);

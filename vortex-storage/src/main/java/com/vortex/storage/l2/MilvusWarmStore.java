@@ -16,6 +16,7 @@ import io.milvus.param.collection.DescribeCollectionParam;
 import io.milvus.param.collection.DropCollectionParam;
 import io.milvus.param.collection.FieldType;
 import io.milvus.param.collection.HasCollectionParam;
+import io.milvus.param.collection.LoadCollectionParam;
 import io.milvus.grpc.QueryResults;
 import io.milvus.param.dml.QueryParam;
 import io.milvus.param.dml.SearchParam;
@@ -93,9 +94,11 @@ public class MilvusWarmStore implements L2WarmStore {
         if (!exists) {
             createCollection();
             createIndex();
+            loadCollection();
             log.info("Milvus collection '{}' created with dim={}", COLLECTION, embeddingDim);
         } else {
             validateCollectionDimension();
+            loadCollection();
             log.info("Milvus collection '{}' already exists (dim={})", COLLECTION, embeddingDim);
         }
     }
@@ -104,7 +107,7 @@ public class MilvusWarmStore implements L2WarmStore {
         CreateCollectionParam.Builder builder = CreateCollectionParam.newBuilder()
                 .withCollectionName(COLLECTION);
         builder.addFieldType(FieldType.newBuilder().withName(FIELD_ID).withDataType(DataType.VarChar)
-                .withMaxLength(64).withPrimaryKey(true).withAutoID(false).build());
+                .withMaxLength(256).withPrimaryKey(true).withAutoID(false).build());
         builder.addFieldType(FieldType.newBuilder().withName(FIELD_NS).withDataType(DataType.VarChar)
                 .withMaxLength(128).build());
         builder.addFieldType(FieldType.newBuilder().withName(FIELD_CONTENT).withDataType(DataType.VarChar)
@@ -123,6 +126,12 @@ public class MilvusWarmStore implements L2WarmStore {
                 .withIndexType(io.milvus.param.IndexType.IVF_FLAT)
                 .withMetricType(io.milvus.param.MetricType.COSINE)
                 .withExtraParam("{\"nlist\":128}")
+                .build());
+    }
+
+    private void loadCollection() {
+        client.loadCollection(LoadCollectionParam.newBuilder()
+                .withCollectionName(COLLECTION)
                 .build());
     }
 

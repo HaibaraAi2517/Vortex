@@ -5,6 +5,8 @@ import com.vortex.common.dto.RecallResult;
 import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.model.MemoryFragment;
+import com.vortex.common.model.PageState;
+import com.vortex.common.model.SemanticPage;
 import com.vortex.common.model.TaskState;
 import com.vortex.kernel.embedding.EmbeddingService;
 import com.vortex.kernel.paging.SemanticPagingManager;
@@ -971,6 +973,112 @@ class HierarchicalMemoryControllerTest {
 
         assertThat(l1.peek("incoming-expand")).isPresent();
         assertThat(hmc.sloSnapshot().tieredExpandedSelections()).isGreaterThan(0);
+    }
+
+    @Test
+    void admitPageKeepsL1WithinTokenCapacity() {
+        CaffeineHotStore l1 = new CaffeineHotStore(24);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1,
+                l2,
+                l3,
+                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
+                new NamespaceQuotaManager(1.0, 1.0, 1),
+                TEST_WEIGHT_LEARNER,
+                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+                TEST_SLO_TRACKER,
+                persistenceManager(l2, l3),
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding,
+                emptyProvider(),
+                emptyPagingProvider(),
+                0.95,
+                30_000L,
+                60_000L,
+                1,
+                2
+        );
+
+        MemoryFragment residentA = fragment("resident-a", "ns", "resident-a", List.of(), 4);
+        residentA.setTokenCount(10);
+        residentA.setImportance(0.8);
+        MemoryFragment residentB = fragment("resident-b", "ns", "resident-b", List.of(), 4);
+        residentB.setTokenCount(10);
+        residentB.setImportance(0.8);
+        MemoryFragment pagedIn = fragment("paged-in", "ns", "paged-in", List.of(), 4);
+        pagedIn.setTokenCount(10);
+        pagedIn.setImportance(0.2);
+
+        hmc.storeFragment(residentA);
+        hmc.storeFragment(residentB);
+
+        SemanticPage page = SemanticPage.builder()
+                .pageId("page-capacity")
+                .centroid(vector(4))
+                .state(PageState.FAULTING)
+                .build();
+        page.addFragment(pagedIn.getId());
+
+        hmc.admitPage(page, List.of(pagedIn));
+
+        assertThat(l1.currentTokenCount()).isLessThanOrEqualTo(24);
+        assertThat(l1.peek("paged-in")).isPresent();
+        assertThat(l1.getAll("ns")).hasSize(2);
+    }
+
+    @Test
+    void admitPageDoesNotEvictNewRecallWhenRefreshingResidentFragments() {
+        CaffeineHotStore l1 = new CaffeineHotStore(24);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1,
+                l2,
+                l3,
+                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
+                new NamespaceQuotaManager(1.0, 1.0, 1),
+                TEST_WEIGHT_LEARNER,
+                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+                TEST_SLO_TRACKER,
+                persistenceManager(l2, l3),
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding,
+                emptyProvider(),
+                emptyPagingProvider(),
+                0.95,
+                30_000L,
+                60_000L,
+                1,
+                2
+        );
+
+        MemoryFragment medium = fragment("medium", "ns", "medium", List.of(), 4);
+        medium.setTokenCount(10);
+        medium.setImportance(0.9);
+        MemoryFragment filler = fragment("filler", "ns", "filler", List.of(), 4);
+        filler.setTokenCount(10);
+        filler.setImportance(0.9);
+        MemoryFragment cold = fragment("cold", "ns", "cold", List.of(), 4);
+        cold.setTokenCount(10);
+        cold.setImportance(0.1);
+
+        hmc.storeFragment(medium);
+        hmc.storeFragment(filler);
+        hmc.admitPage(
+                SemanticPage.builder().pageId("page-refresh").centroid(vector(4)).state(PageState.FAULTING).build(),
+                List.of(cold, medium, filler));
+
+        assertThat(l1.currentTokenCount()).isLessThanOrEqualTo(24);
+        assertThat(l1.getAll("ns")).hasSizeLessThanOrEqualTo(2);
+        assertThat(l1.getAll("ns").stream().map(MemoryFragment::getId)).contains("cold");
     }
 
     @Test

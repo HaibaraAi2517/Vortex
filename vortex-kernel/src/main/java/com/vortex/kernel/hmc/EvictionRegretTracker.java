@@ -2,6 +2,7 @@ package com.vortex.kernel.hmc;
 
 import com.vortex.common.model.MemoryFragment;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +23,7 @@ public class EvictionRegretTracker {
     private final LongAdder evictionCount = new LongAdder();
     private final LongAdder regretCount = new LongAdder();
 
+    @Autowired
     public EvictionRegretTracker(
             @Value("${vortex.kernel.eviction.regret-window-ms:3600000}") long regretWindowMs) {
         this(regretWindowMs, System::currentTimeMillis);

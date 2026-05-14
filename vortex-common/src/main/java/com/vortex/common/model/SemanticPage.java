@@ -6,8 +6,11 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * A semantic page groups up to 10 semantically related MemoryFragments.
@@ -30,11 +33,11 @@ public class SemanticPage {
 
     /** Fragment IDs belonging to this page (max {@code PAGE_SIZE} = 10). */
     @Builder.Default
-    private Set<String> fragmentIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private Set<String> fragmentIds = new CopyOnWriteArraySet<>();
 
     /** DAG node IDs that reference this page. */
     @Builder.Default
-    private Set<String> dagNodeIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private Set<String> dagNodeIds = new CopyOnWriteArraySet<>();
 
     /** Cumulative access count (read + write). */
     @Builder.Default

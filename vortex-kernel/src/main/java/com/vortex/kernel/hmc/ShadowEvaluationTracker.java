@@ -2,6 +2,7 @@ package com.vortex.kernel.hmc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -35,6 +36,7 @@ public class ShadowEvaluationTracker {
     private final Object persistenceLock = new Object();
     private final ConcurrentHashMap<String, ShadowProfileStats> statsByScenario = new ConcurrentHashMap<>();
 
+    @Autowired
     public ShadowEvaluationTracker(
             @Value("${vortex.kernel.learning.shadow-promotion-threshold:0.20}") double promotionThreshold,
             @Value("${vortex.kernel.learning.shadow-promotion-window-days:14}") long promotionWindowDays,

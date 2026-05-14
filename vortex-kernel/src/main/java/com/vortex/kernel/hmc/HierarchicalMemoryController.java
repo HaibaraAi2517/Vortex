@@ -16,6 +16,7 @@ import com.vortex.storage.api.L3ColdStore;
 import com.vortex.storage.l1.CaffeineHotStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -122,6 +123,7 @@ public class HierarchicalMemoryController {
                 2);
     }
 
+    @Autowired
     public HierarchicalMemoryController(
             L1HotStore l1,
             L2WarmStore l2,
@@ -268,7 +270,9 @@ public class HierarchicalMemoryController {
         List<MemoryFragment> evaluationPool = new ArrayList<>(filteredL1Candidates);
         if (activeSelected.size() < query.getTopK()) {
             int needed = query.getTopK() - activeSelected.size();
-            int l2SearchLimit = requiredTags.isEmpty() ? needed : Math.max(needed * 4, needed);
+            int l2SearchLimit = Math.max(
+                    needed * 4,
+                    query.getTopK() * 4);
             List<MemoryFragment> l2Hits = l2.search(l2QueryEmbedding, query.getNamespace(), l2SearchLimit);
             IncrementalRedundancyState redundancyState = IncrementalRedundancyState.from(filteredL1Candidates);
             for (MemoryFragment hit : l2Hits) {
@@ -599,6 +603,12 @@ public class HierarchicalMemoryController {
     private boolean admitToL1(MemoryFragment fragment, String context) {
         admissionLock.lock();
         try {
+            if (l1.peek(fragment.getId()).isPresent()) {
+                l1.put(fragment);
+                indexPin(fragment);
+                reindexTierMembership(fragment);
+                return true;
+            }
             enforceQuotaBeforeInsert(fragment);
             maybeEvict(fragment.getNamespace(), fragment.getEmbedding());
             if (!ensureCapacityForAdmission(fragment, context)) {
@@ -617,12 +627,31 @@ public class HierarchicalMemoryController {
      * Admit an entire semantic page to L1 atomically.
      * Used by the paging subsystem when handling page faults.
      */
-    void admitPage(SemanticPage page, List<MemoryFragment> fragments) {
+    public void admitPage(SemanticPage page, List<MemoryFragment> fragments) {
         if (page == null || fragments == null || fragments.isEmpty()) return;
+        Set<String> residentAtAdmissionStart = fragments.stream()
+                .map(MemoryFragment::getId)
+                .filter(fragmentId -> l1.peek(fragmentId).isPresent())
+                .collect(Collectors.toSet());
         admissionLock.lock();
         try {
             for (MemoryFragment fragment : fragments) {
+                if (residentAtAdmissionStart.contains(fragment.getId())) {
+                    if (l1.peek(fragment.getId()).isPresent()) {
+                        l1.put(fragment);
+                        indexPin(fragment);
+                        reindexTierMembership(fragment);
+                    }
+                    continue;
+                }
+                if (l1.peek(fragment.getId()).isPresent()) {
+                    l1.put(fragment);
+                    indexPin(fragment);
+                    reindexTierMembership(fragment);
+                    continue;
+                }
                 enforceQuotaBeforeInsert(fragment);
+                maybeEvict(fragment.getNamespace(), fragment.getEmbedding());
                 if (ensureCapacityForAdmission(fragment, "page-fault")) {
                     l1.put(fragment);
                     indexPin(fragment);

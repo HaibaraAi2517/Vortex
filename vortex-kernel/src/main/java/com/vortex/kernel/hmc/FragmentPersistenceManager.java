@@ -4,6 +4,7 @@ import com.vortex.common.model.MemoryFragment;
 import com.vortex.storage.api.L2WarmStore;
 import com.vortex.storage.api.L3ColdStore;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -26,6 +27,7 @@ public class FragmentPersistenceManager {
     private final boolean replayOnStartup;
     private final Executor asyncExecutor;
 
+    @Autowired
     public FragmentPersistenceManager(
             L2WarmStore l2,
             L3ColdStore l3,
