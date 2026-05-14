@@ -379,6 +379,11 @@ public class SnapshotService {
         return recovered;
     }
 
+    /** Test-only: evicts task from cache to verify lazy recovery. */
+    public void evictFromCacheForTest(String taskId) {
+        activeTasks.invalidate(taskId);
+    }
+
     // ========================================================================
     // Branching
     // ========================================================================

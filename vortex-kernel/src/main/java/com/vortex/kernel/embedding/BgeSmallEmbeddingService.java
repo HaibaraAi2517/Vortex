@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * Local embedding service using BGE-Small-ZH (BAAI/bge-small-zh-v1.5).
@@ -182,6 +183,14 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
 
     public CompletableFuture<List<float[]>> embedBatchAsync(List<String> texts) {
         return CompletableFuture.supplyAsync(() -> embedBatch(texts), jniPool);
+    }
+
+    int jniPoolActiveCountForTest() {
+        return jniPool instanceof ThreadPoolExecutor executor ? executor.getActiveCount() : -1;
+    }
+
+    int jniPoolMaxSizeForTest() {
+        return jniPool instanceof ThreadPoolExecutor executor ? executor.getMaximumPoolSize() : -1;
     }
 
     @Override

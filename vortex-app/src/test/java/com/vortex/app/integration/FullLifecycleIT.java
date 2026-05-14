@@ -1,6 +1,5 @@
 package com.vortex.app.integration;
 
-import com.github.benmanes.caffeine.cache.Cache;
 import com.vortex.app.VortexApplication;
 import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.MemoryScenario;
@@ -34,7 +33,6 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -46,14 +44,22 @@ import static org.awaitility.Awaitility.await;
 
 @SpringBootTest(
         classes = {VortexApplication.class, FullLifecycleIT.TestEmbeddingConfig.class},
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {
+                "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
+                        + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration"
+        })
 @Testcontainers
 public class FullLifecycleIT {
 
     private static final Network NETWORK = Network.newNetwork();
-    private static final String SHADOW_PATH = System.getProperty("java.io.tmpdir") + "/vortex-shadow-it.json";
-    private static final String DLQ_PATH = System.getProperty("java.io.tmpdir") + "/vortex-dlq-it.jsonl";
-    private static final String PROCESSED_KEYS_PATH = System.getProperty("java.io.tmpdir") + "/vortex-processed-it.txt";
+    private static final String RUN_ID = UUID.randomUUID().toString().substring(0, 8);
+    private static final String SHADOW_PATH = System.getProperty("java.io.tmpdir")
+            + "/vortex-shadow-" + RUN_ID + ".json";
+    private static final String DLQ_PATH = System.getProperty("java.io.tmpdir")
+            + "/vortex-dlq-" + RUN_ID + ".jsonl";
+    private static final String PROCESSED_KEYS_PATH = System.getProperty("java.io.tmpdir")
+            + "/vortex-processed-" + RUN_ID + ".txt";
 
     @Container
     static final GenericContainer<?> minio = new GenericContainer<>("minio/minio:RELEASE.2024-07-04T14-25-45Z")
@@ -79,17 +85,21 @@ public class FullLifecycleIT {
                     "--listen-client-urls=http://0.0.0.0:2379",
                     "--data-dir=/etcd")
             .withExposedPorts(2379)
-            .waitingFor(Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(2)));
+            .waitingFor(Wait.forHttp("/health")
+                    .forPort(2379)
+                    .allowInsecure()
+                    .withStartupTimeout(Duration.ofMinutes(2)));
 
     @Container
     static final GenericContainer<?> milvus = new GenericContainer<>("milvusdb/milvus:v2.4.4")
             .withNetwork(NETWORK)
             .withNetworkAliases("milvus")
+            .dependsOn(etcd, minio)
             .withEnv("ETCD_ENDPOINTS", "etcd:2379")
             .withEnv("MINIO_ADDRESS", "minio:9000")
             .withCommand("milvus", "run", "standalone")
             .withExposedPorts(19530, 9091)
-            .waitingFor(Wait.forHttp("/healthz").forPort(9091).withStartupTimeout(Duration.ofMinutes(3)));
+            .waitingFor(Wait.forHttp("/healthz").forPort(9091).withStartupTimeout(Duration.ofMinutes(5)));
 
     @Autowired
     private TestRestTemplate restTemplate;
@@ -131,14 +141,14 @@ public class FullLifecycleIT {
     }
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         namespace = "demo-it-" + UUID.randomUUID();
         l1HotStore.clear(namespace);
         clearAdaptiveRecallSessions();
     }
 
     @AfterEach
-    void tearDown() throws Exception {
+    void tearDown() {
         l1HotStore.clear(namespace);
         clearAdaptiveRecallSessions();
     }
@@ -149,17 +159,20 @@ public class FullLifecycleIT {
                 "frag-java-thread-safety",
                 "java thread safety synchronization locks",
                 new float[]{1.0f, 0.0f, 0.0f, 0.0f},
-                10);
+                10,
+                0.1);
         MemoryFragment mediumFragment = fragment(
                 "frag-java-concurrency",
                 "java concurrency executors futures",
                 new float[]{0.88f, 0.12f, 0.0f, 0.0f},
-                10);
+                10,
+                0.8);
         MemoryFragment fillerFragment = fragment(
                 "frag-python-data",
                 "python pandas dataframe joins",
                 new float[]{0.0f, 1.0f, 0.0f, 0.0f},
-                10);
+                10,
+                0.8);
 
         storeFragment(coldFragment);
         storeFragment(mediumFragment);
@@ -281,12 +294,14 @@ public class FullLifecycleIT {
                     preferredFragmentId + "-" + i,
                     "java locks volatile happens-before",
                     new float[]{1.0f, 0.0f, 0.0f, 0.0f},
-                    4));
+                    4,
+                    0.5));
             storeFragment(fragment(
                     alternateFragmentId + "-" + i,
                     "python notebooks visualization",
                     new float[]{0.0f, 1.0f, 0.0f, 0.0f},
-                    4));
+                    4,
+                    0.5));
 
             ResponseEntity<RecallResult> recallResponse = restTemplate.postForEntity(
                     "/api/v1/memory/recall",
@@ -340,32 +355,24 @@ public class FullLifecycleIT {
         assertThat(response.getBody()).containsEntry("id", fragment.getId());
     }
 
-    private MemoryFragment fragment(String id, String content, float[] embedding, int tokenCount) {
+    private MemoryFragment fragment(String id, String content, float[] embedding, int tokenCount, double importance) {
         return MemoryFragment.builder()
                 .id(id + "-" + namespace)
                 .namespace(namespace)
                 .content(content)
                 .embedding(embedding)
                 .tokenCount(tokenCount)
-                .importance(0.5)
+                .importance(importance)
                 .tags(List.of("integration"))
                 .build();
     }
 
-    @SuppressWarnings("unchecked")
-    private void invalidateTaskCache(String taskId) throws Exception {
-        Field field = SnapshotService.class.getDeclaredField("activeTasks");
-        field.setAccessible(true);
-        Cache<String, ?> cache = (Cache<String, ?>) field.get(snapshotService);
-        cache.invalidate(taskId);
+    private void invalidateTaskCache(String taskId) {
+        snapshotService.evictFromCacheForTest(taskId);
     }
 
-    @SuppressWarnings("unchecked")
-    private void clearAdaptiveRecallSessions() throws Exception {
-        Field field = AdaptiveWeightLearner.class.getDeclaredField("recallSessions");
-        field.setAccessible(true);
-        Cache<String, ?> cache = (Cache<String, ?>) field.get(adaptiveWeightLearner);
-        cache.invalidateAll();
+    private void clearAdaptiveRecallSessions() {
+        adaptiveWeightLearner.clearPendingSessionsForTest();
     }
 
     @TestConfiguration

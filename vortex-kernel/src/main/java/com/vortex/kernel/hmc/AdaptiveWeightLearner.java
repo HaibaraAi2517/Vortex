@@ -2,6 +2,7 @@ package com.vortex.kernel.hmc;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Ticker;
 import com.vortex.common.dto.MemoryScenario;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -33,11 +34,9 @@ public class AdaptiveWeightLearner {
     private final int warmupRecalls;
     private final List<ArmDefinition> armCatalog;
     private final Map<MemoryScenario, ScenarioState> profiles = new EnumMap<>(MemoryScenario.class);
-    private final Cache<String, RecallSessionRecord> recallSessions = Caffeine.newBuilder()
-            .maximumSize(10_000)
-            .expireAfterWrite(Duration.ofMinutes(30))
-            .build();
+    private final Cache<String, RecallSessionRecord> recallSessions;
     private final ShadowEvaluationTracker shadowEvaluationTracker;
+    private final Ticker recallSessionTicker;
 
     public AdaptiveWeightLearner(
             ShadowEvaluationTracker shadowEvaluationTracker,
@@ -46,7 +45,7 @@ public class AdaptiveWeightLearner {
             @Value("${vortex.kernel.eviction.alpha:0.3}") double defaultAlpha,
             @Value("${vortex.kernel.eviction.beta:0.5}") double defaultBeta,
             @Value("${vortex.kernel.eviction.gamma:0.2}") double defaultGamma) {
-        this(shadowEvaluationTracker, learningRate, warmupRecalls, defaultAlpha, defaultBeta, defaultGamma, 14);
+        this(shadowEvaluationTracker, learningRate, warmupRecalls, defaultAlpha, defaultBeta, defaultGamma, 14, Ticker.systemTicker());
     }
 
     AdaptiveWeightLearner(
@@ -57,10 +56,28 @@ public class AdaptiveWeightLearner {
             double defaultBeta,
             double defaultGamma,
             long rollbackWindowDays) {
+        this(shadowEvaluationTracker, learningRate, warmupRecalls, defaultAlpha, defaultBeta, defaultGamma, rollbackWindowDays, Ticker.systemTicker());
+    }
+
+    AdaptiveWeightLearner(
+            ShadowEvaluationTracker shadowEvaluationTracker,
+            double learningRate,
+            int warmupRecalls,
+            double defaultAlpha,
+            double defaultBeta,
+            double defaultGamma,
+            long rollbackWindowDays,
+            Ticker recallSessionTicker) {
         this.shadowEvaluationTracker = shadowEvaluationTracker;
         this.learningRate = learningRate;
         this.warmupRecalls = Math.max(1, warmupRecalls);
         this.rollbackWindow = Duration.ofDays(Math.max(1L, rollbackWindowDays));
+        this.recallSessionTicker = recallSessionTicker == null ? Ticker.systemTicker() : recallSessionTicker;
+        this.recallSessions = Caffeine.newBuilder()
+                .maximumSize(10_000)
+                .expireAfterWrite(Duration.ofMinutes(30))
+                .ticker(this.recallSessionTicker)
+                .build();
         this.armCatalog = buildArmCatalog();
         int seedArmIndex = closestArmIndex(defaultAlpha, defaultBeta, defaultGamma);
         for (MemoryScenario scenario : MemoryScenario.values()) {
@@ -143,6 +160,26 @@ public class AdaptiveWeightLearner {
         synchronized (state) {
             return buildSnapshot(state, shadow);
         }
+    }
+
+    double[] armProbabilitiesForTest(MemoryScenario scenario) {
+        ScenarioState state = scenarioState(scenario);
+        synchronized (state) {
+            return distribution(state);
+        }
+    }
+
+    long recallSessionsSizeForTest() {
+        return recallSessions.estimatedSize();
+    }
+
+    void cleanUpPendingSessionsForTest() {
+        recallSessions.cleanUp();
+    }
+
+    /** Test-only: clears pending recall sessions for deterministic test isolation. */
+    public void clearPendingSessionsForTest() {
+        recallSessions.invalidateAll();
     }
 
     private void updateBandit(ScenarioState state, RecallSessionRecord session, FeedbackSignals signals) {
