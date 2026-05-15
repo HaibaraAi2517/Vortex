@@ -2,6 +2,7 @@ package com.vortex.kernel.snapshot;
 
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.vortex.common.model.*;
+import com.vortex.common.serialization.KryoSerializer;
 import com.vortex.storage.api.L3ColdStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -133,6 +134,28 @@ class SnapshotServiceTest {
     }
 
     @Test
+    void recover_sameCheckpointTwice_replaysWalEachTime() {
+        TaskState task = service.createTask("repeat-recovery test", "ns");
+        DagNode beforeCheckpoint = service.appendNode(task.getTaskId(), "THOUGHT", "before checkpoint");
+        String checkpointId = service.checkpoint(task.getTaskId());
+
+        DagNode afterCheckpoint = service.appendNode(task.getTaskId(), "ACTION", "after checkpoint");
+        service.completeNode(task.getTaskId(), afterCheckpoint.getNodeId(), "done");
+
+        TaskState firstRecovery = service.recover(task.getTaskId(), checkpointId);
+        assertThat(firstRecovery.getGraph().getNode(beforeCheckpoint.getNodeId())).isPresent();
+        assertThat(firstRecovery.getGraph().getNode(afterCheckpoint.getNodeId())).isPresent();
+
+        service.evictFromCacheForTest(task.getTaskId());
+
+        TaskState secondRecovery = service.recover(task.getTaskId(), checkpointId);
+        assertThat(secondRecovery.getGraph().getNode(beforeCheckpoint.getNodeId())).isPresent();
+        assertThat(secondRecovery.getGraph().getNode(afterCheckpoint.getNodeId())).isPresent();
+        assertThat(secondRecovery.getGraph().getNode(afterCheckpoint.getNodeId()).orElseThrow().getStatus())
+                .isEqualTo(DagNode.NodeStatus.COMPLETED);
+    }
+
+    @Test
     void recover_withoutCheckpointId_afterRestart_usesLatestCheckpointFromL3() {
         TaskState task = service.createTask("restart recovery test", "ns");
         DagNode node = service.appendNode(task.getTaskId(), "THOUGHT", "persist me");
@@ -150,6 +173,85 @@ class SnapshotServiceTest {
         assertThat(restarted.listCheckpoints(task.getTaskId()))
                 .extracting(CheckpointMetadata::getCheckpointId)
                 .contains(checkpointId);
+    }
+
+    @Test
+    void recover_fromDeltaCheckpoint_restoresStateFromBaseAndDelta() {
+        service = newService(fakeL3, 10, 20);
+
+        TaskState task = service.createTask("delta recovery test", "ns");
+        DagNode first = service.appendNode(task.getTaskId(), "THOUGHT", "before full");
+        String fullCheckpointId = service.checkpoint(task.getTaskId());
+
+        DagNode second = service.appendNodeWithTarget(task.getTaskId(), "ACTION", "after full",
+                first.getNodeId(), DagEdge.EdgeType.CONTROL_DEP);
+        service.updateContext(task.getTaskId(), "delta-key", "delta-value");
+        String deltaCheckpointId = service.checkpoint(task.getTaskId());
+
+        TaskState recovered = service.recover(task.getTaskId(), deltaCheckpointId);
+
+        assertThat(deltaCheckpointId).isNotEqualTo(fullCheckpointId);
+        assertThat(recovered.getLatestCheckpointId()).isEqualTo(deltaCheckpointId);
+        assertThat(recovered.getGraph().getNode(first.getNodeId())).isPresent();
+        assertThat(recovered.getGraph().getNode(second.getNodeId())).isPresent();
+        assertThat(recovered.getGraph().areConnected(first.getNodeId(), second.getNodeId())).isTrue();
+        assertThat(recovered.getContext()).containsEntry("delta-key", "delta-value");
+    }
+
+    @Test
+    void checkpointRotation_resetsDeltaCountAfterNewFull() {
+        service = newService(fakeL3, 2, 20);
+
+        TaskState task = service.createTask("checkpoint rotation test", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "n1");
+        service.checkpoint(task.getTaskId());
+
+        service.appendNode(task.getTaskId(), "THOUGHT", "n2");
+        service.checkpoint(task.getTaskId());
+
+        service.appendNode(task.getTaskId(), "THOUGHT", "n3");
+        service.checkpoint(task.getTaskId());
+
+        service.appendNode(task.getTaskId(), "THOUGHT", "n4");
+        service.checkpoint(task.getTaskId());
+
+        service.appendNode(task.getTaskId(), "THOUGHT", "n5");
+        service.checkpoint(task.getTaskId());
+
+        assertThat(service.listCheckpoints(task.getTaskId()))
+                .extracting(CheckpointMetadata::getType)
+                .containsExactly(
+                        CheckpointMetadata.CheckpointType.FULL,
+                        CheckpointMetadata.CheckpointType.DELTA,
+                        CheckpointMetadata.CheckpointType.DELTA,
+                        CheckpointMetadata.CheckpointType.FULL,
+                        CheckpointMetadata.CheckpointType.DELTA);
+    }
+
+    @Test
+    void retentionReloadsCheckpointHistoryAfterDeletion() {
+        service = newService(fakeL3, 10, 2);
+
+        TaskState task = service.createTask("retention test", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "n1");
+        service.checkpoint(task.getTaskId());
+
+        service.appendNode(task.getTaskId(), "THOUGHT", "n2");
+        service.checkpoint(task.getTaskId());
+
+        service.appendNode(task.getTaskId(), "THOUGHT", "n3");
+        service.checkpoint(task.getTaskId());
+
+        List<CheckpointMetadata> listedByService = service.listCheckpoints(task.getTaskId());
+        List<CheckpointMetadata> listedByStore = fakeL3.listCheckpointMetadata(task.getTaskId());
+
+        assertThat(listedByService).hasSize(2);
+        assertThat(listedByStore).hasSize(2);
+        assertThat(listedByService)
+                .extracting(CheckpointMetadata::getCheckpointId)
+                .containsExactlyElementsOf(listedByStore.stream()
+                        .map(CheckpointMetadata::getCheckpointId)
+                        .toList());
     }
 
     @Test
@@ -228,12 +330,16 @@ class SnapshotServiceTest {
     }
 
     private SnapshotService newService(FakeL3ColdStore store) {
+        return newService(store, 10, 20);
+    }
+
+    private SnapshotService newService(FakeL3ColdStore store, int maxDeltasBeforeFull, int maxPerTask) {
         String walDir = tempDir.resolve("wal").toString();
         walWriter = new ActionLogWriter(walDir);
         walReader = new ActionLogReader(walDir);
         walTruncator = new ActionLogTruncator(walReader, walDir);
         dirtySetTracker = new DirtySetTracker();
-        checkpointManager = new IncrementalCheckpointManager(store, dirtySetTracker, 10);
+        checkpointManager = new IncrementalCheckpointManager(store, dirtySetTracker, maxDeltasBeforeFull);
         scheduler = new CheckpointScheduler(50, 60000, false);
         conflictDetector = new BranchMergeConflictDetector();
         branchManager = new BranchManager(10, conflictDetector);
@@ -242,7 +348,7 @@ class SnapshotServiceTest {
         ApplicationEventPublisher eventPublisher = event -> {};
         SnapshotService snapshotService = new SnapshotService(
                 store, walWriter, walReader, walTruncator,
-                checkpointManager, new CheckpointLifecycleManager(store, 20, 7, 48),
+                checkpointManager, new CheckpointLifecycleManager(store, maxPerTask, 7, 48),
                 scheduler, dirtySetTracker, branchManager, dotExporter, eventPublisher);
         snapshotService.rebuildCheckpointIndex();
         return snapshotService;
@@ -251,17 +357,19 @@ class SnapshotServiceTest {
     // ---- Fake L3 implementation for testing ----
 
     static class FakeL3ColdStore implements L3ColdStore {
-        private final java.util.concurrent.ConcurrentHashMap<String, Object> store = new java.util.concurrent.ConcurrentHashMap<>();
+        private final java.util.concurrent.ConcurrentHashMap<String, byte[]> store = new java.util.concurrent.ConcurrentHashMap<>();
         private final java.util.concurrent.ConcurrentHashMap<String, CheckpointMetadata> metadata = new java.util.concurrent.ConcurrentHashMap<>();
+        private final KryoSerializer serializer = new KryoSerializer();
 
         @Override
         public void archiveFragment(MemoryFragment fragment) {
-            store.put("frag/" + fragment.getId(), fragment);
+            store.put("frag/" + fragment.getId(), serializer.serialize(fragment));
         }
 
         @Override
         public Optional<MemoryFragment> retrieveFragment(String id) {
-            return Optional.ofNullable((MemoryFragment) store.get("frag/" + id));
+            return Optional.ofNullable(store.get("frag/" + id))
+                    .map(bytes -> serializer.deserialize(bytes, MemoryFragment.class));
         }
 
         @Override
@@ -270,7 +378,7 @@ class SnapshotServiceTest {
                     ? state.getLatestCheckpointId()
                     : java.util.UUID.randomUUID().toString();
             state.setLatestCheckpointId(cpId);
-            store.put("cp/" + state.getTaskId() + "/" + cpId, state);
+            store.put("cp/" + state.getTaskId() + "/" + cpId, serializer.serialize(state));
             metadata.put(state.getTaskId() + "/" + cpId, CheckpointMetadata.builder()
                     .checkpointId(cpId)
                     .taskId(state.getTaskId())
@@ -285,17 +393,40 @@ class SnapshotServiceTest {
         }
 
         @Override
-        @SuppressWarnings("unchecked")
+        public CheckpointMetadata saveCheckpointWithMetadata(TaskState state, CheckpointMetadata meta) {
+            String cpId = meta.getCheckpointId();
+            state.setLatestCheckpointId(cpId);
+            store.put("cp/" + state.getTaskId() + "/" + cpId, serializer.serialize(state));
+            if (meta.getCreatedAt() == null) {
+                meta.setCreatedAt(state.getLastCheckpointAt());
+            }
+            meta.setL3Key("cp/" + state.getTaskId() + "/" + cpId);
+            metadata.put(state.getTaskId() + "/" + cpId, meta);
+            return meta;
+        }
+
+        @Override
         public Optional<TaskState> loadCheckpoint(String checkpointId) {
             // checkpointId format: taskId/uuid
             String key = "cp/" + checkpointId;
-            return Optional.ofNullable((TaskState) store.get(key));
+            return Optional.ofNullable(store.get(key))
+                    .map(bytes -> serializer.deserialize(bytes, TaskState.class));
         }
 
         @Override
         public void deleteCheckpoint(String checkpointId) {
             store.remove("cp/" + checkpointId);
             metadata.remove(checkpointId);
+        }
+
+        @Override
+        public void putBytes(String key, byte[] data) {
+            store.put(key, data);
+        }
+
+        @Override
+        public byte[] getBytes(String key) {
+            return store.get(key);
         }
 
         @Override

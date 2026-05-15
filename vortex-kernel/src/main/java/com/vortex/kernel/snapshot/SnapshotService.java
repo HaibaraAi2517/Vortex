@@ -55,8 +55,6 @@ public class SnapshotService {
     /** Durable latest-checkpoint index rebuilt from L3 on startup. */
     private final ConcurrentHashMap<String, String> latestCheckpointIds = new ConcurrentHashMap<>();
 
-    /** Set of already-replayed WAL entry UUIDs for idempotent recovery. */
-    private final ConcurrentHashMap<String, Set<String>> replayedEntries = new ConcurrentHashMap<>();
     private final ThreadLocal<Set<String>> evictionCheckpointGuard =
             ThreadLocal.withInitial(HashSet::new);
 
@@ -345,6 +343,7 @@ public class SnapshotService {
     private String checkpoint(String taskId, TaskState state) {
         // Flush WAL to ensure all entries are on disk
         walWriter.flush(taskId);
+        walWriter.rotate(taskId);
 
         long walSeq = walWriter.currentSequenceNumber(taskId);
 
@@ -364,6 +363,7 @@ public class SnapshotService {
         // Apply retention policy periodically
         lifecycleManager.applyRetention(taskId,
                 checkpointManager.listCheckpoints(taskId));
+        checkpointManager.reloadTask(taskId);
 
         log.info("Checkpoint completed taskId={} checkpointId={} type={} seqNo={}",
                 taskId, meta.getCheckpointId(), meta.getType(), walSeq);
@@ -462,7 +462,6 @@ public class SnapshotService {
         // Clean up tracking
         scheduler.unregisterTask(taskId);
         checkpointManager.removeTask(taskId);
-        replayedEntries.remove(taskId);
         latestCheckpointIds.remove(taskId);
 
         state.setStatus(TaskState.TaskStatus.COMPLETED);
@@ -513,8 +512,7 @@ public class SnapshotService {
         long checkpointSeq = recovered.getWalSequenceNumber();
         List<ActionLogEntry> walEntries = walReader.readFrom(taskId, checkpointSeq + 1);
 
-        Set<String> alreadyReplayed = replayedEntries.computeIfAbsent(taskId,
-                k -> ConcurrentHashMap.newKeySet());
+        Set<String> alreadyReplayed = new HashSet<>();
 
         int replayed = 0;
         int skipped = 0;

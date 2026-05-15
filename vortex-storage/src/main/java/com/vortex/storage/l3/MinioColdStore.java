@@ -10,13 +10,13 @@ import com.vortex.storage.api.L3ColdStore;
 import io.minio.*;
 import io.minio.messages.Item;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 
@@ -42,21 +42,33 @@ public class MinioColdStore implements L3ColdStore {
 
     private final MinioClient minioClient;
     private final String bucket;
+    private final String keyPrefix;
     private final ObjectMapper objectMapper;
     private final KryoSerializer kryoSerializer;
 
+    @Autowired
     public MinioColdStore(
             @Value("${vortex.storage.l3.minio.endpoint:http://localhost:9000}") String endpoint,
             @Value("${vortex.storage.l3.minio.access-key:minioadmin}") String accessKey,
             @Value("${vortex.storage.l3.minio.secret-key:minioadmin}") String secretKey,
-            @Value("${vortex.storage.l3.minio.bucket:vortex}") String bucket) {
-        this.bucket = bucket;
-        this.objectMapper = new ObjectMapper().findAndRegisterModules();
-        this.kryoSerializer = new KryoSerializer();
-        this.minioClient = MinioClient.builder()
+            @Value("${vortex.storage.l3.minio.bucket:vortex}") String bucket,
+            @Value("${vortex.storage.l3.minio.key-prefix:}") String keyPrefix) {
+        this(
+                MinioClient.builder()
                 .endpoint(endpoint)
                 .credentials(accessKey, secretKey)
-                .build();
+                .build(),
+                bucket,
+                keyPrefix
+        );
+    }
+
+    MinioColdStore(MinioClient minioClient, String bucket, String keyPrefix) {
+        this.bucket = bucket;
+        this.keyPrefix = normalizeKeyPrefix(keyPrefix);
+        this.objectMapper = new ObjectMapper().findAndRegisterModules();
+        this.kryoSerializer = new KryoSerializer();
+        this.minioClient = minioClient;
     }
 
     @PostConstruct
@@ -77,14 +89,12 @@ public class MinioColdStore implements L3ColdStore {
 
     @Override
     public void archiveFragment(MemoryFragment fragment) {
-        String key = PREFIX_FRAGMENT + fragment.getId() + ".json";
-        putJson(key, fragment);
+        putJson(fragmentKey(fragment.getId()), fragment);
     }
 
     @Override
     public Optional<MemoryFragment> retrieveFragment(String id) {
-        String key = PREFIX_FRAGMENT + id + ".json";
-        return getJson(key, MemoryFragment.class);
+        return getJson(fragmentKey(id), MemoryFragment.class);
     }
 
     // ---- Checkpoint (Kryo binary with Jackson fallback) ----
@@ -108,6 +118,7 @@ public class MinioColdStore implements L3ColdStore {
     /**
      * Save checkpoint with explicit metadata, returning CheckpointMetadata.
      */
+    @Override
     public CheckpointMetadata saveCheckpointWithMetadata(TaskState state, CheckpointMetadata meta) {
         String checkpointId = meta.getCheckpointId();
         state.setLatestCheckpointId(checkpointId);
@@ -130,71 +141,74 @@ public class MinioColdStore implements L3ColdStore {
     }
 
     @Override
-    public Optional<TaskState> loadCheckpoint(String checkpointId) {
+    public Optional<TaskState> loadCheckpoint(String checkpointRef) {
+        String checkpointBaseKey = normalizeCheckpointBaseKey(checkpointRef);
+
         // Try Kryo format first
-        String kryoKey = PREFIX_CHECKPOINT + checkpointId + KRYO_SUFFIX;
+        String kryoKey = checkpointBaseKey + KRYO_SUFFIX;
         byte[] data = getBinary(kryoKey);
         if (data != null && data.length > 0) {
             if (KryoSerializer.isKryoFormat(data)) {
                 try {
                     TaskState state = kryoSerializer.deserializeCompressed(data, TaskState.class);
-                    log.debug("Checkpoint loaded via Kryo: {}", checkpointId);
+                    log.debug("Checkpoint loaded via Kryo: {}", checkpointRef);
                     return Optional.of(state);
                 } catch (Exception e) {
-                    log.warn("Kryo deserialization failed for {}, trying decompress fallback", checkpointId, e);
+                    log.warn("Kryo deserialization failed for {}, trying decompress fallback", checkpointRef, e);
                     // Try uncompressed Kryo
                     try {
                         return Optional.of(kryoSerializer.deserialize(data, TaskState.class));
                     } catch (Exception e2) {
-                        log.error("All Kryo fallbacks failed for {}", checkpointId, e2);
+                        log.error("All Kryo fallbacks failed for {}", checkpointRef, e2);
                     }
                 }
             } else if (JacksonCompatibilityBridge.isJacksonFormat(data)) {
-                log.info("Detected legacy Jackson format for checkpoint {}, migrating...", checkpointId);
+                log.info("Detected legacy Jackson format for checkpoint {}, migrating...", checkpointRef);
                 try {
-                    String json = new String(data, StandardCharsets.UTF_8);
                     return Optional.of(JacksonCompatibilityBridge.migrateFromJackson(data));
                 } catch (Exception e) {
-                    log.error("Jackson migration failed for {}", checkpointId, e);
+                    log.error("Jackson migration failed for {}", checkpointRef, e);
                 }
             }
         }
 
         // Try legacy Jackson JSON format
-        String jsonKey = PREFIX_CHECKPOINT + checkpointId + JSON_SUFFIX;
+        String jsonKey = checkpointBaseKey + JSON_SUFFIX;
         byte[] jsonData = getBinary(jsonKey);
         if (jsonData != null && jsonData.length > 0) {
             try {
                 return Optional.of(JacksonCompatibilityBridge.migrateFromJackson(jsonData));
             } catch (Exception e) {
-                log.error("Legacy JSON load failed for {}", checkpointId, e);
+                log.error("Legacy JSON load failed for {}", checkpointRef, e);
             }
         }
 
-        log.debug("Checkpoint not found in L3: {}", checkpointId);
+        log.debug("Checkpoint not found in L3: {}", checkpointRef);
         return Optional.empty();
     }
 
     @Override
-    public void deleteCheckpoint(String checkpointId) {
+    public void deleteCheckpoint(String checkpointRef) {
+        String checkpointBaseKey = normalizeCheckpointBaseKey(checkpointRef);
+
         // Try both formats
-        String kryoKey = PREFIX_CHECKPOINT + checkpointId + KRYO_SUFFIX;
-        String jsonKey = PREFIX_CHECKPOINT + checkpointId + JSON_SUFFIX;
-        String metaKey = PREFIX_CHECKPOINT + checkpointId + METADATA_SUFFIX;
+        String kryoKey = checkpointBaseKey + KRYO_SUFFIX;
+        String jsonKey = checkpointBaseKey + JSON_SUFFIX;
+        String metaKey = checkpointBaseKey + METADATA_SUFFIX;
         try {
-            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(kryoKey).build());
+            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(kryoKey)).build());
         } catch (Exception e) {
-            log.debug("No .kryo checkpoint to delete for {}", checkpointId);
+            log.debug("No .kryo checkpoint to delete for {}", checkpointRef);
         }
         try {
-            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(jsonKey).build());
+            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(jsonKey)).build());
         } catch (Exception e) {
-            log.debug("No .json checkpoint to delete for {}", checkpointId);
+            log.debug("No .json checkpoint to delete for {}", checkpointRef);
         }
         try {
-            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(metaKey).build());
+            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(metaKey)).build());
         } catch (Exception e) {
-            log.debug("No metadata checkpoint to delete for {}", checkpointId);
+            log.debug("No metadata checkpoint to delete for {}", checkpointRef);
         }
     }
 
@@ -275,9 +289,13 @@ public class MinioColdStore implements L3ColdStore {
         List<String> keys = new ArrayList<>();
         try {
             Iterable<Result<Item>> results = minioClient.listObjects(
-                    ListObjectsArgs.builder().bucket(bucket).prefix(prefix).recursive(true).build());
+                    ListObjectsArgs.builder()
+                            .bucket(bucket)
+                            .prefix(applyKeyPrefix(prefix))
+                            .recursive(true)
+                            .build());
             for (Result<Item> result : results) {
-                keys.add(result.get().objectName());
+                keys.add(stripKeyPrefix(result.get().objectName()));
             }
         } catch (Exception e) {
             log.error("Failed to list objects with prefix '{}': {}", prefix, e.getMessage());
@@ -300,7 +318,10 @@ public class MinioColdStore implements L3ColdStore {
         List<String> keys = listObjects(prefix);
         for (String key : keys) {
             try {
-                minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(key).build());
+                minioClient.removeObject(RemoveObjectArgs.builder()
+                        .bucket(bucket)
+                        .object(applyKeyPrefix(key))
+                        .build());
             } catch (Exception e) {
                 log.warn("Failed to delete object {}: {}", key, e.getMessage());
             }
@@ -314,7 +335,7 @@ public class MinioColdStore implements L3ColdStore {
     public long getObjectSize(String key) {
         try {
             StatObjectResponse stat = minioClient.statObject(
-                    StatObjectArgs.builder().bucket(bucket).object(key).build());
+                    StatObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(key)).build());
             return stat.size();
         } catch (Exception e) {
             return 0;
@@ -328,7 +349,7 @@ public class MinioColdStore implements L3ColdStore {
             byte[] bytes = objectMapper.writeValueAsBytes(value);
             minioClient.putObject(PutObjectArgs.builder()
                     .bucket(bucket)
-                    .object(key)
+                    .object(applyKeyPrefix(key))
                     .stream(new ByteArrayInputStream(bytes), bytes.length, -1)
                     .contentType(CONTENT_TYPE_JSON)
                     .build());
@@ -342,7 +363,7 @@ public class MinioColdStore implements L3ColdStore {
         try {
             minioClient.putObject(PutObjectArgs.builder()
                     .bucket(bucket)
-                    .object(key)
+                    .object(applyKeyPrefix(key))
                     .stream(new ByteArrayInputStream(data), data.length, -1)
                     .contentType(CONTENT_TYPE_BINARY)
                     .build());
@@ -381,15 +402,15 @@ public class MinioColdStore implements L3ColdStore {
     }
 
     private String checkpointDataKey(String taskId, String checkpointId) {
-        return PREFIX_CHECKPOINT + taskId + "/" + checkpointId + KRYO_SUFFIX;
+        return checkpointBaseKey(taskId, checkpointId) + KRYO_SUFFIX;
     }
 
     private String checkpointMetadataKey(String taskId, String checkpointId) {
-        return PREFIX_CHECKPOINT + taskId + "/" + checkpointId + METADATA_SUFFIX;
+        return checkpointBaseKey(taskId, checkpointId) + METADATA_SUFFIX;
     }
 
     private Optional<String> extractCheckpointId(String taskId, String key, String suffix) {
-        String prefix = PREFIX_CHECKPOINT + taskId + "/";
+        String prefix = checkpointPrefix(taskId);
         if (!key.startsWith(prefix) || !key.endsWith(suffix)) {
             return Optional.empty();
         }
@@ -399,7 +420,7 @@ public class MinioColdStore implements L3ColdStore {
     private Optional<Instant> getLastModified(String key) {
         try {
             StatObjectResponse stat = minioClient.statObject(
-                    StatObjectArgs.builder().bucket(bucket).object(key).build());
+                    StatObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(key)).build());
             return Optional.ofNullable(stat.lastModified()).map(t -> t.toInstant());
         } catch (Exception e) {
             return Optional.empty();
@@ -408,7 +429,7 @@ public class MinioColdStore implements L3ColdStore {
 
     private <T> Optional<T> getJson(String key, Class<T> type) {
         try (InputStream is = minioClient.getObject(
-                GetObjectArgs.builder().bucket(bucket).object(key).build())) {
+                GetObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(key)).build())) {
             return Optional.of(objectMapper.readValue(is, type));
         } catch (io.minio.errors.MinioException e) {
             log.debug("MinIO object not found key={}", key);
@@ -421,7 +442,7 @@ public class MinioColdStore implements L3ColdStore {
 
     private byte[] getBinary(String key) {
         try (InputStream is = minioClient.getObject(
-                GetObjectArgs.builder().bucket(bucket).object(key).build())) {
+                GetObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(key)).build())) {
             return is.readAllBytes();
         } catch (io.minio.errors.MinioException e) {
             log.debug("MinIO binary object not found key={}", key);
@@ -430,5 +451,57 @@ public class MinioColdStore implements L3ColdStore {
             log.error("MinIO binary get failed key={}: {}", key, e.getMessage());
             return null;
         }
+    }
+
+    private String fragmentKey(String fragmentId) {
+        return PREFIX_FRAGMENT + fragmentId + JSON_SUFFIX;
+    }
+
+    private String checkpointPrefix(String taskId) {
+        return PREFIX_CHECKPOINT + taskId + "/";
+    }
+
+    private String checkpointBaseKey(String taskId, String checkpointId) {
+        return checkpointPrefix(taskId) + checkpointId;
+    }
+
+    private String normalizeCheckpointBaseKey(String checkpointRef) {
+        String logicalRef = stripKeyPrefix(checkpointRef == null ? "" : checkpointRef.trim());
+        if (logicalRef.endsWith(METADATA_SUFFIX)) {
+            logicalRef = logicalRef.substring(0, logicalRef.length() - METADATA_SUFFIX.length());
+        } else if (logicalRef.endsWith(KRYO_SUFFIX)) {
+            logicalRef = logicalRef.substring(0, logicalRef.length() - KRYO_SUFFIX.length());
+        } else if (logicalRef.endsWith(JSON_SUFFIX)) {
+            logicalRef = logicalRef.substring(0, logicalRef.length() - JSON_SUFFIX.length());
+        }
+        if (logicalRef.startsWith(PREFIX_CHECKPOINT)) {
+            return logicalRef;
+        }
+        return PREFIX_CHECKPOINT + logicalRef;
+    }
+
+    private String applyKeyPrefix(String key) {
+        return keyPrefix.isEmpty() ? key : keyPrefix + key;
+    }
+
+    private String stripKeyPrefix(String key) {
+        if (key == null || keyPrefix.isEmpty() || !key.startsWith(keyPrefix)) {
+            return key;
+        }
+        return key.substring(keyPrefix.length());
+    }
+
+    private static String normalizeKeyPrefix(String prefix) {
+        if (prefix == null) {
+            return "";
+        }
+        String normalized = prefix.trim().replace('\\', '/');
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized.endsWith("/") ? normalized : normalized + "/";
     }
 }

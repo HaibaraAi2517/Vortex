@@ -53,15 +53,13 @@ public class IncrementalCheckpointManager {
         List<CheckpointMetadata> history = getOrLoadHistory(state.getTaskId());
 
         // Count deltas since last full
-        long deltasSinceLastFull = history.stream()
-                .filter(m -> m.getType() == CheckpointMetadata.CheckpointType.DELTA)
-                .count();
-
         // Find the last full checkpoint (might not be the immediate predecessor)
         CheckpointMetadata lastFull = history.stream()
                 .filter(m -> m.getType() == CheckpointMetadata.CheckpointType.FULL)
                 .reduce((first, second) -> second) // last element
                 .orElse(null);
+
+        long deltasSinceLastFull = deltasSinceLastFull(history);
 
         DirtySetTracker.DirtySnapshot dirty = dirtySetTracker.getAndClear(state.getTaskId());
 
@@ -104,13 +102,7 @@ public class IncrementalCheckpointManager {
                 .type(CheckpointMetadata.CheckpointType.FULL)
                 .build();
 
-        if (l3 instanceof MinioColdStore minio) {
-            return minio.saveCheckpointWithMetadata(state, meta);
-        }
-
-        // Fallback for non-Minio L3 implementations
-        l3.saveCheckpoint(state);
-        return meta;
+        return l3.saveCheckpointWithMetadata(state, meta);
     }
 
     /**
@@ -149,9 +141,9 @@ public class IncrementalCheckpointManager {
                 baseCheckpointId, walSeq,
                 changedNodes, newEdges, contextDiff, Collections.emptySet());
 
-        // Serialize the delta
+        // Keep DELTA metadata semantics, but persist a recoverable materialized snapshot.
         byte[] compressed = kryoSerializer.serializeCompressed(delta);
-        String l3Key = "deltas/" + state.getTaskId() + "/" + checkpointId + ".kryo";
+        String l3Key = "checkpoints/" + state.getTaskId() + "/" + checkpointId + ".kryo";
 
         CheckpointMetadata meta = CheckpointMetadata.builder()
                 .checkpointId(checkpointId)
@@ -165,24 +157,10 @@ public class IncrementalCheckpointManager {
                 .l3Key(l3Key)
                 .build();
 
-        // Store delta directly in L3 via binary store
-        if (l3 instanceof MinioColdStore minio) {
-            // Use MinioColdStore for binary storage
-            // We'll store it manually: the L3 interface doesn't have putBinary.
-            // For now, we embed the delta in the checkpoint metadata and store via saveCheckpoint.
-            // Actually, let's store the delta as a "fragment" temporarily.
-            // Better approach: store the delta serialized bytes directly.
-        }
-
-        // Fallback: store delta bytes as part of a temporary checkpoint
-        // Store the full state for now (safer), mark as DELTA for metadata tracking
-        // In a future optimization, we'd use a separate delta store
         log.debug("Delta checkpoint created: base={}, {} changed nodes, {} new edges, {} context changes",
                 baseCheckpointId, changedNodes.size(), newEdges.size(), contextDiff.size());
 
-        // For MVP of delta checkpointing, store the delta serialized in the checkpoint
-        // The delta is small enough that we can store it inline
-        return meta;
+        return l3.saveCheckpointWithMetadata(state, meta);
     }
 
     /**
@@ -248,9 +226,7 @@ public class IncrementalCheckpointManager {
      */
     public long deltasSinceLastFull(String taskId) {
         List<CheckpointMetadata> history = getOrLoadHistory(taskId);
-        return history.stream()
-                .filter(m -> m.getType() == CheckpointMetadata.CheckpointType.DELTA)
-                .count();
+        return deltasSinceLastFull(history);
     }
 
     /**
@@ -276,5 +252,19 @@ public class IncrementalCheckpointManager {
     private List<CheckpointMetadata> getOrLoadHistory(String taskId) {
         return checkpointsByTask.computeIfAbsent(taskId,
                 key -> Collections.synchronizedList(new ArrayList<>(l3.listCheckpointMetadata(key))));
+    }
+
+    private long deltasSinceLastFull(List<CheckpointMetadata> history) {
+        long count = 0;
+        for (int i = history.size() - 1; i >= 0; i--) {
+            CheckpointMetadata meta = history.get(i);
+            if (meta.getType() == CheckpointMetadata.CheckpointType.FULL) {
+                break;
+            }
+            if (meta.getType() == CheckpointMetadata.CheckpointType.DELTA) {
+                count++;
+            }
+        }
+        return count;
     }
 }

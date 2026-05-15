@@ -26,15 +26,29 @@ public interface L3ColdStore {
 
     /**
      * Persist a task state snapshot.
-     * @return the checkpoint object key (used for recovery).
+     * @return the implementation-defined checkpoint ID.
      */
     String saveCheckpoint(TaskState state);
 
-    /** Load a previously saved checkpoint. */
-    Optional<TaskState> loadCheckpoint(String checkpointId);
+    /**
+     * Persist a task state snapshot together with explicit checkpoint metadata.
+     * Implementations should preserve the provided checkpoint ID and metadata fields
+     * when possible.
+     */
+    default CheckpointMetadata saveCheckpointWithMetadata(TaskState state, CheckpointMetadata meta) {
+        String checkpointId = saveCheckpoint(state);
+        meta.setCheckpointId(checkpointId);
+        return meta;
+    }
 
-    /** Delete a checkpoint (e.g., after successful task completion). */
-    void deleteCheckpoint(String checkpointId);
+    /**
+     * Load a previously saved checkpoint from a task-scoped reference or object key.
+     * Typical references are {@code taskId/checkpointId} or a full checkpoint key.
+     */
+    Optional<TaskState> loadCheckpoint(String checkpointRef);
+
+    /** Delete a checkpoint from a task-scoped reference or object key. */
+    void deleteCheckpoint(String checkpointRef);
 
     /** Store arbitrary bytes in cold storage. */
     default void putBytes(String key, byte[] data) {
