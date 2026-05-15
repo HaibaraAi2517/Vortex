@@ -108,13 +108,15 @@ public class CheckpointScheduler {
 
         for (String taskId : tasksNeedingCheckpoint) {
             SnapshotService service = taskServices.get(taskId);
-            if (service != null) {
+            if (service != null && service.isTaskLoadedForCheckpoint(taskId)) {
                 try {
                     service.checkpoint(taskId);
                     log.debug("Auto-checkpoint triggered for task={}", taskId);
                 } catch (Exception e) {
                     log.error("Auto-checkpoint failed for task={}: {}", taskId, e.getMessage());
                 }
+            } else if (service != null) {
+                log.debug("Auto-checkpoint skipped for unloaded task={}", taskId);
             }
         }
     }
@@ -124,8 +126,15 @@ public class CheckpointScheduler {
      */
     @PreDestroy
     public void shutdownCheckpoint() {
-        log.info("Graceful shutdown: checkpointing {} active tasks...", taskServices.size());
+        long loadedTasks = taskServices.entrySet().stream()
+                .filter(entry -> entry.getValue().isTaskLoadedForCheckpoint(entry.getKey()))
+                .count();
+        log.info("Graceful shutdown: checkpointing {} loaded tasks...", loadedTasks);
         for (var entry : taskServices.entrySet()) {
+            if (!entry.getValue().isTaskLoadedForCheckpoint(entry.getKey())) {
+                log.debug("Shutdown checkpoint skipped for unloaded task={}", entry.getKey());
+                continue;
+            }
             try {
                 entry.getValue().checkpoint(entry.getKey());
                 log.info("Shutdown checkpoint created for task={}", entry.getKey());

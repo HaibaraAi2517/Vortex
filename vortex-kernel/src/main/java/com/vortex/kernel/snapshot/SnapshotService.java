@@ -388,6 +388,10 @@ public class SnapshotService {
         activeTasks.invalidate(taskId);
     }
 
+    boolean isTaskLoadedForCheckpoint(String taskId) {
+        return activeTasks.getIfPresent(taskId) != null;
+    }
+
     // ========================================================================
     // Branching
     // ========================================================================

@@ -417,6 +417,21 @@ class SnapshotServiceTest {
                 .contains(task.getLatestCheckpointId());
     }
 
+    @Test
+    void shutdownCheckpoint_skipsUnloadedTaskWithoutCreatingNewCheckpoint() {
+        TaskState task = service.createTask("shutdown skip test", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "loaded");
+        String firstCheckpointId = service.checkpoint(task.getTaskId());
+
+        service.evictFromCacheForTest(task.getTaskId());
+
+        scheduler.shutdownCheckpoint();
+
+        assertThat(service.listCheckpoints(task.getTaskId()))
+                .extracting(CheckpointMetadata::getCheckpointId)
+                .containsExactly(firstCheckpointId);
+    }
+
     private SnapshotService newService(FakeL3ColdStore store) {
         return newService(store, 10, 20);
     }
