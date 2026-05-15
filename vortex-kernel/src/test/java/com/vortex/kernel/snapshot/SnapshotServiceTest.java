@@ -186,16 +186,33 @@ class SnapshotServiceTest {
         DagNode second = service.appendNodeWithTarget(task.getTaskId(), "ACTION", "after full",
                 first.getNodeId(), DagEdge.EdgeType.CONTROL_DEP);
         service.updateContext(task.getTaskId(), "delta-key", "delta-value");
-        String deltaCheckpointId = service.checkpoint(task.getTaskId());
+        String firstDeltaCheckpointId = service.checkpoint(task.getTaskId());
 
-        TaskState recovered = service.recover(task.getTaskId(), deltaCheckpointId);
+        DagNode third = service.appendNode(task.getTaskId(), "THOUGHT", "after second delta");
+        service.updateContext(task.getTaskId(), "delta-key-2", "delta-value-2");
+        String secondDeltaCheckpointId = service.checkpoint(task.getTaskId());
 
-        assertThat(deltaCheckpointId).isNotEqualTo(fullCheckpointId);
-        assertThat(recovered.getLatestCheckpointId()).isEqualTo(deltaCheckpointId);
+        List<CheckpointMetadata> checkpoints = service.listCheckpoints(task.getTaskId());
+        assertThat(checkpoints)
+                .extracting(CheckpointMetadata::getType)
+                .containsExactly(
+                        CheckpointMetadata.CheckpointType.FULL,
+                        CheckpointMetadata.CheckpointType.DELTA,
+                        CheckpointMetadata.CheckpointType.DELTA);
+        assertThat(checkpoints.get(1).getBaseCheckpointId()).isEqualTo(fullCheckpointId);
+        assertThat(checkpoints.get(2).getBaseCheckpointId()).isEqualTo(firstDeltaCheckpointId);
+
+        TaskState recovered = service.recover(task.getTaskId(), secondDeltaCheckpointId);
+
+        assertThat(firstDeltaCheckpointId).isNotEqualTo(fullCheckpointId);
+        assertThat(secondDeltaCheckpointId).isNotEqualTo(firstDeltaCheckpointId);
+        assertThat(recovered.getLatestCheckpointId()).isEqualTo(secondDeltaCheckpointId);
         assertThat(recovered.getGraph().getNode(first.getNodeId())).isPresent();
         assertThat(recovered.getGraph().getNode(second.getNodeId())).isPresent();
+        assertThat(recovered.getGraph().getNode(third.getNodeId())).isPresent();
         assertThat(recovered.getGraph().areConnected(first.getNodeId(), second.getNodeId())).isTrue();
         assertThat(recovered.getContext()).containsEntry("delta-key", "delta-value");
+        assertThat(recovered.getContext()).containsEntry("delta-key-2", "delta-value-2");
     }
 
     @Test
@@ -245,13 +262,16 @@ class SnapshotServiceTest {
         List<CheckpointMetadata> listedByService = service.listCheckpoints(task.getTaskId());
         List<CheckpointMetadata> listedByStore = fakeL3.listCheckpointMetadata(task.getTaskId());
 
-        assertThat(listedByService).hasSize(2);
-        assertThat(listedByStore).hasSize(2);
+        assertThat(listedByService).hasSize(3);
+        assertThat(listedByStore).hasSize(3);
         assertThat(listedByService)
                 .extracting(CheckpointMetadata::getCheckpointId)
                 .containsExactlyElementsOf(listedByStore.stream()
                         .map(CheckpointMetadata::getCheckpointId)
                         .toList());
+
+        TaskState recovered = service.recover(task.getTaskId(), listedByService.getLast().getCheckpointId());
+        assertThat(recovered.getGraph().nodeCount()).isEqualTo(3);
     }
 
     @Test
@@ -406,6 +426,18 @@ class SnapshotServiceTest {
         }
 
         @Override
+        public CheckpointMetadata saveCheckpointBytesWithMetadata(byte[] data, CheckpointMetadata meta) {
+            String key = "checkpoints/" + meta.getTaskId() + "/" + meta.getCheckpointId() + ".kryo";
+            store.put(key, data);
+            if (meta.getCreatedAt() == null) {
+                meta.setCreatedAt(java.time.Instant.now());
+            }
+            meta.setL3Key(key);
+            metadata.put(meta.getTaskId() + "/" + meta.getCheckpointId(), meta);
+            return meta;
+        }
+
+        @Override
         public Optional<TaskState> loadCheckpoint(String checkpointId) {
             // checkpointId format: taskId/uuid
             String key = "cp/" + checkpointId;
@@ -416,6 +448,7 @@ class SnapshotServiceTest {
         @Override
         public void deleteCheckpoint(String checkpointId) {
             store.remove("cp/" + checkpointId);
+            store.remove("checkpoints/" + checkpointId + ".kryo");
             metadata.remove(checkpointId);
         }
 

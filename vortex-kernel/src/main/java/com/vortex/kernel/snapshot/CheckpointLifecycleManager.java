@@ -10,7 +10,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Manages the checkpoint lifecycle: rotation, retention, and cleanup.
@@ -80,10 +82,12 @@ public class CheckpointLifecycleManager {
         // Policy 3: hourly snapshots (keep at most N hourly checkpoints)
         // Skip for now — this needs grouping by hour, which is a refinement.
 
+        protectReferencedBases(sorted, toDelete);
+
         // Execute deletions
         for (CheckpointMetadata meta : toDelete) {
             try {
-                l3.deleteCheckpoint(meta.getTaskId() + "/" + meta.getCheckpointId());
+                l3.deleteCheckpoint(meta);
                 log.debug("Deleted expired checkpoint: taskId={} checkpointId={} age={}",
                         meta.getTaskId(), meta.getCheckpointId(),
                         Duration.between(meta.getCreatedAt(), now));
@@ -96,5 +100,37 @@ public class CheckpointLifecycleManager {
             log.info("Checkpoint retention: deleted {} checkpoints for task={} (kept {})",
                     toDelete.size(), taskId, sorted.size() - toDelete.size());
         }
+    }
+
+    private void protectReferencedBases(List<CheckpointMetadata> sorted, List<CheckpointMetadata> toDelete) {
+        Set<String> protectedIds = new HashSet<>();
+        for (CheckpointMetadata meta : sorted) {
+            if (toDelete.contains(meta)) {
+                continue;
+            }
+            collectBaseChain(meta, sorted, protectedIds);
+        }
+        toDelete.removeIf(meta -> protectedIds.contains(meta.getCheckpointId()));
+    }
+
+    private void collectBaseChain(CheckpointMetadata checkpoint, List<CheckpointMetadata> sorted, Set<String> protectedIds) {
+        String baseId = checkpoint.getBaseCheckpointId();
+        while (baseId != null) {
+            protectedIds.add(baseId);
+            CheckpointMetadata base = findById(sorted, baseId);
+            if (base == null) {
+                return;
+            }
+            baseId = base.getBaseCheckpointId();
+        }
+    }
+
+    private CheckpointMetadata findById(List<CheckpointMetadata> checkpoints, String checkpointId) {
+        for (CheckpointMetadata meta : checkpoints) {
+            if (meta.getCheckpointId().equals(checkpointId)) {
+                return meta;
+            }
+        }
+        return null;
     }
 }

@@ -3,7 +3,6 @@ package com.vortex.kernel.snapshot;
 import com.vortex.common.model.*;
 import com.vortex.common.serialization.KryoSerializer;
 import com.vortex.storage.api.L3ColdStore;
-import com.vortex.storage.l3.MinioColdStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -52,7 +51,8 @@ public class IncrementalCheckpointManager {
     public CheckpointMetadata createCheckpoint(TaskState state, long walSeq) {
         List<CheckpointMetadata> history = getOrLoadHistory(state.getTaskId());
 
-        // Count deltas since last full
+        CheckpointMetadata previousCheckpoint = history.isEmpty() ? null : history.getLast();
+
         // Find the last full checkpoint (might not be the immediate predecessor)
         CheckpointMetadata lastFull = history.stream()
                 .filter(m -> m.getType() == CheckpointMetadata.CheckpointType.FULL)
@@ -71,7 +71,7 @@ public class IncrementalCheckpointManager {
         if (shouldBeFull) {
             meta = createFullCheckpoint(state, walSeq);
         } else {
-            meta = createDeltaCheckpoint(state, dirty, lastFull.getCheckpointId(), walSeq);
+            meta = createDeltaCheckpoint(state, dirty, previousCheckpoint.getCheckpointId(), walSeq);
         }
 
         meta.setNodeCount(state.getGraph().nodeCount());
@@ -139,11 +139,17 @@ public class IncrementalCheckpointManager {
 
         CheckpointDelta delta = new CheckpointDelta(
                 baseCheckpointId, walSeq,
-                changedNodes, newEdges, contextDiff, Collections.emptySet());
+                changedNodes,
+                newEdges,
+                contextDiff,
+                Collections.emptySet(),
+                state.getCurrentNodeId(),
+                state.getCurrentBranchId(),
+                new ArrayList<>(state.getBranches()),
+                state.getStatus());
 
-        // Keep DELTA metadata semantics, but persist a recoverable materialized snapshot.
         byte[] compressed = kryoSerializer.serializeCompressed(delta);
-        String l3Key = "checkpoints/" + state.getTaskId() + "/" + checkpointId + ".kryo";
+        String l3Key = checkpointDataKey(state.getTaskId(), checkpointId);
 
         CheckpointMetadata meta = CheckpointMetadata.builder()
                 .checkpointId(checkpointId)
@@ -160,7 +166,7 @@ public class IncrementalCheckpointManager {
         log.debug("Delta checkpoint created: base={}, {} changed nodes, {} new edges, {} context changes",
                 baseCheckpointId, changedNodes.size(), newEdges.size(), contextDiff.size());
 
-        return l3.saveCheckpointWithMetadata(state, meta);
+        return l3.saveCheckpointBytesWithMetadata(compressed, meta);
     }
 
     /**
@@ -176,12 +182,12 @@ public class IncrementalCheckpointManager {
 
     private TaskState applyDelta(TaskState state, CheckpointDelta delta) {
         // Apply node changes
-        for (DagNode node : delta.changedNodes()) {
+        for (DagNode node : delta.getChangedNodes()) {
             state.getGraph().addNode(node);
         }
 
         // Apply edge changes
-        for (DagEdge edge : delta.newEdges()) {
+        for (DagEdge edge : delta.getNewEdges()) {
             try {
                 state.getGraph().addEdge(edge);
             } catch (Exception e) {
@@ -190,7 +196,7 @@ public class IncrementalCheckpointManager {
         }
 
         // Apply context diff
-        for (Map.Entry<String, String> entry : delta.contextDiff().entrySet()) {
+        for (Map.Entry<String, String> entry : delta.getContextDiff().entrySet()) {
             if (entry.getValue() == null) {
                 state.getContext().remove(entry.getKey());
             } else {
@@ -199,9 +205,15 @@ public class IncrementalCheckpointManager {
         }
 
         // Apply deletions
-        for (String nodeId : delta.deletedNodeIds()) {
+        for (String nodeId : delta.getDeletedNodeIds()) {
             state.getGraph().removeNode(nodeId);
         }
+
+        state.setCurrentNodeId(delta.getCurrentNodeId());
+        state.setCurrentBranchId(delta.getCurrentBranchId());
+        state.setBranches(new ArrayList<>(delta.getBranches()));
+        state.setStatus(delta.getStatus());
+        state.setWalSequenceNumber(delta.getSequenceNumber());
 
         return state;
     }
@@ -266,5 +278,74 @@ public class IncrementalCheckpointManager {
             }
         }
         return count;
+    }
+
+    public Optional<TaskState> loadFullCheckpoint(String taskId, String checkpointId) {
+        return l3.loadCheckpoint(taskId + "/" + checkpointId);
+    }
+
+    public Optional<CheckpointDelta> loadDeltaCheckpoint(String taskId, String checkpointId) {
+        byte[] data = l3.getBytes(checkpointDataKey(taskId, checkpointId));
+        if (data == null || data.length == 0) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(kryoSerializer.deserializeCompressed(data, CheckpointDelta.class));
+        } catch (Exception ex) {
+            log.error("Failed to deserialize delta checkpoint taskId={} checkpointId={}", taskId, checkpointId, ex);
+            return Optional.empty();
+        }
+    }
+
+    public TaskState recoverCheckpoint(String taskId, String checkpointId) {
+        List<CheckpointMetadata> history = getOrLoadHistory(taskId);
+        Map<String, CheckpointMetadata> byId = new HashMap<>();
+        for (CheckpointMetadata meta : history) {
+            byId.put(meta.getCheckpointId(), meta);
+        }
+
+        CheckpointMetadata target = byId.get(checkpointId);
+        if (target == null) {
+            throw new IllegalStateException("Checkpoint metadata not found for taskId=" + taskId + " checkpointId=" + checkpointId);
+        }
+
+        if (target.getType() == CheckpointMetadata.CheckpointType.FULL) {
+            return loadFullCheckpoint(taskId, checkpointId)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Full checkpoint not found in L3: taskId=" + taskId + " checkpointId=" + checkpointId));
+        }
+
+        LinkedList<CheckpointMetadata> deltaChain = new LinkedList<>();
+        CheckpointMetadata current = target;
+        while (current.getType() == CheckpointMetadata.CheckpointType.DELTA) {
+            deltaChain.addFirst(current);
+            String baseCheckpointId = current.getBaseCheckpointId();
+            if (baseCheckpointId == null) {
+                throw new IllegalStateException(
+                        "Delta checkpoint missing base checkpoint: taskId=" + taskId + " checkpointId=" + current.getCheckpointId());
+            }
+            current = byId.get(baseCheckpointId);
+            if (current == null) {
+                throw new IllegalStateException(
+                        "Checkpoint chain broken: missing base checkpoint taskId=" + taskId + " checkpointId=" + baseCheckpointId);
+            }
+        }
+
+        CheckpointMetadata baseCheckpoint = current;
+        TaskState baseState = loadFullCheckpoint(taskId, baseCheckpoint.getCheckpointId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Base full checkpoint not found in L3: taskId=" + taskId + " checkpointId=" + baseCheckpoint.getCheckpointId()));
+
+        List<CheckpointDelta> deltas = new ArrayList<>();
+        for (CheckpointMetadata deltaMeta : deltaChain) {
+            deltas.add(loadDeltaCheckpoint(taskId, deltaMeta.getCheckpointId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Delta checkpoint not found in L3: taskId=" + taskId + " checkpointId=" + deltaMeta.getCheckpointId())));
+        }
+        return assemble(baseState, deltas);
+    }
+
+    private String checkpointDataKey(String taskId, String checkpointId) {
+        return "checkpoints/" + taskId + "/" + checkpointId + ".kryo";
     }
 }

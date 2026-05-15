@@ -222,6 +222,7 @@ public class SnapshotService {
         state.setCurrentNodeId(nodeId);
         state.setWalSequenceNumber(entry.getSequenceNumber());
         dirtySetTracker.markNodeDirty(taskId, nodeId);
+        dirtySetTracker.markEdgeDirty(taskId, edge.getEdgeId());
         scheduler.recordAction(taskId);
 
         eventPublisher.publishEvent(new DagChangeEvent.NodeAppended(taskId, nodeId, type));
@@ -496,14 +497,7 @@ public class SnapshotService {
             throw new IllegalStateException("No checkpoint found for taskId=" + taskId);
         }
 
-        String l3Key = taskId + "/" + resolvedId;
-        Optional<TaskState> loaded = l3.loadCheckpoint(l3Key);
-        if (loaded.isEmpty()) {
-            throw new IllegalStateException(
-                    "Checkpoint not found in L3: taskId=" + taskId + " checkpointId=" + resolvedId);
-        }
-
-        TaskState recovered = loaded.get();
+        TaskState recovered = checkpointManager.recoverCheckpoint(taskId, resolvedId);
         recovered.setStatus(TaskState.TaskStatus.RECOVERING);
         recovered.setLatestCheckpointId(resolvedId);
         latestCheckpointIds.put(taskId, resolvedId);

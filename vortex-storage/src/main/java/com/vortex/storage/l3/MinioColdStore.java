@@ -141,6 +141,25 @@ public class MinioColdStore implements L3ColdStore {
     }
 
     @Override
+    public CheckpointMetadata saveCheckpointBytesWithMetadata(byte[] data, CheckpointMetadata meta) {
+        String checkpointId = meta.getCheckpointId();
+        String key = checkpointDataKey(meta.getTaskId(), checkpointId);
+
+        putBinary(key, data);
+
+        meta.setSizeBytes(data.length);
+        meta.setL3Key(key);
+        meta.setCompressed(true);
+        meta.setCompressionAlgorithm("gzip");
+        meta.setCreatedAt(Instant.now());
+        putJson(checkpointMetadataKey(meta.getTaskId(), checkpointId), meta);
+
+        log.info("Checkpoint bytes saved taskId={} checkpointId={} type={} sizeBytes={}",
+                meta.getTaskId(), checkpointId, meta.getType(), data.length);
+        return meta;
+    }
+
+    @Override
     public Optional<TaskState> loadCheckpoint(String checkpointRef) {
         String checkpointBaseKey = normalizeCheckpointBaseKey(checkpointRef);
 

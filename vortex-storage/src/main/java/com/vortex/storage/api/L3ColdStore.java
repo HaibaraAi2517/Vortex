@@ -42,6 +42,14 @@ public interface L3ColdStore {
     }
 
     /**
+     * Persist arbitrary checkpoint payload bytes with explicit metadata.
+     * Intended for DELTA checkpoints or other non-TaskState payloads.
+     */
+    default CheckpointMetadata saveCheckpointBytesWithMetadata(byte[] data, CheckpointMetadata meta) {
+        throw new UnsupportedOperationException("Checkpoint byte storage not supported");
+    }
+
+    /**
      * Load a previously saved checkpoint from a task-scoped reference or object key.
      * Typical references are {@code taskId/checkpointId} or a full checkpoint key.
      */
@@ -49,6 +57,11 @@ public interface L3ColdStore {
 
     /** Delete a checkpoint from a task-scoped reference or object key. */
     void deleteCheckpoint(String checkpointRef);
+
+    /** Delete a checkpoint using known metadata. */
+    default void deleteCheckpoint(CheckpointMetadata meta) {
+        deleteCheckpoint(meta.getTaskId() + "/" + meta.getCheckpointId());
+    }
 
     /** Store arbitrary bytes in cold storage. */
     default void putBytes(String key, byte[] data) {
