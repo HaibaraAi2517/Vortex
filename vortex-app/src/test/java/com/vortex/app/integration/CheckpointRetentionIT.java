@@ -174,6 +174,41 @@ class CheckpointRetentionIT {
         assertThat(recoverResponse.getBody()).containsEntry("taskId", taskId);
     }
 
+    @Test
+    void recoverReturnsConflictWhenDeltaPayloadIsInvalid_andMetricsAreExposed() {
+        String namespace = TEST_NAMESPACE_PREFIX + UUID.randomUUID();
+        String taskId = createTask(namespace);
+
+        appendNode(taskId, "THOUGHT", "base-full");
+        checkpoint(taskId);
+
+        appendNode(taskId, "ACTION", "corrupted-delta");
+        String deltaCheckpointId = checkpoint(taskId);
+
+        minioColdStore.putBytes("checkpoints/" + taskId + "/" + deltaCheckpointId + ".kryo",
+                new byte[]{1, 2, 3, 4, 5});
+        snapshotService.evictFromCacheForTest(taskId);
+
+        ResponseEntity<Map> recoverResponse = restTemplate.postForEntity(
+                "/api/v1/tasks/" + taskId + "/recover",
+                Map.of("checkpointId", deltaCheckpointId),
+                Map.class);
+
+        assertThat(recoverResponse.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(recoverResponse.getBody()).isNotNull();
+        assertThat(recoverResponse.getBody()).containsEntry("error", "CHECKPOINT_RECOVERY_FAILED");
+        assertThat(recoverResponse.getBody()).containsEntry("reason", "DELTA_PAYLOAD_INVALID");
+        assertThat(recoverResponse.getBody()).containsEntry("taskId", taskId);
+
+        ResponseEntity<Map> metricResponse = restTemplate.getForEntity(
+                "/actuator/metrics/vortex.checkpoint.recovery.total?tag=outcome:failure&tag=reason:DELTA_PAYLOAD_INVALID",
+                Map.class);
+        assertThat(metricResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(metricResponse.getBody()).isNotNull();
+        assertThat(metricResponse.getBody()).containsEntry("name", "vortex.checkpoint.recovery.total");
+        assertThat(metricResponse.getBody()).containsKey("measurements");
+    }
+
     private String createTask(String namespace) {
         ResponseEntity<Map> createTask = restTemplate.postForEntity(
                 "/api/v1/tasks",
