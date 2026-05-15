@@ -44,6 +44,7 @@ public class SnapshotService {
     private final BranchManager branchManager;
     private final DotGraphExporter dotExporter;
     private final ApplicationEventPublisher eventPublisher;
+    private final CheckpointRecoveryMetrics checkpointRecoveryMetrics;
 
     /** In-memory registry of active tasks. */
     private final Cache<String, TaskState> activeTasks = Caffeine.newBuilder()
@@ -69,7 +70,8 @@ public class SnapshotService {
             DirtySetTracker dirtySetTracker,
             BranchManager branchManager,
             DotGraphExporter dotExporter,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            CheckpointRecoveryMetrics checkpointRecoveryMetrics) {
         this.l3 = l3;
         this.walWriter = walWriter;
         this.walReader = walReader;
@@ -81,6 +83,7 @@ public class SnapshotService {
         this.branchManager = branchManager;
         this.dotExporter = dotExporter;
         this.eventPublisher = eventPublisher;
+        this.checkpointRecoveryMetrics = checkpointRecoveryMetrics;
     }
 
     @PostConstruct
@@ -494,10 +497,28 @@ public class SnapshotService {
             }
         }
         if (resolvedId == null) {
-            throw new IllegalStateException("No checkpoint found for taskId=" + taskId);
+            CheckpointRecoveryException failure = new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.NO_CHECKPOINT_AVAILABLE,
+                    taskId,
+                    checkpointId,
+                    "No checkpoint found for taskId=" + taskId);
+            checkpointRecoveryMetrics.recordFailure(failure.getReason());
+            log.warn("Checkpoint recovery failed taskId={} checkpointId={} reason={}",
+                    taskId, checkpointId, failure.getReason());
+            throw failure;
         }
 
-        TaskState recovered = checkpointManager.recoverCheckpoint(taskId, resolvedId);
+        CheckpointRecoveryResult recovery;
+        try {
+            recovery = checkpointManager.recoverCheckpoint(taskId, resolvedId);
+        } catch (CheckpointRecoveryException e) {
+            checkpointRecoveryMetrics.recordFailure(e.getReason());
+            log.warn("Checkpoint recovery failed taskId={} checkpointId={} reason={}",
+                    taskId, resolvedId, e.getReason(), e);
+            throw e;
+        }
+
+        TaskState recovered = recovery.state();
         recovered.setStatus(TaskState.TaskStatus.RECOVERING);
         recovered.setLatestCheckpointId(resolvedId);
         latestCheckpointIds.put(taskId, resolvedId);
@@ -527,9 +548,11 @@ public class SnapshotService {
 
         recovered.setStatus(TaskState.TaskStatus.RUNNING);
         scheduler.registerTask(taskId, this);
+        checkpointRecoveryMetrics.recordSuccess(recovery.mode());
 
-        log.info("Task recovered taskId={} checkpointId={} cursor={} walReplayed={} walSkipped={} totalNodes={}",
-                taskId, resolvedId, recovered.getCurrentNodeId(), replayed, skipped,
+        log.info("Task recovered taskId={} checkpointId={} mode={} deltaDepth={} cursor={} walReplayed={} walSkipped={} totalNodes={}",
+                taskId, resolvedId, recovery.mode(), recovery.deltaDepth(),
+                recovered.getCurrentNodeId(), replayed, skipped,
                 recovered.getGraph().nodeCount());
         return recovered;
     }

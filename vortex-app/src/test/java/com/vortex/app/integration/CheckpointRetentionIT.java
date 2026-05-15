@@ -8,6 +8,7 @@ import com.vortex.common.model.TaskState;
 import com.vortex.kernel.embedding.EmbeddingService;
 import com.vortex.kernel.embedding.TokenCounter;
 import com.vortex.kernel.snapshot.SnapshotService;
+import com.vortex.storage.l3.MinioColdStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -68,6 +69,9 @@ class CheckpointRetentionIT {
 
     @Autowired
     private SnapshotService snapshotService;
+
+    @Autowired
+    private MinioColdStore minioColdStore;
 
     @Test
     void retentionKeepsRecoverableDeltaChainAfterFullRotation() {
@@ -142,6 +146,32 @@ class CheckpointRetentionIT {
                 "chain-two-full",
                 "chain-two-delta-a",
                 "chain-two-delta-b");
+    }
+
+    @Test
+    void recoverReturnsConflictWhenDeltaChainIsBroken() {
+        String namespace = TEST_NAMESPACE_PREFIX + UUID.randomUUID();
+        String taskId = createTask(namespace);
+
+        appendNode(taskId, "THOUGHT", "base-full");
+        String fullCheckpointId = checkpoint(taskId);
+
+        appendNode(taskId, "ACTION", "broken-delta");
+        String deltaCheckpointId = checkpoint(taskId);
+
+        minioColdStore.deleteCheckpoint(taskId + "/" + fullCheckpointId);
+        snapshotService.evictFromCacheForTest(taskId);
+
+        ResponseEntity<Map> recoverResponse = restTemplate.postForEntity(
+                "/api/v1/tasks/" + taskId + "/recover",
+                Map.of("checkpointId", deltaCheckpointId),
+                Map.class);
+
+        assertThat(recoverResponse.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(recoverResponse.getBody()).isNotNull();
+        assertThat(recoverResponse.getBody()).containsEntry("error", "CHECKPOINT_RECOVERY_FAILED");
+        assertThat(recoverResponse.getBody()).containsEntry("reason", "DELTA_CHAIN_BROKEN");
+        assertThat(recoverResponse.getBody()).containsEntry("taskId", taskId);
     }
 
     private String createTask(String namespace) {

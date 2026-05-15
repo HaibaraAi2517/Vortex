@@ -237,7 +237,7 @@ public class IncrementalCheckpointManager {
      * Get the delta count since the last full checkpoint.
      */
     public long deltasSinceLastFull(String taskId) {
-        List<CheckpointMetadata> history = getOrLoadHistory(taskId);
+        List<CheckpointMetadata> history = reloadTask(taskId);
         return deltasSinceLastFull(history);
     }
 
@@ -292,13 +292,17 @@ public class IncrementalCheckpointManager {
         try {
             return Optional.of(kryoSerializer.deserializeCompressed(data, CheckpointDelta.class));
         } catch (Exception ex) {
-            log.error("Failed to deserialize delta checkpoint taskId={} checkpointId={}", taskId, checkpointId, ex);
-            return Optional.empty();
+            throw new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.DELTA_PAYLOAD_INVALID,
+                    taskId,
+                    checkpointId,
+                    "Failed to deserialize delta checkpoint taskId=" + taskId + " checkpointId=" + checkpointId,
+                    ex);
         }
     }
 
-    public TaskState recoverCheckpoint(String taskId, String checkpointId) {
-        List<CheckpointMetadata> history = getOrLoadHistory(taskId);
+    public CheckpointRecoveryResult recoverCheckpoint(String taskId, String checkpointId) {
+        List<CheckpointMetadata> history = reloadTask(taskId);
         Map<String, CheckpointMetadata> byId = new HashMap<>();
         for (CheckpointMetadata meta : history) {
             byId.put(meta.getCheckpointId(), meta);
@@ -306,13 +310,21 @@ public class IncrementalCheckpointManager {
 
         CheckpointMetadata target = byId.get(checkpointId);
         if (target == null) {
-            throw new IllegalStateException("Checkpoint metadata not found for taskId=" + taskId + " checkpointId=" + checkpointId);
+            throw new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.CHECKPOINT_METADATA_MISSING,
+                    taskId,
+                    checkpointId,
+                    "Checkpoint metadata not found for taskId=" + taskId + " checkpointId=" + checkpointId);
         }
 
         if (target.getType() == CheckpointMetadata.CheckpointType.FULL) {
-            return loadFullCheckpoint(taskId, checkpointId)
-                    .orElseThrow(() -> new IllegalStateException(
+            TaskState state = loadFullCheckpoint(taskId, checkpointId)
+                    .orElseThrow(() -> new CheckpointRecoveryException(
+                            CheckpointRecoveryFailureReason.FULL_CHECKPOINT_MISSING,
+                            taskId,
+                            checkpointId,
                             "Full checkpoint not found in L3: taskId=" + taskId + " checkpointId=" + checkpointId));
+            return new CheckpointRecoveryResult(state, CheckpointRecoveryMode.FULL, 0);
         }
 
         LinkedList<CheckpointMetadata> deltaChain = new LinkedList<>();
@@ -321,28 +333,40 @@ public class IncrementalCheckpointManager {
             deltaChain.addFirst(current);
             String baseCheckpointId = current.getBaseCheckpointId();
             if (baseCheckpointId == null) {
-                throw new IllegalStateException(
+                throw new CheckpointRecoveryException(
+                        CheckpointRecoveryFailureReason.DELTA_CHECKPOINT_MISSING_BASE,
+                        taskId,
+                        current.getCheckpointId(),
                         "Delta checkpoint missing base checkpoint: taskId=" + taskId + " checkpointId=" + current.getCheckpointId());
             }
             current = byId.get(baseCheckpointId);
             if (current == null) {
-                throw new IllegalStateException(
+                throw new CheckpointRecoveryException(
+                        CheckpointRecoveryFailureReason.DELTA_CHAIN_BROKEN,
+                        taskId,
+                        checkpointId,
                         "Checkpoint chain broken: missing base checkpoint taskId=" + taskId + " checkpointId=" + baseCheckpointId);
             }
         }
 
         CheckpointMetadata baseCheckpoint = current;
         TaskState baseState = loadFullCheckpoint(taskId, baseCheckpoint.getCheckpointId())
-                .orElseThrow(() -> new IllegalStateException(
+                .orElseThrow(() -> new CheckpointRecoveryException(
+                        CheckpointRecoveryFailureReason.BASE_FULL_CHECKPOINT_MISSING,
+                        taskId,
+                        checkpointId,
                         "Base full checkpoint not found in L3: taskId=" + taskId + " checkpointId=" + baseCheckpoint.getCheckpointId()));
 
         List<CheckpointDelta> deltas = new ArrayList<>();
         for (CheckpointMetadata deltaMeta : deltaChain) {
             deltas.add(loadDeltaCheckpoint(taskId, deltaMeta.getCheckpointId())
-                    .orElseThrow(() -> new IllegalStateException(
+                    .orElseThrow(() -> new CheckpointRecoveryException(
+                            CheckpointRecoveryFailureReason.DELTA_PAYLOAD_MISSING,
+                            taskId,
+                            deltaMeta.getCheckpointId(),
                             "Delta checkpoint not found in L3: taskId=" + taskId + " checkpointId=" + deltaMeta.getCheckpointId())));
         }
-        return assemble(baseState, deltas);
+        return new CheckpointRecoveryResult(assemble(baseState, deltas), CheckpointRecoveryMode.DELTA_CHAIN, deltaChain.size());
     }
 
     private String checkpointDataKey(String taskId, String checkpointId) {

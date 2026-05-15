@@ -4,6 +4,8 @@ import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.vortex.common.model.*;
 import com.vortex.common.serialization.KryoSerializer;
 import com.vortex.storage.api.L3ColdStore;
+import io.micrometer.core.instrument.search.Search;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -35,6 +37,8 @@ class SnapshotServiceTest {
     private FakeL3ColdStore fakeL3;
     private BranchManager branchManager;
     private BranchMergeConflictDetector conflictDetector;
+    private CheckpointRecoveryMetrics checkpointRecoveryMetrics;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
@@ -213,6 +217,70 @@ class SnapshotServiceTest {
         assertThat(recovered.getGraph().areConnected(first.getNodeId(), second.getNodeId())).isTrue();
         assertThat(recovered.getContext()).containsEntry("delta-key", "delta-value");
         assertThat(recovered.getContext()).containsEntry("delta-key-2", "delta-value-2");
+        assertThat(counterValue("vortex.checkpoint.recovery.total", "outcome", "success", "mode", "DELTA_CHAIN"))
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    void recover_fromFullCheckpoint_recordsFullRecoveryMetric() {
+        TaskState task = service.createTask("full recovery metrics", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "full");
+        String checkpointId = service.checkpoint(task.getTaskId());
+
+        TaskState recovered = service.recover(task.getTaskId(), checkpointId);
+
+        assertThat(recovered.getLatestCheckpointId()).isEqualTo(checkpointId);
+        assertThat(counterValue("vortex.checkpoint.recovery.total", "outcome", "success", "mode", "FULL"))
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    void recover_missingDeltaBase_throwsTypedFailureAndRecordsMetric() {
+        service = newService(fakeL3, 10, 20);
+
+        TaskState task = service.createTask("broken delta chain", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "before full");
+        service.checkpoint(task.getTaskId());
+        service.appendNode(task.getTaskId(), "ACTION", "delta");
+        String deltaCheckpointId = service.checkpoint(task.getTaskId());
+
+        CheckpointMetadata delta = fakeL3.listCheckpointMetadata(task.getTaskId()).stream()
+                .filter(meta -> meta.getCheckpointId().equals(deltaCheckpointId))
+                .findFirst()
+                .orElseThrow();
+        fakeL3.deleteCheckpoint(task.getTaskId() + "/" + delta.getBaseCheckpointId());
+
+        assertThatThrownBy(() -> service.recover(task.getTaskId(), deltaCheckpointId))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.DELTA_CHAIN_BROKEN));
+
+        assertThat(counterValue("vortex.checkpoint.recovery.total",
+                "outcome", "failure", "mode", "NONE", "reason", "DELTA_CHAIN_BROKEN"))
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    void recover_missingDeltaPayload_throwsTypedFailureAndRecordsMetric() {
+        service = newService(fakeL3, 10, 20);
+
+        TaskState task = service.createTask("missing delta payload", "ns");
+        DagNode first = service.appendNode(task.getTaskId(), "THOUGHT", "before full");
+        service.checkpoint(task.getTaskId());
+        service.appendNodeWithTarget(task.getTaskId(), "ACTION", "delta",
+                first.getNodeId(), DagEdge.EdgeType.CONTROL_DEP);
+        String deltaCheckpointId = service.checkpoint(task.getTaskId());
+
+        fakeL3.deleteRawBytes("checkpoints/" + task.getTaskId() + "/" + deltaCheckpointId + ".kryo");
+
+        assertThatThrownBy(() -> service.recover(task.getTaskId(), deltaCheckpointId))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.DELTA_PAYLOAD_MISSING));
+
+        assertThat(counterValue("vortex.checkpoint.recovery.total",
+                "outcome", "failure", "mode", "NONE", "reason", "DELTA_PAYLOAD_MISSING"))
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -364,14 +432,28 @@ class SnapshotServiceTest {
         conflictDetector = new BranchMergeConflictDetector();
         branchManager = new BranchManager(10, conflictDetector);
         dotExporter = new DotGraphExporter();
+        meterRegistry = new SimpleMeterRegistry();
+        checkpointRecoveryMetrics = new CheckpointRecoveryMetrics(meterRegistry);
 
         ApplicationEventPublisher eventPublisher = event -> {};
         SnapshotService snapshotService = new SnapshotService(
                 store, walWriter, walReader, walTruncator,
                 checkpointManager, new CheckpointLifecycleManager(store, maxPerTask, 7, 48),
-                scheduler, dirtySetTracker, branchManager, dotExporter, eventPublisher);
+                scheduler, dirtySetTracker, branchManager, dotExporter, eventPublisher, checkpointRecoveryMetrics);
         snapshotService.rebuildCheckpointIndex();
         return snapshotService;
+    }
+
+    private double counterValue(String meterName, String... tags) {
+        if (meterRegistry == null) {
+            return 0.0;
+        }
+        Search search = meterRegistry.find(meterName);
+        for (int i = 0; i < tags.length; i += 2) {
+            search = search.tag(tags[i], tags[i + 1]);
+        }
+        var counter = search.counter();
+        return counter == null ? 0.0 : counter.count();
     }
 
     // ---- Fake L3 implementation for testing ----
@@ -460,6 +542,10 @@ class SnapshotServiceTest {
         @Override
         public byte[] getBytes(String key) {
             return store.get(key);
+        }
+
+        void deleteRawBytes(String key) {
+            store.remove(key);
         }
 
         @Override
