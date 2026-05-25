@@ -1,7 +1,7 @@
 .idea/
 *.iml
 
-.claude/settings.local.json
+/.claude/
 
 target/
 */target/
@@ -12,3 +12,12 @@ hs_err_pid*
 
 .DS_Store
 Thumbs.db
+
+# Personal logs and review notes
+/ygk-log/
+/教与复盘/
+/评审与行动/
+/项目实现问题模块划分/
+/日志.txt
+/构思.txt
+/项目构思评价.txt
