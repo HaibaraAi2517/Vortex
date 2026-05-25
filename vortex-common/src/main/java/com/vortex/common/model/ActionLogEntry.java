@@ -49,6 +49,7 @@ public class ActionLogEntry {
         UPDATE_CONTEXT,
         SET_STATUS,
         CREATE_BRANCH,
-        MERGE_BRANCH
+        MERGE_BRANCH,
+        SWITCH_BRANCH
     }
 }

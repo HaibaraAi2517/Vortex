@@ -1,0 +1,83 @@
+groups:
+  - name: vortex-memory-slo
+    rules:
+      - alert: VortexMemoryEvictionLogCoverageLow
+        expr: vortex_hmc_slo_eviction_log_coverage < 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Vortex eviction log coverage dropped below 100%"
+          description: "Eviction decisions are no longer fully logged."
+
+      - alert: VortexMemoryEvictionRegretHigh
+        expr: vortex_hmc_slo_eviction_regret_rate > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Vortex eviction regret exceeds target"
+          description: "Recent recalls indicate more than 5% regret after eviction."
+
+      - alert: VortexMemoryNamespaceIsolationViolation
+        expr: vortex_hmc_slo_namespace_isolation_violations > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Vortex namespace isolation violation detected"
+          description: "A cross-namespace eviction or retrieval violation has been recorded."
+
+      - alert: VortexMemoryRecoverySuccessRateLow
+        expr: vortex_hmc_slo_recovery_success_rate < 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Vortex recovery success rate is below 100%"
+          description: "At least one replay or recovery path failed."
+
+      - alert: VortexMemoryStoreLatencyP99High
+        expr: vortex_hmc_slo_store_latency_p99_ms > 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Vortex store p99 latency exceeds budget"
+          description: "Store p99 latency stayed above 10ms for 15 minutes."
+
+      - alert: VortexMemoryRecallLatencyP99High
+        expr: vortex_hmc_slo_recall_latency_p99_ms > 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Vortex recall p99 latency exceeds budget"
+          description: "Recall p99 latency stayed above 10ms for 15 minutes."
+
+      - alert: VortexMemoryShadowLiftRegression
+        expr: vortex_hmc_slo_shadow_relative_lift < -0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Vortex shadow weights are underperforming"
+          description: "Shadow profile relative lift is worse than -5% and may need rollback or tuning."
+
+      - alert: VortexMemoryBaselineLiftBelowTarget
+        expr: vortex_hmc_slo_baseline_relative_lift < 0.20
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Vortex baseline lift is below the 20% target"
+          description: "Active profile recall lift against the static baseline dropped below the required threshold."
+
+      - alert: VortexMemoryBaselineLiftNotSustained
+        expr: vortex_hmc_slo_baseline_sustained_ratio < 0.90
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Vortex baseline lift is not sustained"
+          description: "The baseline lift requirement has not been met in at least 90% of the recent promotion window."

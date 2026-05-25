@@ -82,6 +82,7 @@ public class CheckpointLifecycleManager {
         // Policy 3: hourly snapshots (keep at most N hourly checkpoints)
         // Skip for now — this needs grouping by hour, which is a refinement.
 
+        protectLatestRecoverableChain(sorted, toDelete);
         protectReferencedBases(sorted, toDelete);
 
         // Execute deletions
@@ -110,6 +111,17 @@ public class CheckpointLifecycleManager {
             }
             collectBaseChain(meta, sorted, protectedIds);
         }
+        toDelete.removeIf(meta -> protectedIds.contains(meta.getCheckpointId()));
+    }
+
+    private void protectLatestRecoverableChain(List<CheckpointMetadata> sorted, List<CheckpointMetadata> toDelete) {
+        if (sorted.isEmpty()) {
+            return;
+        }
+        Set<String> protectedIds = new HashSet<>();
+        CheckpointMetadata latest = sorted.getLast();
+        protectedIds.add(latest.getCheckpointId());
+        collectBaseChain(latest, sorted, protectedIds);
         toDelete.removeIf(meta -> protectedIds.contains(meta.getCheckpointId()));
     }
 

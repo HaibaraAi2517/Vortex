@@ -3,6 +3,8 @@ package com.vortex.kernel.snapshot;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vortex.common.model.*;
 import com.vortex.kernel.paging.DagChangeEvent;
 import com.vortex.storage.api.L3ColdStore;
@@ -15,12 +17,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Manages task lifecycle, checkpointing, recovery, branching, and DAG visualization.
  *
- * Architecture: WAL-before-state — every mutation is first written to the Write-Ahead Log,
- * then applied to the in-memory state. This ensures deterministic, exactly-once recovery.
+ * Architecture: validate-before-WAL, then WAL-before-state — every mutation is first
+ * validated against the current in-memory state, then written to the Write-Ahead Log,
+ * then applied to memory. This prevents rejected operations from poisoning recovery.
  *
  * Recovery flow:
  *   1. Load most recent FULL checkpoint from L3
@@ -32,6 +36,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Service
 public class SnapshotService {
+
+    private static final ObjectMapper PAYLOAD_MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, String>> STRING_MAP_TYPE = new TypeReference<>() {};
 
     private final L3ColdStore l3;
     private final ActionLogWriter walWriter;
@@ -55,6 +62,7 @@ public class SnapshotService {
 
     /** Durable latest-checkpoint index rebuilt from L3 on startup. */
     private final ConcurrentHashMap<String, String> latestCheckpointIds = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ReentrantLock> checkpointLocks = new ConcurrentHashMap<>();
 
     private final ThreadLocal<Set<String>> evictionCheckpointGuard =
             ThreadLocal.withInitial(HashSet::new);
@@ -131,15 +139,10 @@ public class SnapshotService {
         if (checkpointId == null) {
             return Optional.empty();
         }
-        try {
-            TaskState recovered = doRecover(taskId, checkpointId);
-            activeTasks.put(taskId, recovered);
-            log.info("Lazy-loaded task from L3 taskId={}", taskId);
-            return Optional.of(recovered);
-        } catch (Exception e) {
-            log.error("Lazy recovery failed taskId={}: {}", taskId, e.getMessage(), e);
-            return Optional.empty();
-        }
+        TaskState recovered = doRecover(taskId, checkpointId);
+        activeTasks.put(taskId, recovered);
+        log.info("Lazy-loaded task from L3 taskId={}", taskId);
+        return Optional.of(recovered);
     }
 
     /**
@@ -158,6 +161,7 @@ public class SnapshotService {
      */
     public DagNode appendNode(String taskId, String type, String content) {
         TaskState state = requireTask(taskId);
+        DagNode.NodeType nodeType = parseNodeType(type);
 
         String nodeId = UUID.randomUUID().toString();
         String payload = jsonPayload(
@@ -170,13 +174,7 @@ public class SnapshotService {
                 ActionLogEntry.OperationType.APPEND_NODE, payload);
 
         // 2. Apply to in-memory state
-        DagNode node = DagNode.builder()
-                .nodeId(nodeId)
-                .type(DagNode.NodeType.valueOf(type.toUpperCase()))
-                .content(content)
-                .status(DagNode.NodeStatus.PENDING)
-                .executedAt(entry.getTimestamp())
-                .build();
+        DagNode node = buildPendingNode(nodeId, nodeType, content, entry.getTimestamp());
         state.getGraph().addNode(node);
         state.setCurrentNodeId(nodeId);
         state.setWalSequenceNumber(entry.getSequenceNumber());
@@ -194,6 +192,8 @@ public class SnapshotService {
     public DagNode appendNodeWithTarget(String taskId, String type, String content,
                                          String targetNodeId, DagEdge.EdgeType edgeType) {
         TaskState state = requireTask(taskId);
+        DagNode.NodeType nodeType = parseNodeType(type);
+        requireNode(state, targetNodeId);
 
         String nodeId = UUID.randomUUID().toString();
         String payload = jsonPayload(
@@ -206,13 +206,7 @@ public class SnapshotService {
         ActionLogEntry entry = walWriter.append(taskId,
                 ActionLogEntry.OperationType.APPEND_NODE, payload);
 
-        DagNode node = DagNode.builder()
-                .nodeId(nodeId)
-                .type(DagNode.NodeType.valueOf(type.toUpperCase()))
-                .content(content)
-                .status(DagNode.NodeStatus.PENDING)
-                .executedAt(entry.getTimestamp())
-                .build();
+        DagNode node = buildPendingNode(nodeId, nodeType, content, entry.getTimestamp());
         state.getGraph().addNode(node);
 
         DagEdge edge = DagEdge.builder()
@@ -238,10 +232,19 @@ public class SnapshotService {
      * Add an edge between two existing nodes.
      */
     public DagEdge addEdge(String taskId, String sourceNodeId, String targetNodeId,
-                            DagEdge.EdgeType dependencyType, String condition) {
+                             DagEdge.EdgeType dependencyType, String condition) {
         TaskState state = requireTask(taskId);
 
         String edgeId = UUID.randomUUID().toString();
+        DagEdge edge = DagEdge.builder()
+                .edgeId(edgeId)
+                .sourceNodeId(sourceNodeId)
+                .targetNodeId(targetNodeId)
+                .dependencyType(dependencyType)
+                .condition(condition)
+                .build();
+        state.getGraph().validateEdge(edge);
+
         String payload = jsonPayload(
                 "edgeId", edgeId,
                 "sourceNodeId", sourceNodeId,
@@ -252,13 +255,6 @@ public class SnapshotService {
         ActionLogEntry entry = walWriter.append(taskId,
                 ActionLogEntry.OperationType.ADD_EDGE, payload);
 
-        DagEdge edge = DagEdge.builder()
-                .edgeId(edgeId)
-                .sourceNodeId(sourceNodeId)
-                .targetNodeId(targetNodeId)
-                .dependencyType(dependencyType)
-                .condition(condition)
-                .build();
         state.getGraph().addEdge(edge);
         state.setWalSequenceNumber(entry.getSequenceNumber());
         dirtySetTracker.markEdgeDirty(taskId, edgeId);
@@ -274,14 +270,13 @@ public class SnapshotService {
      */
     public DagNode completeNode(String taskId, String nodeId, String result) {
         TaskState state = requireTask(taskId);
+        DagNode node = requireNode(state, nodeId);
 
         String payload = jsonPayload("nodeId", nodeId, "result", result != null ? result : "");
 
         ActionLogEntry entry = walWriter.append(taskId,
                 ActionLogEntry.OperationType.COMPLETE_NODE, payload);
 
-        DagNode node = state.getGraph().getNode(nodeId)
-                .orElseThrow(() -> new IllegalArgumentException("Node not found: " + nodeId));
         node.complete(result);
         state.setWalSequenceNumber(entry.getSequenceNumber());
         dirtySetTracker.markNodeDirty(taskId, nodeId);
@@ -345,33 +340,39 @@ public class SnapshotService {
     }
 
     private String checkpoint(String taskId, TaskState state) {
-        // Flush WAL to ensure all entries are on disk
-        walWriter.flush(taskId);
-        walWriter.rotate(taskId);
+        ReentrantLock checkpointLock = checkpointLocks.computeIfAbsent(taskId, id -> new ReentrantLock());
+        checkpointLock.lock();
+        try {
+            // Flush WAL to ensure all entries are on disk
+            walWriter.flush(taskId);
+            walWriter.rotate(taskId);
 
-        long walSeq = walWriter.currentSequenceNumber(taskId);
+            long walSeq = walWriter.currentSequenceNumber(taskId);
 
-        // Create checkpoint (full or delta based on auto-detection)
-        CheckpointMetadata meta = checkpointManager.createCheckpoint(state, walSeq);
+            // Create checkpoint (full or delta based on auto-detection)
+            CheckpointMetadata meta = checkpointManager.createCheckpoint(state, walSeq);
 
-        state.setLatestCheckpointId(meta.getCheckpointId());
-        state.setLastCheckpointAt(Instant.now());
-        latestCheckpointIds.put(taskId, meta.getCheckpointId());
+            state.setLatestCheckpointId(meta.getCheckpointId());
+            state.setLastCheckpointAt(Instant.now());
+            latestCheckpointIds.put(taskId, meta.getCheckpointId());
 
-        // Truncate WAL up to the checkpoint sequence
-        walTruncator.truncate(taskId, walSeq);
+            // Truncate WAL up to the checkpoint sequence
+            walTruncator.truncate(taskId, walSeq);
 
-        // Reset scheduler counters
-        scheduler.onCheckpoint(taskId);
+            // Reset scheduler counters
+            scheduler.onCheckpoint(taskId);
 
-        // Apply retention policy periodically
-        lifecycleManager.applyRetention(taskId,
-                checkpointManager.listCheckpoints(taskId));
-        checkpointManager.reloadTask(taskId);
+            // Apply retention policy periodically
+            lifecycleManager.applyRetention(taskId,
+                    checkpointManager.listCheckpoints(taskId));
+            checkpointManager.reloadTask(taskId);
 
-        log.info("Checkpoint completed taskId={} checkpointId={} type={} seqNo={}",
-                taskId, meta.getCheckpointId(), meta.getType(), walSeq);
-        return meta.getCheckpointId();
+            log.info("Checkpoint completed taskId={} checkpointId={} type={} seqNo={}",
+                    taskId, meta.getCheckpointId(), meta.getType(), walSeq);
+            return meta.getCheckpointId();
+        } finally {
+            checkpointLock.unlock();
+        }
     }
 
     /**
@@ -398,13 +399,19 @@ public class SnapshotService {
 
     public TaskBranch createBranch(String taskId, String branchName, String sourceNodeId) {
         TaskState state = requireTask(taskId);
-
-        String payload = jsonPayload("branchName", branchName, "sourceNodeId", sourceNodeId);
+        branchManager.validateCreateBranch(state, sourceNodeId);
+        String branchId = UUID.randomUUID().toString();
+        String payload = jsonPayload("branchId", branchId, "branchName", branchName, "sourceNodeId", sourceNodeId);
         ActionLogEntry entry = walWriter.append(taskId,
                 ActionLogEntry.OperationType.CREATE_BRANCH, payload);
         state.setWalSequenceNumber(entry.getSequenceNumber());
 
-        TaskBranch branch = branchManager.createBranch(state, branchName, sourceNodeId);
+        TaskBranch branch = branchManager.createBranch(state, branchId, branchName, sourceNodeId);
+        if (state.getCurrentNodeId() != null) {
+            dirtySetTracker.markNodeDirty(taskId, state.getCurrentNodeId());
+        }
+        dirtySetTracker.markContextDirty(taskId, "__branch_state__");
+        scheduler.recordAction(taskId);
 
         eventPublisher.publishEvent(new DagChangeEvent.BranchCreated(taskId, branchName, sourceNodeId));
 
@@ -418,18 +425,32 @@ public class SnapshotService {
 
     public TaskBranch mergeBranch(String taskId, String sourceBranchId, String targetBranchId) {
         TaskState state = requireTask(taskId);
+        branchManager.validateMergeBranch(state, sourceBranchId, targetBranchId);
 
         String payload = jsonPayload("sourceBranchId", sourceBranchId, "targetBranchId", targetBranchId);
         ActionLogEntry entry = walWriter.append(taskId,
                 ActionLogEntry.OperationType.MERGE_BRANCH, payload);
         state.setWalSequenceNumber(entry.getSequenceNumber());
 
-        return branchManager.mergeBranch(state, sourceBranchId, targetBranchId);
+        TaskBranch merged = branchManager.mergeBranch(state, sourceBranchId, targetBranchId);
+        if (state.getCurrentNodeId() != null) {
+            dirtySetTracker.markNodeDirty(taskId, state.getCurrentNodeId());
+        }
+        dirtySetTracker.markContextDirty(taskId, "__branch_state__");
+        scheduler.recordAction(taskId);
+        return merged;
     }
 
     public void switchBranch(String taskId, String branchId) {
         TaskState state = requireTask(taskId);
+        branchManager.validateSwitchBranch(state, branchId);
+        String payload = jsonPayload("branchId", branchId);
+        ActionLogEntry entry = walWriter.append(taskId,
+                ActionLogEntry.OperationType.SWITCH_BRANCH, payload);
+        state.setWalSequenceNumber(entry.getSequenceNumber());
         branchManager.switchBranch(state, branchId);
+        dirtySetTracker.markContextDirty(taskId, "__branch_state__");
+        scheduler.recordAction(taskId);
 
         eventPublisher.publishEvent(new DagChangeEvent.BranchSwitched(taskId, branchId));
     }
@@ -529,7 +550,26 @@ public class SnapshotService {
         checkpointManager.reloadTask(taskId);
 
         long checkpointSeq = recovered.getWalSequenceNumber();
-        List<ActionLogEntry> walEntries = walReader.readFrom(taskId, checkpointSeq + 1);
+        List<ActionLogEntry> walEntries;
+        try {
+            walEntries = walReader.readFrom(taskId, checkpointSeq + 1);
+        } catch (CheckpointRecoveryException e) {
+            checkpointRecoveryMetrics.recordFailure(e.getReason());
+            log.warn("WAL read failed taskId={} checkpointId={} reason={}",
+                    taskId, resolvedId, e.getReason(), e);
+            throw e;
+        } catch (Exception e) {
+            CheckpointRecoveryException failure = new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                    taskId,
+                    resolvedId,
+                    "Failed to read WAL for taskId=" + taskId + " after checkpointId=" + resolvedId,
+                    e);
+            checkpointRecoveryMetrics.recordFailure(failure.getReason());
+            log.warn("WAL read failed taskId={} checkpointId={} reason={}",
+                    taskId, resolvedId, failure.getReason(), failure);
+            throw failure;
+        }
 
         Set<String> alreadyReplayed = new HashSet<>();
 
@@ -544,9 +584,22 @@ public class SnapshotService {
             try {
                 replayEntry(recovered, entry);
                 replayed++;
+            } catch (CheckpointRecoveryException e) {
+                checkpointRecoveryMetrics.recordFailure(e.getReason());
+                log.warn("WAL replay aborted taskId={} checkpointId={} entryId={} reason={}",
+                        taskId, resolvedId, entry.getEntryId(), e.getReason(), e);
+                throw e;
             } catch (Exception e) {
-                log.error("WAL replay failed for task={} entry={}: {}",
-                        taskId, entry.getEntryId(), e.getMessage());
+                CheckpointRecoveryException failure = new CheckpointRecoveryException(
+                        CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                        taskId,
+                        resolvedId,
+                        "Failed to replay WAL entry taskId=" + taskId + " entryId=" + entry.getEntryId(),
+                        e);
+                checkpointRecoveryMetrics.recordFailure(failure.getReason());
+                log.warn("WAL replay aborted taskId={} checkpointId={} entryId={} reason={}",
+                        taskId, resolvedId, entry.getEntryId(), failure.getReason(), failure);
+                throw failure;
             }
         }
 
@@ -556,8 +609,7 @@ public class SnapshotService {
 
         log.info("Task recovered taskId={} checkpointId={} mode={} deltaDepth={} cursor={} walReplayed={} walSkipped={} totalNodes={}",
                 taskId, resolvedId, recovery.mode(), recovery.deltaDepth(),
-                recovered.getCurrentNodeId(), replayed, skipped,
-                recovered.getGraph().nodeCount());
+                recovered.getCurrentNodeId(), replayed, skipped, recovered.getGraph().nodeCount());
         return recovered;
     }
 
@@ -567,7 +619,7 @@ public class SnapshotService {
         }
         if (state.getStatus() == TaskState.TaskStatus.RUNNING) {
             log.warn("Running task evicted from cache taskId={} cause={}", taskId, cause);
-            if (state.getLatestCheckpointId() == null) {
+            if (state.getLatestCheckpointId() == null || dirtySetTracker.hasDirty(taskId)) {
                 Set<String> inProgress = evictionCheckpointGuard.get();
                 if (!inProgress.add(taskId)) {
                     log.warn("Skipping recursive emergency checkpoint taskId={}", taskId);
@@ -594,7 +646,7 @@ public class SnapshotService {
         switch (entry.getOperation()) {
             case APPEND_NODE -> {
                 // Parse payload to reconstruct node
-                Map<String, String> p = parseJsonPayload(entry.getPayload());
+                Map<String, String> p = parseReplayPayload(state, entry);
                 DagNode node = DagNode.builder()
                         .nodeId(p.get("nodeId"))
                         .type(DagNode.NodeType.valueOf(p.get("type").toUpperCase()))
@@ -614,18 +666,36 @@ public class SnapshotService {
                     try {
                         state.getGraph().addEdge(edge);
                     } catch (Exception e) {
-                        log.debug("Replay edge skipped (may already exist): {}", e.getMessage());
+                        if (isDuplicateEdge(state, edge)) {
+                            log.debug("Replay edge skipped because it already exists edgeId={}", edge.getEdgeId());
+                        } else {
+                            throw new CheckpointRecoveryException(
+                                    CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                                    state.getTaskId(),
+                                    state.getLatestCheckpointId(),
+                                    "Failed to replay append-node edge taskId=" + state.getTaskId()
+                                            + " sourceNodeId=" + edge.getSourceNodeId()
+                                            + " targetNodeId=" + edge.getTargetNodeId(),
+                                    e);
+                        }
                     }
                 }
                 state.setCurrentNodeId(p.get("nodeId"));
             }
             case COMPLETE_NODE -> {
-                Map<String, String> p = parseJsonPayload(entry.getPayload());
-                state.getGraph().getNode(p.get("nodeId"))
-                        .ifPresent(n -> n.complete(p.get("result")));
+                Map<String, String> p = parseReplayPayload(state, entry);
+                String nodeId = p.get("nodeId");
+                state.getGraph().getNode(nodeId)
+                        .orElseThrow(() -> new CheckpointRecoveryException(
+                                CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                                state.getTaskId(),
+                                state.getLatestCheckpointId(),
+                                "Failed to replay complete-node because node does not exist taskId="
+                                        + state.getTaskId() + " nodeId=" + nodeId))
+                        .complete(p.get("result"));
             }
             case ADD_EDGE -> {
-                Map<String, String> p = parseJsonPayload(entry.getPayload());
+                Map<String, String> p = parseReplayPayload(state, entry);
                 DagEdge edge = DagEdge.builder()
                         .edgeId(p.get("edgeId"))
                         .sourceNodeId(p.get("sourceNodeId"))
@@ -636,11 +706,20 @@ public class SnapshotService {
                 try {
                     state.getGraph().addEdge(edge);
                 } catch (Exception e) {
-                    log.debug("Replay edge skipped: {}", e.getMessage());
+                    if (isDuplicateEdge(state, edge)) {
+                        log.debug("Replay edge skipped because it already exists edgeId={}", edge.getEdgeId());
+                    } else {
+                        throw new CheckpointRecoveryException(
+                                CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                                state.getTaskId(),
+                                state.getLatestCheckpointId(),
+                                "Failed to replay edge taskId=" + state.getTaskId() + " edgeId=" + edge.getEdgeId(),
+                                e);
+                    }
                 }
             }
             case UPDATE_CONTEXT -> {
-                Map<String, String> p = parseJsonPayload(entry.getPayload());
+                Map<String, String> p = parseReplayPayload(state, entry);
                 String val = p.get("value");
                 if (val == null || val.isEmpty()) {
                     state.getContext().remove(p.get("key"));
@@ -649,60 +728,97 @@ public class SnapshotService {
                 }
             }
             case SET_STATUS -> {
-                Map<String, String> p = parseJsonPayload(entry.getPayload());
+                Map<String, String> p = parseReplayPayload(state, entry);
                 state.setStatus(TaskState.TaskStatus.valueOf(p.get("status")));
             }
             case CREATE_BRANCH -> {
-                Map<String, String> p = parseJsonPayload(entry.getPayload());
-                branchManager.createBranch(state, p.get("branchName"), p.get("sourceNodeId"));
+                Map<String, String> p = parseReplayPayload(state, entry);
+                branchManager.createBranch(state, p.get("branchId"), p.get("branchName"), p.get("sourceNodeId"));
             }
             case MERGE_BRANCH -> {
-                Map<String, String> p = parseJsonPayload(entry.getPayload());
+                Map<String, String> p = parseReplayPayload(state, entry);
                 branchManager.mergeBranch(state, p.get("sourceBranchId"), p.get("targetBranchId"));
+            }
+            case SWITCH_BRANCH -> {
+                Map<String, String> p = parseReplayPayload(state, entry);
+                branchManager.switchBranch(state, p.get("branchId"));
             }
         }
 
         state.setWalSequenceNumber(entry.getSequenceNumber());
     }
 
-    // ---- Simple JSON helpers (avoid Jackson overhead for small payloads) ----
+    private DagNode.NodeType parseNodeType(String type) {
+        return DagNode.NodeType.valueOf(type.toUpperCase(Locale.ROOT));
+    }
+
+    private DagNode requireNode(TaskState state, String nodeId) {
+        return state.getGraph().getNode(nodeId)
+                .orElseThrow(() -> new IllegalArgumentException("Node not found: " + nodeId));
+    }
+
+    private DagNode buildPendingNode(String nodeId, DagNode.NodeType nodeType, String content, Instant executedAt) {
+        return DagNode.builder()
+                .nodeId(nodeId)
+                .type(nodeType)
+                .content(content)
+                .status(DagNode.NodeStatus.PENDING)
+                .executedAt(executedAt)
+                .build();
+    }
 
     private String jsonPayload(String... keyValues) {
-        StringBuilder sb = new StringBuilder("{");
+        Map<String, String> map = new LinkedHashMap<>();
         for (int i = 0; i < keyValues.length; i += 2) {
-            if (i > 0) sb.append(",");
-            sb.append("\"").append(escapeJson(keyValues[i])).append("\":\"")
-                    .append(escapeJson(keyValues[i + 1] != null ? keyValues[i + 1] : "")).append("\"");
+            map.put(keyValues[i], keyValues[i + 1] != null ? keyValues[i + 1] : "");
         }
-        sb.append("}");
-        return sb.toString();
+        try {
+            return PAYLOAD_MAPPER.writeValueAsString(map);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to serialize WAL payload", e);
+        }
     }
 
+    @SuppressWarnings("unchecked")
     private Map<String, String> parseJsonPayload(String json) {
-        Map<String, String> map = new HashMap<>();
-        if (json == null || json.length() < 3) return map;
-        // Simple JSON parser for flat objects like {"key":"value","key2":"value2"}
-        String inner = json.substring(1, json.length() - 1);
-        String[] pairs = inner.split(",");
-        for (String pair : pairs) {
-            int colon = pair.indexOf(':');
-            if (colon < 0) continue;
-            String key = pair.substring(0, colon).trim();
-            String value = pair.substring(colon + 1).trim();
-            key = key.replace("\"", "");
-            value = value.replace("\"", "");
-            map.put(unescapeJson(key), unescapeJson(value));
+        if (json == null || json.length() < 3) {
+            return new HashMap<>();
         }
-        return map;
+        try {
+            return PAYLOAD_MAPPER.readValue(json, STRING_MAP_TYPE);
+        } catch (Exception e) {
+            log.error("Failed to parse WAL payload: {}", json, e);
+            return new HashMap<>();
+        }
     }
 
-    private String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    private Map<String, String> parseReplayPayload(TaskState state, ActionLogEntry entry) {
+        String payload = entry.getPayload();
+        if (payload == null || payload.isBlank()) {
+            throw new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                    state.getTaskId(),
+                    state.getLatestCheckpointId(),
+                    "Replay payload is missing taskId=" + state.getTaskId() + " entryId=" + entry.getEntryId());
+        }
+        try {
+            return PAYLOAD_MAPPER.readValue(payload, STRING_MAP_TYPE);
+        } catch (Exception e) {
+            throw new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                    state.getTaskId(),
+                    state.getLatestCheckpointId(),
+                    "Replay payload is invalid taskId=" + state.getTaskId() + " entryId=" + entry.getEntryId(),
+                    e);
+        }
     }
 
-    private String unescapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\\"", "\"").replace("\\\\", "\\");
+    private boolean isDuplicateEdge(TaskState state, DagEdge edge) {
+        synchronized (state.getGraph().getEdges()) {
+            return state.getGraph().getEdges().stream().anyMatch(existing ->
+                    existing.getSourceNodeId().equals(edge.getSourceNodeId())
+                            && existing.getTargetNodeId().equals(edge.getTargetNodeId())
+                            && existing.getDependencyType() == edge.getDependencyType());
+        }
     }
 }

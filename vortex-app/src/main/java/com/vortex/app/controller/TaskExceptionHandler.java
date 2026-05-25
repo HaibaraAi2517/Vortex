@@ -27,12 +27,18 @@ public class TaskExceptionHandler {
     private HttpStatus mapStatus(CheckpointRecoveryFailureReason reason) {
         return switch (reason) {
             case NO_CHECKPOINT_AVAILABLE, CHECKPOINT_METADATA_MISSING -> HttpStatus.NOT_FOUND;
-            case FULL_CHECKPOINT_MISSING,
+            case CHECKPOINT_METADATA_LOAD_FAILED,
+                 CHECKPOINT_STORAGE_READ_FAILED,
+                 CHECKPOINT_VERSION_MISMATCH,
+                 FULL_CHECKPOINT_MISSING,
+                 FULL_CHECKPOINT_PAYLOAD_INVALID,
                  DELTA_CHECKPOINT_MISSING_BASE,
                  DELTA_CHAIN_BROKEN,
                  DELTA_PAYLOAD_MISSING,
                  DELTA_PAYLOAD_INVALID,
-                 BASE_FULL_CHECKPOINT_MISSING -> HttpStatus.CONFLICT;
+                 BASE_FULL_CHECKPOINT_MISSING,
+                 DELTA_STATE_APPLY_FAILED,
+                 WAL_STATE_APPLY_FAILED -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
     }
 }

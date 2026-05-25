@@ -86,37 +86,18 @@ public class DagGraph {
      * @throws IllegalArgumentException if either endpoint doesn't exist
      * @throws IllegalStateException if the edge would create a cycle
      */
-    public void addEdge(DagEdge edge) {
-        if (!nodes.containsKey(edge.getSourceNodeId())) {
-            throw new IllegalArgumentException("Source node not found: " + edge.getSourceNodeId());
-        }
-        if (!nodes.containsKey(edge.getTargetNodeId())) {
-            throw new IllegalArgumentException("Target node not found: " + edge.getTargetNodeId());
-        }
-
-        // Check for existing edge with same source, target, and type
+    public void validateEdge(DagEdge edge) {
         synchronized (edges) {
-            boolean duplicateExists = edges.stream().anyMatch(e ->
-                    e.getSourceNodeId().equals(edge.getSourceNodeId())
-                            && e.getTargetNodeId().equals(edge.getTargetNodeId())
-                            && e.getDependencyType() == edge.getDependencyType());
-            if (duplicateExists) {
-                return; // idempotent
+            validateEdgeUnderLock(edge);
+        }
+    }
+
+    public void addEdge(DagEdge edge) {
+        synchronized (edges) {
+            if (validateEdgeUnderLock(edge)) {
+                edges.add(edge);
+                markDirty();
             }
-
-            // Temporarily rebuild adjacencies to test for cycle
-            rebuildAdjacency();
-            Map<String, List<String>> testAdj = deepCopyAdjacency(adjacencyList);
-            testAdj.computeIfAbsent(edge.getSourceNodeId(), k -> new ArrayList<>()).add(edge.getTargetNodeId());
-
-            if (wouldCreateCycle(testAdj, edge.getSourceNodeId(), edge.getTargetNodeId())) {
-                throw new IllegalStateException(
-                        "Adding edge " + edge.getSourceNodeId() + " -> " + edge.getTargetNodeId()
-                                + " would create a cycle in the DAG");
-            }
-
-            edges.add(edge);
-            markDirty();
         }
     }
 
@@ -323,6 +304,34 @@ public class DagGraph {
 
     private void markDirty() {
         this.dirty = true;
+    }
+
+    private boolean validateEdgeUnderLock(DagEdge edge) {
+        if (!nodes.containsKey(edge.getSourceNodeId())) {
+            throw new IllegalArgumentException("Source node not found: " + edge.getSourceNodeId());
+        }
+        if (!nodes.containsKey(edge.getTargetNodeId())) {
+            throw new IllegalArgumentException("Target node not found: " + edge.getTargetNodeId());
+        }
+
+        boolean duplicateExists = edges.stream().anyMatch(e ->
+                e.getSourceNodeId().equals(edge.getSourceNodeId())
+                        && e.getTargetNodeId().equals(edge.getTargetNodeId())
+                        && e.getDependencyType() == edge.getDependencyType());
+        if (duplicateExists) {
+            return false;
+        }
+
+        rebuildAdjacency();
+        Map<String, List<String>> testAdj = deepCopyAdjacency(adjacencyList);
+        testAdj.computeIfAbsent(edge.getSourceNodeId(), k -> new ArrayList<>()).add(edge.getTargetNodeId());
+
+        if (wouldCreateCycle(testAdj, edge.getSourceNodeId(), edge.getTargetNodeId())) {
+            throw new IllegalStateException(
+                    "Adding edge " + edge.getSourceNodeId() + " -> " + edge.getTargetNodeId()
+                            + " would create a cycle in the DAG");
+        }
+        return true;
     }
 
     private void rebuildAdjacency() {

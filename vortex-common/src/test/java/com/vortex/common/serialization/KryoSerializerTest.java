@@ -4,7 +4,9 @@ import com.vortex.common.model.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.util.List;
+import java.util.zip.GZIPOutputStream;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -203,9 +205,46 @@ class KryoSerializerTest {
     void isKryoFormat_detectsBinary() {
         byte[] kryoData = kryo.serialize(DagNode.builder().build());
         assertThat(KryoSerializer.isKryoFormat(kryoData)).isTrue();
+        assertThat(KryoSerializer.hasVersionHeader(kryoData)).isTrue();
 
         byte[] jsonData = "{\"nodeId\":\"123\"}".getBytes();
         assertThat(KryoSerializer.isKryoFormat(jsonData)).isFalse();
+    }
+
+    @Test
+    void deserialize_acceptsLegacyPayloadWithoutHeader() {
+        DagNode node = DagNode.builder().type(DagNode.NodeType.THOUGHT).content("legacy").build();
+        byte[] current = kryo.serialize(node);
+        byte[] legacy = java.util.Arrays.copyOfRange(current, 5, current.length);
+
+        DagNode restored = kryo.deserialize(legacy, DagNode.class);
+
+        assertThat(restored.getNodeId()).isEqualTo(node.getNodeId());
+        assertThat(restored.getContent()).isEqualTo("legacy");
+    }
+
+    @Test
+    void deserializeCompressed_acceptsLegacyCompressedPayloadWithoutHeader() throws Exception {
+        TaskState state = createSampleTaskState();
+        byte[] current = kryo.serialize(state);
+        byte[] legacy = java.util.Arrays.copyOfRange(current, 5, current.length);
+        byte[] legacyCompressed = gzip(legacy);
+
+        TaskState restored = kryo.deserializeCompressed(legacyCompressed, TaskState.class);
+
+        assertThat(restored.getTaskId()).isEqualTo(state.getTaskId());
+        assertThat(restored.getGraph().nodeCount()).isEqualTo(state.getGraph().nodeCount());
+    }
+
+    @Test
+    void deserialize_rejectsUnsupportedVersionHeader() {
+        byte[] kryoData = kryo.serialize(DagNode.builder().type(DagNode.NodeType.ACTION).build());
+        kryoData[4] = (byte) 99;
+
+        assertThatThrownBy(() -> kryo.deserialize(kryoData, DagNode.class))
+                .isInstanceOf(KryoSerializer.VersionMismatchException.class)
+                .hasMessageContaining("expected=1")
+                .hasMessageContaining("actual=99");
     }
 
     @Test
@@ -256,5 +295,14 @@ class KryoSerializerTest {
         state.getContext().put("totalSteps", "3");
         state.getBranches().add(TaskBranch.builder().branchName("main").sourceNodeId(a.getNodeId()).build());
         return state;
+    }
+
+    private static byte[] gzip(byte[] payload) throws Exception {
+        try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
+             GZIPOutputStream gzos = new GZIPOutputStream(bos)) {
+            gzos.write(payload);
+            gzos.finish();
+            return bos.toByteArray();
+        }
     }
 }

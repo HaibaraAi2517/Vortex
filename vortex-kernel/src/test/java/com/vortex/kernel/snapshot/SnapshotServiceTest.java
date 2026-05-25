@@ -12,9 +12,16 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -84,6 +91,69 @@ class SnapshotServiceTest {
 
         assertThat(completed.getStatus()).isEqualTo(DagNode.NodeStatus.COMPLETED);
         assertThat(completed.getResult()).isEqualTo("success");
+    }
+
+    @Test
+    void appendNode_invalidType_doesNotWriteWal() {
+        TaskState task = service.createTask("invalid node type", "ns");
+        long seqBefore = walWriter.currentSequenceNumber(task.getTaskId());
+        int walEntriesBefore = walReader.readAll(task.getTaskId()).size();
+
+        assertThatThrownBy(() -> service.appendNode(task.getTaskId(), "NOT_A_REAL_TYPE", "bad node"))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertWalUnchanged(task.getTaskId(), seqBefore, walEntriesBefore);
+        assertThat(task.getGraph().nodeCount()).isZero();
+    }
+
+    @Test
+    void appendNodeWithTarget_missingTarget_doesNotWriteWal() {
+        TaskState task = service.createTask("missing target", "ns");
+        long seqBefore = walWriter.currentSequenceNumber(task.getTaskId());
+        int walEntriesBefore = walReader.readAll(task.getTaskId()).size();
+
+        assertThatThrownBy(() -> service.appendNodeWithTarget(
+                task.getTaskId(), "ACTION", "bad edge", "missing-node", DagEdge.EdgeType.CONTROL_DEP))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Node not found");
+
+        assertWalUnchanged(task.getTaskId(), seqBefore, walEntriesBefore);
+        assertThat(task.getGraph().nodeCount()).isZero();
+        assertThat(task.getGraph().getEdges()).isEmpty();
+    }
+
+    @Test
+    void completeNode_missingNode_doesNotWriteWal() {
+        TaskState task = service.createTask("missing complete target", "ns");
+        long seqBefore = walWriter.currentSequenceNumber(task.getTaskId());
+        int walEntriesBefore = walReader.readAll(task.getTaskId()).size();
+
+        assertThatThrownBy(() -> service.completeNode(task.getTaskId(), "missing-node", "result"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Node not found");
+
+        assertWalUnchanged(task.getTaskId(), seqBefore, walEntriesBefore);
+    }
+
+    @Test
+    void addEdge_invalidSource_doesNotWriteWalOrPoisonRecovery() {
+        TaskState task = service.createTask("invalid edge", "ns");
+        DagNode node = service.appendNode(task.getTaskId(), "THOUGHT", "existing");
+        String checkpointId = service.checkpoint(task.getTaskId());
+        long seqBefore = walWriter.currentSequenceNumber(task.getTaskId());
+        int walEntriesBefore = walReader.readAll(task.getTaskId()).size();
+
+        assertThatThrownBy(() -> service.addEdge(
+                task.getTaskId(), "missing-source", node.getNodeId(), DagEdge.EdgeType.CONTROL_DEP, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Source node not found");
+
+        assertWalUnchanged(task.getTaskId(), seqBefore, walEntriesBefore);
+        service.evictFromCacheForTest(task.getTaskId());
+
+        TaskState recovered = service.recover(task.getTaskId(), checkpointId);
+        assertThat(recovered.getGraph().nodeCount()).isEqualTo(1);
+        assertThat(recovered.getGraph().getEdges()).isEmpty();
     }
 
     @Test
@@ -157,6 +227,26 @@ class SnapshotServiceTest {
         assertThat(secondRecovery.getGraph().getNode(afterCheckpoint.getNodeId())).isPresent();
         assertThat(secondRecovery.getGraph().getNode(afterCheckpoint.getNodeId()).orElseThrow().getStatus())
                 .isEqualTo(DagNode.NodeStatus.COMPLETED);
+    }
+
+    @Test
+    void walReplay_preservesContentWithCommasAndSpecialChars() {
+        TaskState task = service.createTask("comma test", "ns");
+        String contentWithComma = "search tool: query=hello, filter=date, limit=10";
+        String contentWithQuote = "result: \"found 3 items\" and path C:\\temp\\data";
+
+        service.appendNode(task.getTaskId(), "THOUGHT", contentWithComma);
+        service.appendNode(task.getTaskId(), "ACTION", contentWithQuote);
+        service.checkpoint(task.getTaskId());
+
+        service.evictFromCacheForTest(task.getTaskId());
+
+        Optional<TaskState> recovered = service.getTask(task.getTaskId());
+
+        assertThat(recovered).isPresent();
+        assertThat(recovered.orElseThrow().getGraph().getNodes().values())
+                .extracting(DagNode::getContent)
+                .contains(contentWithComma, contentWithQuote);
     }
 
     @Test
@@ -343,6 +433,53 @@ class SnapshotServiceTest {
     }
 
     @Test
+    void retention_preservesLatestCheckpointEvenWhenAllAreExpired() {
+        TaskState task = TaskState.builder()
+                .taskId("retention-latest")
+                .description("retention latest protection")
+                .graph(new DagGraph())
+                .build();
+
+        CheckpointMetadata full = CheckpointMetadata.builder()
+                .checkpointId("full-old")
+                .taskId(task.getTaskId())
+                .type(CheckpointMetadata.CheckpointType.FULL)
+                .createdAt(Instant.now().minus(Duration.ofDays(3)))
+                .build();
+        fakeL3.saveCheckpointWithMetadata(task, full);
+
+        CheckpointDelta deltaPayload = new CheckpointDelta(
+                "full-old",
+                0,
+                Set.of(),
+                Set.of(),
+                java.util.Map.of(),
+                Set.of(),
+                null,
+                null,
+                java.util.List.of(),
+                TaskState.TaskStatus.RUNNING);
+        CheckpointMetadata delta = CheckpointMetadata.builder()
+                .checkpointId("delta-old")
+                .taskId(task.getTaskId())
+                .type(CheckpointMetadata.CheckpointType.DELTA)
+                .baseCheckpointId("full-old")
+                .createdAt(Instant.now().minus(Duration.ofDays(2)))
+                .build();
+        fakeL3.saveCheckpointBytesWithMetadata(new KryoSerializer().serializeCompressed(deltaPayload), delta);
+
+        fakeL3.metadata.get(task.getTaskId() + "/full-old").setCreatedAt(Instant.now().minus(Duration.ofDays(3)));
+        fakeL3.metadata.get(task.getTaskId() + "/delta-old").setCreatedAt(Instant.now().minus(Duration.ofDays(2)));
+
+        CheckpointLifecycleManager lifecycleManager = new CheckpointLifecycleManager(fakeL3, 20, 0, 48);
+        lifecycleManager.applyRetention(task.getTaskId(), fakeL3.listCheckpointMetadata(task.getTaskId()));
+
+        assertThat(fakeL3.listCheckpointMetadata(task.getTaskId()))
+                .extracting(CheckpointMetadata::getCheckpointId)
+                .containsExactly("full-old", "delta-old");
+    }
+
+    @Test
     void taskNotFound_throwsOnAppend() {
         assertThatThrownBy(() -> service.appendNode("nonexistent", "THOUGHT", "x"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -402,6 +539,57 @@ class SnapshotServiceTest {
     }
 
     @Test
+    void createBranch_missingSource_doesNotWriteWal() {
+        TaskState task = service.createTask("branch create failure", "ns");
+        long seqBefore = walWriter.currentSequenceNumber(task.getTaskId());
+        int walEntriesBefore = walReader.readAll(task.getTaskId()).size();
+
+        assertThatThrownBy(() -> service.createBranch(task.getTaskId(), "alt-plan", "missing-node"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Source node not found");
+
+        assertWalUnchanged(task.getTaskId(), seqBefore, walEntriesBefore);
+        assertThat(service.listBranches(task.getTaskId())).isEmpty();
+    }
+
+    @Test
+    void switchBranch_missingBranch_doesNotWriteWal() {
+        TaskState task = service.createTask("branch switch failure", "ns");
+        DagNode n1 = service.appendNode(task.getTaskId(), "THOUGHT", "fork point");
+        service.createBranch(task.getTaskId(), "alt-plan", n1.getNodeId());
+        long seqBefore = walWriter.currentSequenceNumber(task.getTaskId());
+        int walEntriesBefore = walReader.readAll(task.getTaskId()).size();
+
+        assertThatThrownBy(() -> service.switchBranch(task.getTaskId(), "missing-branch"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Active branch not found");
+
+        assertWalUnchanged(task.getTaskId(), seqBefore, walEntriesBefore);
+    }
+
+    @Test
+    void recover_preservesBranchStateAfterCheckpointAndSwitch() {
+        TaskState task = service.createTask("branch recovery", "ns");
+        DagNode forkPoint = service.appendNode(task.getTaskId(), "THOUGHT", "fork point");
+        service.checkpoint(task.getTaskId());
+
+        TaskBranch branch = service.createBranch(task.getTaskId(), "alt-plan", forkPoint.getNodeId());
+        service.switchBranch(task.getTaskId(), branch.getBranchId());
+
+        service.evictFromCacheForTest(task.getTaskId());
+
+        TaskState recovered = service.recover(task.getTaskId(), task.getLatestCheckpointId());
+
+        assertThat(recovered.getBranches())
+                .extracting(TaskBranch::getBranchId)
+                .contains(branch.getBranchId());
+        assertThat(recovered.getCurrentBranchId()).isEqualTo(branch.getBranchId());
+        assertThat(recovered.getGraph().getNodes().values())
+                .extracting(DagNode::getType)
+                .contains(DagNode.NodeType.FORK);
+    }
+
+    @Test
     void onTaskEvicted_createsEmergencyCheckpointWithoutReentrantLookup() throws Exception {
         TaskState task = service.createTask("eviction test", "ns");
         service.appendNode(task.getTaskId(), "THOUGHT", "pending checkpoint");
@@ -415,6 +603,227 @@ class SnapshotServiceTest {
         assertThat(service.listCheckpoints(task.getTaskId()))
                 .extracting(CheckpointMetadata::getCheckpointId)
                 .contains(task.getLatestCheckpointId());
+    }
+
+    @Test
+    void onTaskEvicted_createsEmergencyCheckpointForDirtyStateAfterPreviousCheckpoint() throws Exception {
+        TaskState task = service.createTask("dirty eviction test", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "first node");
+        service.checkpoint(task.getTaskId());
+
+        service.appendNode(task.getTaskId(), "ACTION", "second node after checkpoint");
+
+        int checkpointsBefore = service.listCheckpoints(task.getTaskId()).size();
+
+        Method onTaskEvicted = SnapshotService.class.getDeclaredMethod(
+                "onTaskEvicted", String.class, TaskState.class, RemovalCause.class);
+        onTaskEvicted.setAccessible(true);
+        onTaskEvicted.invoke(service, task.getTaskId(), task, RemovalCause.SIZE);
+
+        assertThat(service.listCheckpoints(task.getTaskId()).size()).isGreaterThan(checkpointsBefore);
+    }
+
+    @Test
+    void checkpointFailure_restoresDirtyTrackingForRetry() {
+        FailingCheckpointStore failingStore = new FailingCheckpointStore(fakeL3);
+        service = newService(failingStore);
+
+        TaskState task = service.createTask("checkpoint failure restore", "ns");
+        DagNode node = service.appendNode(task.getTaskId(), "THOUGHT", "must stay dirty");
+
+        failingStore.failNextCheckpointWrite();
+
+        assertThatThrownBy(() -> service.checkpoint(task.getTaskId()))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(dirtySetTracker.hasDirty(task.getTaskId())).isTrue();
+
+        failingStore.stopFailing();
+        service.checkpoint(task.getTaskId());
+
+        assertThat(dirtySetTracker.hasDirty(task.getTaskId())).isFalse();
+        assertThat(service.listCheckpoints(task.getTaskId())).hasSize(1);
+        assertThat(task.getGraph().getNode(node.getNodeId())).isPresent();
+    }
+
+    @Test
+    void recover_whenCheckpointMetadataReadFails_throwsTypedFailure() {
+        FailingCheckpointStore failingStore = new FailingCheckpointStore(fakeL3);
+        service = newService(failingStore);
+
+        TaskState task = service.createTask("metadata read failure", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "base");
+        String checkpointId = service.checkpoint(task.getTaskId());
+
+        failingStore.failMetadataReads();
+
+        assertThatThrownBy(() -> service.recover(task.getTaskId(), checkpointId))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.CHECKPOINT_METADATA_LOAD_FAILED));
+    }
+
+    @Test
+    void recover_whenFullCheckpointReadFails_throwsTypedFailure() {
+        FailingCheckpointStore failingStore = new FailingCheckpointStore(fakeL3);
+        service = newService(failingStore);
+
+        TaskState task = service.createTask("full checkpoint read failure", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "base");
+        String checkpointId = service.checkpoint(task.getTaskId());
+
+        failingStore.failCheckpointLoads();
+
+        assertThatThrownBy(() -> service.recover(task.getTaskId(), checkpointId))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.CHECKPOINT_STORAGE_READ_FAILED));
+    }
+
+    @Test
+    void getTask_whenLazyRecoveryFails_rethrowsTypedFailure() {
+        FailingCheckpointStore failingStore = new FailingCheckpointStore(fakeL3);
+        service = newService(failingStore);
+
+        TaskState task = service.createTask("lazy metadata read failure", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "base");
+        service.checkpoint(task.getTaskId());
+        service.evictFromCacheForTest(task.getTaskId());
+
+        failingStore.failMetadataReads();
+
+        assertThatThrownBy(() -> service.getTask(task.getTaskId()))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.CHECKPOINT_METADATA_LOAD_FAILED));
+    }
+
+    @Test
+    void recover_withBrokenDeltaEdgeTarget_throwsTypedFailure() {
+        service = newService(fakeL3, 10, 20);
+
+        TaskState task = service.createTask("broken delta edge", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "base");
+        service.checkpoint(task.getTaskId());
+
+        DagNode orphan = DagNode.builder()
+                .nodeId("orphan-node")
+                .type(DagNode.NodeType.ACTION)
+                .content("orphan")
+                .status(DagNode.NodeStatus.PENDING)
+                .build();
+        DagEdge brokenEdge = DagEdge.builder()
+                .edgeId("broken-edge")
+                .sourceNodeId("missing-source")
+                .targetNodeId(orphan.getNodeId())
+                .dependencyType(DagEdge.EdgeType.CONTROL_DEP)
+                .build();
+
+        CheckpointMetadata deltaMeta = CheckpointMetadata.builder()
+                .checkpointId("broken-delta")
+                .taskId(task.getTaskId())
+                .sequenceNumber(1)
+                .type(CheckpointMetadata.CheckpointType.DELTA)
+                .baseCheckpointId(task.getLatestCheckpointId())
+                .build();
+        CheckpointDelta brokenDelta = new CheckpointDelta(
+                task.getLatestCheckpointId(),
+                1,
+                Set.of(orphan),
+                Set.of(brokenEdge),
+                java.util.Map.of(),
+                Set.of(),
+                orphan.getNodeId(),
+                null,
+                java.util.List.of(),
+                TaskState.TaskStatus.RUNNING);
+        fakeL3.putBytes(
+                "checkpoints/" + task.getTaskId() + "/broken-delta.kryo",
+                new KryoSerializer().serializeCompressed(brokenDelta));
+        fakeL3.saveCheckpointBytesWithMetadata(
+                new KryoSerializer().serializeCompressed(brokenDelta),
+                deltaMeta);
+
+        assertThatThrownBy(() -> service.recover(task.getTaskId(), "broken-delta"))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.DELTA_STATE_APPLY_FAILED));
+    }
+
+    @Test
+    void recover_withCorruptWalEntryBeforeEof_throwsTypedFailure() throws Exception {
+        TaskState task = service.createTask("corrupt wal", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "before checkpoint");
+        String checkpointId = service.checkpoint(task.getTaskId());
+        service.appendNode(task.getTaskId(), "ACTION", "after checkpoint");
+
+        Path walFile = walWriter.getWalFile(task.getTaskId());
+        Files.writeString(walFile,
+                "{\"sequenceNumber\":2,\"entryId\":\"broken\"\n" +
+                        "{\"sequenceNumber\":3,\"entryId\":\"another\",\"operation\":\"UPDATE_CONTEXT\",\"payload\":\"{}\",\"timestamp\":\"2026-05-15T00:00:00Z\"}\n",
+                StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> service.recover(task.getTaskId(), checkpointId))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED));
+
+        assertThat(counterValue("vortex.checkpoint.recovery.total",
+                "outcome", "failure", "mode", "NONE", "reason", "WAL_STATE_APPLY_FAILED"))
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    void recover_withCorruptWalPayload_throwsTypedFailure() {
+        TaskState task = service.createTask("corrupt wal payload", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "before checkpoint");
+        String checkpointId = service.checkpoint(task.getTaskId());
+
+        walWriter.append(task.getTaskId(), ActionLogEntry.OperationType.UPDATE_CONTEXT, "{corrupt");
+
+        assertThatThrownBy(() -> service.recover(task.getTaskId(), checkpointId))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED));
+    }
+
+    @Test
+    void recover_withCompleteNodeReferencingMissingNode_throwsTypedFailure() {
+        TaskState task = service.createTask("missing complete replay target", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "before checkpoint");
+        String checkpointId = service.checkpoint(task.getTaskId());
+
+        walWriter.append(task.getTaskId(), ActionLogEntry.OperationType.COMPLETE_NODE,
+                "{\"nodeId\":\"missing-node\",\"result\":\"done\"}");
+
+        assertThatThrownBy(() -> service.recover(task.getTaskId(), checkpointId))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .hasMessageContaining("missing-node")
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED));
+    }
+
+    @Test
+    void recover_withWalReplayStateApplyFailure_abortsRecovery() {
+        TaskState task = service.createTask("wal state apply failure", "ns");
+        DagNode source = service.appendNode(task.getTaskId(), "THOUGHT", "source");
+        service.checkpoint(task.getTaskId());
+
+        walWriter.append(task.getTaskId(), ActionLogEntry.OperationType.ADD_EDGE,
+                "{\"edgeId\":\"broken-edge\",\"sourceNodeId\":\"missing-source\",\"targetNodeId\":\""
+                        + source.getNodeId() + "\",\"dependencyType\":\"CONTROL_DEP\",\"condition\":\"\"}");
+
+        assertThatThrownBy(() -> service.recover(task.getTaskId(), task.getLatestCheckpointId()))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED));
+
+        assertThat(counterValue("vortex.checkpoint.recovery.total",
+                "outcome", "failure", "mode", "NONE", "reason", "WAL_STATE_APPLY_FAILED"))
+                .isEqualTo(1.0);
+        assertThat(counterValue("vortex.checkpoint.recovery.total",
+                "outcome", "success", "mode", "FULL"))
+                .isEqualTo(0.0);
     }
 
     @Test
@@ -432,15 +841,56 @@ class SnapshotServiceTest {
                 .containsExactly(firstCheckpointId);
     }
 
+    @Test
+    void concurrentCheckpointRequests_areSerializedPerTask() throws Exception {
+        TaskState task = service.createTask("concurrent checkpoint", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "before concurrency");
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Throwable> failures = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+        Runnable checkpointTask = () -> {
+            ready.countDown();
+            try {
+                assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
+                service.checkpoint(task.getTaskId());
+            } catch (Throwable t) {
+                failures.add(t);
+            }
+        };
+
+        Thread t1 = new Thread(checkpointTask, "checkpoint-1");
+        Thread t2 = new Thread(checkpointTask, "checkpoint-2");
+        t1.start();
+        t2.start();
+
+        assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+        start.countDown();
+        t1.join();
+        t2.join();
+
+        assertThat(failures).isEmpty();
+        assertThat(service.listCheckpoints(task.getTaskId())).hasSize(2);
+        assertThat(service.listCheckpoints(task.getTaskId()))
+                .extracting(CheckpointMetadata::getSequenceNumber)
+                .allMatch(seq -> seq == 1L);
+    }
+
     private SnapshotService newService(FakeL3ColdStore store) {
         return newService(store, 10, 20);
     }
 
     private SnapshotService newService(FakeL3ColdStore store, int maxDeltasBeforeFull, int maxPerTask) {
+        return newService(store, maxDeltasBeforeFull, maxPerTask, 7);
+    }
+
+    private SnapshotService newService(
+            FakeL3ColdStore store, int maxDeltasBeforeFull, int maxPerTask, int maxAgeDays) {
         String walDir = tempDir.resolve("wal").toString();
         walWriter = new ActionLogWriter(walDir);
         walReader = new ActionLogReader(walDir);
-        walTruncator = new ActionLogTruncator(walReader, walDir);
+        walTruncator = new ActionLogTruncator(walWriter, walReader, walDir);
         dirtySetTracker = new DirtySetTracker();
         checkpointManager = new IncrementalCheckpointManager(store, dirtySetTracker, maxDeltasBeforeFull);
         scheduler = new CheckpointScheduler(50, 60000, false);
@@ -453,7 +903,7 @@ class SnapshotServiceTest {
         ApplicationEventPublisher eventPublisher = event -> {};
         SnapshotService snapshotService = new SnapshotService(
                 store, walWriter, walReader, walTruncator,
-                checkpointManager, new CheckpointLifecycleManager(store, maxPerTask, 7, 48),
+                checkpointManager, new CheckpointLifecycleManager(store, maxPerTask, maxAgeDays, 48),
                 scheduler, dirtySetTracker, branchManager, dotExporter, eventPublisher, checkpointRecoveryMetrics);
         snapshotService.rebuildCheckpointIndex();
         return snapshotService;
@@ -469,6 +919,11 @@ class SnapshotServiceTest {
         }
         var counter = search.counter();
         return counter == null ? 0.0 : counter.count();
+    }
+
+    private void assertWalUnchanged(String taskId, long seqBefore, int walEntriesBefore) {
+        assertThat(walWriter.currentSequenceNumber(taskId)).isEqualTo(seqBefore);
+        assertThat(walReader.readAll(taskId)).hasSize(walEntriesBefore);
     }
 
     // ---- Fake L3 implementation for testing ----
@@ -576,6 +1031,97 @@ class SnapshotServiceTest {
             return metadata.values().stream()
                     .map(CheckpointMetadata::getTaskId)
                     .collect(java.util.stream.Collectors.toSet());
+        }
+    }
+
+    static class FailingCheckpointStore extends FakeL3ColdStore {
+        private final FakeL3ColdStore delegate;
+        private volatile boolean failNextCheckpointWrite;
+        private volatile boolean failMetadataReads;
+        private volatile boolean failCheckpointLoads;
+
+        FailingCheckpointStore(FakeL3ColdStore delegate) {
+            this.delegate = delegate;
+        }
+
+        void failNextCheckpointWrite() {
+            this.failNextCheckpointWrite = true;
+        }
+
+        void stopFailing() {
+            this.failNextCheckpointWrite = false;
+        }
+
+        void failMetadataReads() {
+            this.failMetadataReads = true;
+        }
+
+        void failCheckpointLoads() {
+            this.failCheckpointLoads = true;
+        }
+
+        @Override
+        public CheckpointMetadata saveCheckpointWithMetadata(TaskState state, CheckpointMetadata meta) {
+            if (failNextCheckpointWrite) {
+                failNextCheckpointWrite = false;
+                throw new IllegalStateException("simulated checkpoint write failure");
+            }
+            return delegate.saveCheckpointWithMetadata(state, meta);
+        }
+
+        @Override
+        public CheckpointMetadata saveCheckpointBytesWithMetadata(byte[] data, CheckpointMetadata meta) {
+            if (failNextCheckpointWrite) {
+                failNextCheckpointWrite = false;
+                throw new IllegalStateException("simulated checkpoint byte write failure");
+            }
+            return delegate.saveCheckpointBytesWithMetadata(data, meta);
+        }
+
+        @Override
+        public Optional<TaskState> loadCheckpoint(String checkpointId) {
+            if (failCheckpointLoads) {
+                throw new IllegalStateException("simulated checkpoint load failure");
+            }
+            return delegate.loadCheckpoint(checkpointId);
+        }
+
+        @Override
+        public void deleteCheckpoint(String checkpointId) {
+            delegate.deleteCheckpoint(checkpointId);
+        }
+
+        @Override
+        public void archiveFragment(MemoryFragment fragment) {
+            delegate.archiveFragment(fragment);
+        }
+
+        @Override
+        public Optional<MemoryFragment> retrieveFragment(String id) {
+            return delegate.retrieveFragment(id);
+        }
+
+        @Override
+        public void putBytes(String key, byte[] data) {
+            delegate.putBytes(key, data);
+        }
+
+        @Override
+        public byte[] getBytes(String key) {
+            return delegate.getBytes(key);
+        }
+
+        @Override
+        public List<CheckpointMetadata> listCheckpointMetadata(String taskId) {
+            if (failMetadataReads) {
+                throw new IllegalStateException("simulated metadata load failure");
+            }
+            return delegate.listCheckpointMetadata(taskId);
+        }
+
+        @Override
+        public java.util.Set<String> listTaskIdsWithCheckpoints() {
+            return delegate.listTaskIdsWithCheckpoints();
         }
     }
 }

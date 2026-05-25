@@ -5,8 +5,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
@@ -24,7 +24,7 @@ class ActionLogTest {
     void setUp() {
         writer = new ActionLogWriter(walDir.toString());
         reader = new ActionLogReader(walDir.toString());
-        truncator = new ActionLogTruncator(reader, walDir.toString());
+        truncator = new ActionLogTruncator(writer, reader, walDir.toString());
     }
 
     @Test
@@ -84,6 +84,16 @@ class ActionLogTest {
     }
 
     @Test
+    void readFrom_whenWalPathIsUnreadable_throwsTypedFailure() throws Exception {
+        Files.createDirectory(writer.getWalFile("task-bad-read"));
+
+        assertThatThrownBy(() -> reader.readFrom("task-bad-read", 0))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED));
+    }
+
+    @Test
     void truncate_removesEntriesUpToSequenceNumber() {
         writer.append("task-trunc", ActionLogEntry.OperationType.APPEND_NODE, "p1");
         writer.append("task-trunc", ActionLogEntry.OperationType.APPEND_NODE, "p2");
@@ -113,6 +123,30 @@ class ActionLogTest {
 
         assertThat(reader.findEntry("task-find", e.getEntryId())).isPresent();
         assertThat(reader.findEntry("task-find", "nonexistent")).isEmpty();
+    }
+
+    @Test
+    void findEntry_whenWalPathIsUnreadable_throwsTypedFailure() throws Exception {
+        Files.createDirectory(writer.getWalFile("task-bad-find"));
+
+        assertThatThrownBy(() -> reader.findEntry("task-bad-find", "entry-1"))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED));
+    }
+
+    @Test
+    void findEntry_whenMatchingWalLineIsCorrupt_throwsTypedFailure() throws Exception {
+        Path walFile = writer.getWalFile("task-corrupt-find");
+        Files.writeString(walFile,
+                "{\"entryId\":\"entry-1\",\"sequenceNumber\":1,\"operation\":\"APPEND_NODE\",\"payload\":\"{}\",\"timestamp\":\"2026-05-25T00:00:00Z\"}\n"
+                        + "{\"entryId\":\"entry-target\",corrupt}\n");
+
+        assertThatThrownBy(() -> reader.findEntry("task-corrupt-find", "entry-target"))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED))
+                .hasMessageContaining("entry-target");
     }
 
     @Test

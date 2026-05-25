@@ -28,12 +28,15 @@ import java.util.List;
 public class ActionLogTruncator {
 
     private final ActionLogReader reader;
+    private final ActionLogWriter writer;
     private final Path walDir;
     private final ObjectMapper objectMapper;
 
     public ActionLogTruncator(
+            ActionLogWriter writer,
             ActionLogReader reader,
             @Value("${vortex.kernel.snapshot.wal.dir:${java.io.tmpdir}/vortex-wal}") String walDirPath) {
+        this.writer = writer;
         this.reader = reader;
         this.walDir = Paths.get(walDirPath);
         this.objectMapper = new ObjectMapper().findAndRegisterModules();
@@ -49,48 +52,51 @@ public class ActionLogTruncator {
      * @param truncationPoint all entries with seqNo <= this will be removed
      */
     public void truncate(String taskId, long truncationPoint) {
-        Path walFile = walDir.resolve(taskId + ".wal");
-        if (!Files.exists(walFile)) {
-            log.debug("No WAL file to truncate for task={}", taskId);
-            return;
-        }
-
-        try {
-            // Read all entries
-            List<ActionLogEntry> entries = reader.readAll(taskId);
-
-            // Filter to keep only entries after truncation point
-            List<ActionLogEntry> retained = entries.stream()
-                    .filter(e -> e.getSequenceNumber() > truncationPoint)
-                    .toList();
-
-            if (retained.size() == entries.size()) {
-                log.debug("WAL truncation for task={}: no entries to remove (truncPoint={}, total={})",
-                        taskId, truncationPoint, entries.size());
-                return;
+        writer.withTaskLock(taskId, () -> {
+            Path walFile = walDir.resolve(taskId + ".wal");
+            if (!Files.exists(walFile)) {
+                log.debug("No WAL file to truncate for task={}", taskId);
+                return null;
             }
 
-            // Write retained entries to a temp file, then rename atomically
-            Path tempFile = walDir.resolve(taskId + ".wal.tmp");
-            try (BufferedWriter writer = Files.newBufferedWriter(tempFile)) {
-                for (ActionLogEntry entry : retained) {
-                    writer.write(objectMapper.writeValueAsString(entry) + "\n");
-                }
-                writer.flush();
-            }
-
-            // Atomic rename (REPLACE_EXISTING without ATOMIC_MOVE on Windows)
-            Files.move(tempFile, walFile, StandardCopyOption.REPLACE_EXISTING);
-
-            log.info("WAL truncated for task={}: removed {} entries, retained {} entries (truncPoint={})",
-                    taskId, entries.size() - retained.size(), retained.size(), truncationPoint);
-
-        } catch (IOException e) {
-            log.error("WAL truncation failed for task={}: {}", taskId, e.getMessage());
-            // Clean up temp file if it exists
             try {
-                Files.deleteIfExists(walDir.resolve(taskId + ".wal.tmp"));
-            } catch (IOException ignored) {}
-        }
+                // Read all entries
+                List<ActionLogEntry> entries = reader.readAll(taskId);
+
+                // Filter to keep only entries after truncation point
+                List<ActionLogEntry> retained = entries.stream()
+                        .filter(e -> e.getSequenceNumber() > truncationPoint)
+                        .toList();
+
+                if (retained.size() == entries.size()) {
+                    log.debug("WAL truncation for task={}: no entries to remove (truncPoint={}, total={})",
+                            taskId, truncationPoint, entries.size());
+                    return null;
+                }
+
+                // Write retained entries to a temp file, then rename atomically
+                Path tempFile = walDir.resolve(taskId + ".wal.tmp");
+                try (BufferedWriter fileWriter = Files.newBufferedWriter(tempFile)) {
+                    for (ActionLogEntry entry : retained) {
+                        fileWriter.write(objectMapper.writeValueAsString(entry) + "\n");
+                    }
+                    fileWriter.flush();
+                }
+
+                // Atomic rename (REPLACE_EXISTING without ATOMIC_MOVE on Windows)
+                Files.move(tempFile, walFile, StandardCopyOption.REPLACE_EXISTING);
+
+                log.info("WAL truncated for task={}: removed {} entries, retained {} entries (truncPoint={})",
+                        taskId, entries.size() - retained.size(), retained.size(), truncationPoint);
+
+            } catch (IOException e) {
+                log.error("WAL truncation failed for task={}: {}", taskId, e.getMessage());
+                // Clean up temp file if it exists
+                try {
+                    Files.deleteIfExists(walDir.resolve(taskId + ".wal.tmp"));
+                } catch (IOException ignored) {}
+            }
+            return null;
+        });
     }
 }

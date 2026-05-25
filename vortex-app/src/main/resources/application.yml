@@ -40,6 +40,7 @@ vortex:
         access-key: ${MINIO_ACCESS_KEY:minioadmin}
         secret-key: ${MINIO_SECRET_KEY:minioadmin}
         bucket: ${MINIO_BUCKET:vortex}
+        key-prefix: ${MINIO_KEY_PREFIX:}
 
   # ---- Kernel config ----
   kernel:

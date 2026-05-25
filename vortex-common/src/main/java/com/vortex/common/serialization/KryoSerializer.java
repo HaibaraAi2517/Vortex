@@ -26,6 +26,9 @@ public class KryoSerializer {
 
     private static final int INITIAL_BUFFER_SIZE = 8192;
     private static final int MAX_BUFFER_SIZE = 16 * 1024 * 1024; // 16 MB
+    private static final byte[] MAGIC = new byte[]{'V', 'K', 'R', 'Y'};
+    private static final int FORMAT_VERSION = 1;
+    private static final int HEADER_SIZE = MAGIC.length + 1;
 
     // Numeric class IDs for maximum serialization performance
     private static final int ID_DAG_NODE = 1;
@@ -88,7 +91,7 @@ public class KryoSerializer {
              Output output = new Output(bos, MAX_BUFFER_SIZE)) {
             kryo.writeObject(output, obj);
             output.flush();
-            return bos.toByteArray();
+            return prependHeader(bos.toByteArray());
         } catch (IOException e) {
             throw new IllegalStateException("Kryo serialization failed for " + obj.getClass().getSimpleName(), e);
         } finally {
@@ -102,7 +105,8 @@ public class KryoSerializer {
     @SuppressWarnings("unchecked")
     public <T> T deserialize(byte[] data, Class<T> type) {
         Kryo kryo = kryoPool.obtain();
-        try (Input input = new Input(new ByteArrayInputStream(data))) {
+        byte[] payload = stripHeaderIfPresent(data);
+        try (Input input = new Input(new ByteArrayInputStream(payload))) {
             return (T) kryo.readObject(input, type);
         } finally {
             kryoPool.free(kryo);
@@ -148,7 +152,58 @@ public class KryoSerializer {
      */
     public static boolean isKryoFormat(byte[] data) {
         if (data == null || data.length == 0) return false;
+        if (hasVersionHeader(data)) return true;
         byte first = data[0];
         return first != '{' && first != '[';
+    }
+
+    static boolean hasVersionHeader(byte[] data) {
+        if (data == null || data.length < HEADER_SIZE) {
+            return false;
+        }
+        for (int i = 0; i < MAGIC.length; i++) {
+            if (data[i] != MAGIC[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private byte[] prependHeader(byte[] payload) {
+        byte[] withHeader = new byte[HEADER_SIZE + payload.length];
+        System.arraycopy(MAGIC, 0, withHeader, 0, MAGIC.length);
+        withHeader[MAGIC.length] = (byte) FORMAT_VERSION;
+        System.arraycopy(payload, 0, withHeader, HEADER_SIZE, payload.length);
+        return withHeader;
+    }
+
+    private byte[] stripHeaderIfPresent(byte[] data) {
+        if (!hasVersionHeader(data)) {
+            return data;
+        }
+        int actualVersion = Byte.toUnsignedInt(data[MAGIC.length]);
+        if (actualVersion != FORMAT_VERSION) {
+            throw new VersionMismatchException(FORMAT_VERSION, actualVersion);
+        }
+        return Arrays.copyOfRange(data, HEADER_SIZE, data.length);
+    }
+
+    public static final class VersionMismatchException extends IllegalStateException {
+        private final int expectedVersion;
+        private final int actualVersion;
+
+        public VersionMismatchException(int expectedVersion, int actualVersion) {
+            super("Unsupported Kryo payload version expected=" + expectedVersion + " actual=" + actualVersion);
+            this.expectedVersion = expectedVersion;
+            this.actualVersion = actualVersion;
+        }
+
+        public int getExpectedVersion() {
+            return expectedVersion;
+        }
+
+        public int getActualVersion() {
+            return actualVersion;
+        }
     }
 }

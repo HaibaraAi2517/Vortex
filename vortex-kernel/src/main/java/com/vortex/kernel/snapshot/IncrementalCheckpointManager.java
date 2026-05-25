@@ -2,6 +2,7 @@ package com.vortex.kernel.snapshot;
 
 import com.vortex.common.model.*;
 import com.vortex.common.serialization.KryoSerializer;
+import com.vortex.storage.api.CheckpointStoreException;
 import com.vortex.storage.api.L3ColdStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -62,28 +63,32 @@ public class IncrementalCheckpointManager {
         long deltasSinceLastFull = deltasSinceLastFull(history);
 
         DirtySetTracker.DirtySnapshot dirty = dirtySetTracker.getAndClear(state.getTaskId());
+        try {
+            boolean shouldBeFull = history.isEmpty()
+                    || deltasSinceLastFull >= maxDeltasBeforeFull
+                    || lastFull == null;
 
-        boolean shouldBeFull = history.isEmpty()
-                || deltasSinceLastFull >= maxDeltasBeforeFull
-                || lastFull == null;
+            CheckpointMetadata meta;
+            if (shouldBeFull) {
+                meta = createFullCheckpoint(state, walSeq);
+            } else {
+                meta = createDeltaCheckpoint(state, dirty, previousCheckpoint.getCheckpointId(), walSeq);
+            }
 
-        CheckpointMetadata meta;
-        if (shouldBeFull) {
-            meta = createFullCheckpoint(state, walSeq);
-        } else {
-            meta = createDeltaCheckpoint(state, dirty, previousCheckpoint.getCheckpointId(), walSeq);
+            meta.setNodeCount(state.getGraph().nodeCount());
+            meta.setEdgeCount(state.getGraph().edgeCount());
+            meta.setBranchId(state.getCurrentBranchId());
+            history.add(meta);
+
+            log.info("Checkpoint created taskId={} checkpointId={} type={} seqNo={} nodes={} edges={}",
+                    state.getTaskId(), meta.getCheckpointId(), meta.getType(),
+                    meta.getSequenceNumber(), meta.getNodeCount(), meta.getEdgeCount());
+
+            return meta;
+        } catch (RuntimeException e) {
+            dirtySetTracker.restore(state.getTaskId(), dirty);
+            throw e;
         }
-
-        meta.setNodeCount(state.getGraph().nodeCount());
-        meta.setEdgeCount(state.getGraph().edgeCount());
-        meta.setBranchId(state.getCurrentBranchId());
-        history.add(meta);
-
-        log.info("Checkpoint created taskId={} checkpointId={} type={} seqNo={} nodes={} edges={}",
-                state.getTaskId(), meta.getCheckpointId(), meta.getType(),
-                meta.getSequenceNumber(), meta.getNodeCount(), meta.getEdgeCount());
-
-        return meta;
     }
 
     /**
@@ -191,7 +196,16 @@ public class IncrementalCheckpointManager {
             try {
                 state.getGraph().addEdge(edge);
             } catch (Exception e) {
-                log.warn("Failed to apply delta edge {}: {}", edge.getEdgeId(), e.getMessage());
+                if (isDuplicateEdge(state, edge)) {
+                    log.debug("Skipped duplicate delta edge {}", edge.getEdgeId());
+                    continue;
+                }
+                throw new CheckpointRecoveryException(
+                        CheckpointRecoveryFailureReason.DELTA_STATE_APPLY_FAILED,
+                        state.getTaskId(),
+                        state.getLatestCheckpointId(),
+                        "Failed to apply delta edge taskId=" + state.getTaskId() + " edgeId=" + edge.getEdgeId(),
+                        e);
             }
         }
 
@@ -245,7 +259,7 @@ public class IncrementalCheckpointManager {
      * Reload checkpoint metadata for a task from cold storage.
      */
     public List<CheckpointMetadata> reloadTask(String taskId) {
-        List<CheckpointMetadata> reloaded = new ArrayList<>(l3.listCheckpointMetadata(taskId));
+        List<CheckpointMetadata> reloaded = new ArrayList<>(loadCheckpointMetadata(taskId));
         reloaded.sort(Comparator.comparing(CheckpointMetadata::getCreatedAt,
                 Comparator.nullsLast(Comparator.naturalOrder())));
         List<CheckpointMetadata> history = Collections.synchronizedList(reloaded);
@@ -263,7 +277,7 @@ public class IncrementalCheckpointManager {
 
     private List<CheckpointMetadata> getOrLoadHistory(String taskId) {
         return checkpointsByTask.computeIfAbsent(taskId,
-                key -> Collections.synchronizedList(new ArrayList<>(l3.listCheckpointMetadata(key))));
+                key -> Collections.synchronizedList(new ArrayList<>(loadCheckpointMetadata(key))));
     }
 
     private long deltasSinceLastFull(List<CheckpointMetadata> history) {
@@ -281,11 +295,46 @@ public class IncrementalCheckpointManager {
     }
 
     public Optional<TaskState> loadFullCheckpoint(String taskId, String checkpointId) {
-        return l3.loadCheckpoint(taskId + "/" + checkpointId);
+        try {
+            return l3.loadCheckpoint(taskId + "/" + checkpointId);
+        } catch (CheckpointStoreException e) {
+            throw mapCheckpointStoreException(
+                    e,
+                    taskId,
+                    checkpointId,
+                    CheckpointRecoveryFailureReason.CHECKPOINT_STORAGE_READ_FAILED,
+                    CheckpointRecoveryFailureReason.FULL_CHECKPOINT_PAYLOAD_INVALID,
+                    "Failed to load full checkpoint taskId=" + taskId + " checkpointId=" + checkpointId);
+        } catch (IllegalStateException e) {
+            throw new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.CHECKPOINT_STORAGE_READ_FAILED,
+                    taskId,
+                    checkpointId,
+                    "Failed to load full checkpoint taskId=" + taskId + " checkpointId=" + checkpointId,
+                    e);
+        }
     }
 
     public Optional<CheckpointDelta> loadDeltaCheckpoint(String taskId, String checkpointId) {
-        byte[] data = l3.getBytes(checkpointDataKey(taskId, checkpointId));
+        byte[] data;
+        try {
+            data = l3.getBytes(checkpointDataKey(taskId, checkpointId));
+        } catch (CheckpointStoreException e) {
+            throw mapCheckpointStoreException(
+                    e,
+                    taskId,
+                    checkpointId,
+                    CheckpointRecoveryFailureReason.CHECKPOINT_STORAGE_READ_FAILED,
+                    CheckpointRecoveryFailureReason.DELTA_PAYLOAD_INVALID,
+                    "Failed to load delta checkpoint taskId=" + taskId + " checkpointId=" + checkpointId);
+        } catch (IllegalStateException e) {
+            throw new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.CHECKPOINT_STORAGE_READ_FAILED,
+                    taskId,
+                    checkpointId,
+                    "Failed to load delta checkpoint taskId=" + taskId + " checkpointId=" + checkpointId,
+                    e);
+        }
         if (data == null || data.length == 0) {
             return Optional.empty();
         }
@@ -371,5 +420,51 @@ public class IncrementalCheckpointManager {
 
     private String checkpointDataKey(String taskId, String checkpointId) {
         return "checkpoints/" + taskId + "/" + checkpointId + ".kryo";
+    }
+
+    private List<CheckpointMetadata> loadCheckpointMetadata(String taskId) {
+        try {
+            return l3.listCheckpointMetadata(taskId);
+        } catch (CheckpointStoreException e) {
+            throw mapCheckpointStoreException(
+                    e,
+                    taskId,
+                    null,
+                    CheckpointRecoveryFailureReason.CHECKPOINT_METADATA_LOAD_FAILED,
+                    CheckpointRecoveryFailureReason.CHECKPOINT_METADATA_LOAD_FAILED,
+                    "Failed to load checkpoint metadata for taskId=" + taskId);
+        } catch (IllegalStateException e) {
+            throw new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.CHECKPOINT_METADATA_LOAD_FAILED,
+                    taskId,
+                    null,
+                    "Failed to load checkpoint metadata for taskId=" + taskId,
+                    e);
+        }
+    }
+
+    private CheckpointRecoveryException mapCheckpointStoreException(
+            CheckpointStoreException e,
+            String taskId,
+            String checkpointId,
+            CheckpointRecoveryFailureReason readFailureReason,
+            CheckpointRecoveryFailureReason defaultReason,
+            String defaultMessage) {
+        CheckpointRecoveryFailureReason reason = switch (e.getFailureType()) {
+            case METADATA_READ_FAILED -> CheckpointRecoveryFailureReason.CHECKPOINT_METADATA_LOAD_FAILED;
+            case PAYLOAD_INVALID -> defaultReason;
+            case READ_FAILED -> readFailureReason;
+            case VERSION_MISMATCH -> CheckpointRecoveryFailureReason.CHECKPOINT_VERSION_MISMATCH;
+        };
+        return new CheckpointRecoveryException(reason, taskId, checkpointId, defaultMessage, e);
+    }
+
+    private boolean isDuplicateEdge(TaskState state, DagEdge edge) {
+        synchronized (state.getGraph().getEdges()) {
+            return state.getGraph().getEdges().stream().anyMatch(existing ->
+                    existing.getSourceNodeId().equals(edge.getSourceNodeId())
+                            && existing.getTargetNodeId().equals(edge.getTargetNodeId())
+                            && existing.getDependencyType() == edge.getDependencyType());
+        }
     }
 }

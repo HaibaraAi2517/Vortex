@@ -1,6 +1,7 @@
 package com.vortex.app.integration;
 
 import com.vortex.app.VortexApplication;
+import com.vortex.app.integration.support.IsolatedIntegrationTestSupport;
 import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.dto.RecallQuery;
@@ -15,16 +16,20 @@ import com.vortex.storage.api.L2WarmStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
@@ -42,6 +47,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+/**
+ * Optional Testcontainers-backed lifecycle coverage.
+ * Enable with -Drun.full.lifecycle.it=true when explicitly needed.
+ */
 @SpringBootTest(
         classes = {VortexApplication.class, FullLifecycleIT.TestEmbeddingConfig.class},
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -49,17 +58,14 @@ import static org.awaitility.Awaitility.await;
                 "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
                         + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration"
         })
-@Testcontainers
+@Import(IsolatedIntegrationTestSupport.Config.class)
+@ContextConfiguration(initializers = IsolatedIntegrationTestSupport.Initializer.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
+@Testcontainers(disabledWithoutDocker = true)
+@EnabledIfSystemProperty(named = "run.full.lifecycle.it", matches = "true")
 public class FullLifecycleIT {
 
     private static final Network NETWORK = Network.newNetwork();
-    private static final String RUN_ID = UUID.randomUUID().toString().substring(0, 8);
-    private static final String SHADOW_PATH = System.getProperty("java.io.tmpdir")
-            + "/vortex-shadow-" + RUN_ID + ".json";
-    private static final String DLQ_PATH = System.getProperty("java.io.tmpdir")
-            + "/vortex-dlq-" + RUN_ID + ".jsonl";
-    private static final String PROCESSED_KEYS_PATH = System.getProperty("java.io.tmpdir")
-            + "/vortex-processed-" + RUN_ID + ".txt";
 
     @Container
     static final GenericContainer<?> minio = new GenericContainer<>("minio/minio:RELEASE.2024-07-04T14-25-45Z")
@@ -124,19 +130,13 @@ public class FullLifecycleIT {
         registry.add("vortex.storage.l3.minio.endpoint", () -> "http://localhost:" + minio.getMappedPort(9000));
         registry.add("vortex.storage.l3.minio.access-key", () -> "minioadmin");
         registry.add("vortex.storage.l3.minio.secret-key", () -> "minioadmin");
-        registry.add("vortex.storage.l3.minio.bucket", () -> "vortex-it");
         registry.add("vortex.storage.l2.milvus.host", () -> "localhost");
         registry.add("vortex.storage.l2.milvus.port", () -> milvus.getMappedPort(19530));
         registry.add("vortex.storage.l2.embedding-dim", () -> 4);
-        registry.add("vortex.storage.l2.milvus.drop-collection-on-startup", () -> true);
-        registry.add("vortex.storage.l2.milvus.drop-collection-confirm-token", () -> "I-KNOW-WHAT-I-AM-DOING");
         registry.add("vortex.kernel.embedding.bge.model-path", () -> "unused-in-it");
         registry.add("vortex.kernel.splitter.max-tokens-per-chunk", () -> 512);
         registry.add("vortex.kernel.learning.min-samples-before-promotion", () -> 1);
         registry.add("vortex.kernel.learning.shadow-promotion-window-days", () -> 0);
-        registry.add("vortex.kernel.learning.shadow-persistence-path", () -> SHADOW_PATH);
-        registry.add("vortex.kernel.persistence.dlq.path", () -> DLQ_PATH);
-        registry.add("vortex.kernel.persistence.processed-keys.path", () -> PROCESSED_KEYS_PATH);
         registry.add("logging.level.com.vortex", () -> "INFO");
     }
 
@@ -346,6 +346,128 @@ public class FullLifecycleIT {
                 .isTrue();
     }
 
+    @Test
+    void fullDemoStory_coversStoreRecallEvictCheckpointRecoverContinueAndFeedback() {
+        double initialImportance = 0.10;
+        MemoryFragment primary = fragment(
+                "frag-demo-primary",
+                "java checkpoint recover dag node",
+                new float[]{1.0f, 0.0f, 1.0f, 0.0f},
+                10,
+                initialImportance);
+        MemoryFragment secondary = fragment(
+                "frag-demo-secondary",
+                "java locks concurrency executor",
+                new float[]{1.0f, 0.0f, 0.1f, 0.0f},
+                10,
+                0.80);
+        MemoryFragment distractor = fragment(
+                "frag-demo-distractor",
+                "python notebook dataframe joins",
+                new float[]{0.0f, 1.0f, 0.0f, 0.0f},
+                10,
+                0.80);
+
+        storeFragment(primary);
+        storeFragment(secondary);
+        storeFragment(distractor);
+
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(l2WarmStore.get(primary.getId())).isPresent());
+
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            assertThat(l1HotStore.peek(primary.getId())).isEmpty();
+            assertThat(l1HotStore.peek(secondary.getId())).isPresent();
+            assertThat(l1HotStore.peek(distractor.getId())).isPresent();
+        });
+
+        AdaptiveWeightLearner.LearningSnapshot learningBefore =
+                adaptiveWeightLearner.snapshot(MemoryScenario.CHAT);
+
+        ResponseEntity<RecallResult> recallResponse = restTemplate.postForEntity(
+                "/api/v1/memory/recall",
+                RecallQuery.builder()
+                        .query("java checkpoint recover node")
+                        .namespace(namespace)
+                        .topK(3)
+                        .tokenBudget(64)
+                        .scenario(MemoryScenario.CHAT)
+                        .build(),
+                RecallResult.class);
+        assertThat(recallResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        RecallResult recall = recallResponse.getBody();
+        assertThat(recall).isNotNull();
+        assertThat(recall.getRecallSessionId()).isNotBlank();
+        assertThat(recall.getFragments()).isNotEmpty();
+        RecallResult.ScoredFragment primaryRecall = recall.getFragments().stream()
+                .filter(fragment -> primary.getId().equals(fragment.getFragment().getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(primaryRecall.getTier()).isEqualTo("L2");
+
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            MemoryFragment refreshed = l1HotStore.peek(primary.getId()).orElseThrow();
+            assertThat(refreshed.getImportance()).isGreaterThan(initialImportance);
+        });
+
+        ResponseEntity<Map> createTask = restTemplate.postForEntity(
+                "/api/v1/tasks",
+                Map.of("description", "full demo lifecycle", "namespace", namespace),
+                Map.class);
+        assertThat(createTask.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String taskId = (String) createTask.getBody().get("taskId");
+        assertThat(taskId).isNotBlank();
+
+        restTemplate.postForEntity(
+                "/api/v1/tasks/" + taskId + "/nodes",
+                Map.of("type", "THOUGHT", "content", "before-checkpoint"),
+                Map.class);
+
+        ResponseEntity<Map> checkpointResponse = restTemplate.postForEntity(
+                "/api/v1/tasks/" + taskId + "/checkpoint",
+                null,
+                Map.class);
+        assertThat(checkpointResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String checkpointId = (String) checkpointResponse.getBody().get("checkpointId");
+        assertThat(checkpointId).isNotBlank();
+
+        restTemplate.postForEntity(
+                "/api/v1/tasks/" + taskId + "/nodes",
+                Map.of("type", "ACTION", "content", "after-checkpoint"),
+                Map.class);
+
+        invalidateTaskCache(taskId);
+
+        ResponseEntity<Map> recoverResponse = restTemplate.postForEntity(
+                "/api/v1/tasks/" + taskId + "/recover",
+                Map.of("checkpointId", checkpointId),
+                Map.class);
+        assertThat(recoverResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(recoverResponse.getBody()).containsEntry("taskId", taskId);
+        assertDagContains(taskId, "before-checkpoint", "after-checkpoint");
+
+        ResponseEntity<Map> continueAppend = restTemplate.postForEntity(
+                "/api/v1/tasks/" + taskId + "/nodes",
+                Map.of("type", "OBSERVATION", "content", "after-recover"),
+                Map.class);
+        assertThat(continueAppend.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertDagContains(taskId, "before-checkpoint", "after-checkpoint", "after-recover");
+
+        ResponseEntity<Map> feedbackResponse = restTemplate.postForEntity(
+                "/api/v1/memory/feedback",
+                MemoryFeedbackRequest.builder()
+                        .recallSessionId(recall.getRecallSessionId())
+                        .usedFragmentIds(List.of(primaryRecall.getFragment().getId()))
+                        .answerAccepted(true)
+                        .build(),
+                Map.class);
+        assertThat(feedbackResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+                assertThat(adaptiveWeightLearner.snapshot(MemoryScenario.CHAT).active().getUpdateCount())
+                        .isGreaterThan(learningBefore.active().getUpdateCount()));
+    }
+
     private void storeFragment(MemoryFragment fragment) {
         ResponseEntity<Map> response = restTemplate.postForEntity(
                 "/api/v1/memory/store/fragment",
@@ -353,6 +475,16 @@ public class FullLifecycleIT {
                 Map.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).containsEntry("id", fragment.getId());
+    }
+
+    private void assertDagContains(String taskId, String... contents) {
+        ResponseEntity<String> dag = restTemplate.exchange(
+                "/api/v1/tasks/" + taskId + "/dag",
+                HttpMethod.GET,
+                HttpEntity.EMPTY,
+                String.class);
+        assertThat(dag.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(dag.getBody()).contains(contents);
     }
 
     private MemoryFragment fragment(String id, String content, float[] embedding, int tokenCount, double importance) {

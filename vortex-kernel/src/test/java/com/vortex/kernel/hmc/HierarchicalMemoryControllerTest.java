@@ -1074,11 +1074,68 @@ class HierarchicalMemoryControllerTest {
         hmc.storeFragment(filler);
         hmc.admitPage(
                 SemanticPage.builder().pageId("page-refresh").centroid(vector(4)).state(PageState.FAULTING).build(),
-                List.of(cold, medium, filler));
+                List.of(cold, medium, filler),
+                cold.getId());
 
         assertThat(l1.currentTokenCount()).isLessThanOrEqualTo(24);
         assertThat(l1.getAll("ns")).hasSizeLessThanOrEqualTo(2);
         assertThat(l1.getAll("ns").stream().map(MemoryFragment::getId)).contains("cold");
+    }
+
+    @Test
+    void admitPageSkipsCompanionThatWouldDisplaceRecalledPrimary() {
+        CaffeineHotStore l1 = new CaffeineHotStore(24);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1,
+                l2,
+                l3,
+                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
+                new NamespaceQuotaManager(1.0, 1.0, 1),
+                TEST_WEIGHT_LEARNER,
+                new EvictionDecisionLogger(TEST_SLO_TRACKER),
+                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
+                TEST_SLO_TRACKER,
+                persistenceManager(l2, l3),
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding,
+                emptyProvider(),
+                emptyPagingProvider(),
+                0.95,
+                30_000L,
+                60_000L,
+                1,
+                2
+        );
+
+        MemoryFragment medium = fragment("medium-keep", "ns", "medium", List.of(), 4);
+        medium.setTokenCount(10);
+        medium.setImportance(0.9);
+        MemoryFragment filler = fragment("filler-skip", "ns", "filler", List.of(), 4);
+        filler.setTokenCount(10);
+        filler.setImportance(0.8);
+        MemoryFragment cold = fragment("cold-anchor", "ns", "cold", List.of(), 4);
+        cold.setTokenCount(10);
+        cold.setImportance(0.1);
+
+        hmc.storeFragment(medium);
+        hmc.storeFragment(filler);
+        l1.remove(filler.getId());
+        l1.put(cold, false);
+        hmc.rebalanceTierIndexes();
+
+        hmc.admitPage(
+                SemanticPage.builder().pageId("page-opportunistic").centroid(vector(4)).state(PageState.FAULTING).build(),
+                List.of(cold, medium, filler),
+                cold.getId());
+
+        assertThat(l1.currentTokenCount()).isLessThanOrEqualTo(24);
+        assertThat(l1.peek(cold.getId())).isPresent();
+        assertThat(l1.peek(medium.getId())).isPresent();
+        assertThat(l1.peek(filler.getId())).isEmpty();
     }
 
     @Test

@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 /**
  * Thread-safe Write-Ahead Log for task state mutations.
@@ -70,7 +71,7 @@ public class ActionLogWriter {
                 .timestamp(timestamp)
                 .build();
 
-        ReentrantLock lock = taskLocks.computeIfAbsent(taskId, k -> new ReentrantLock());
+        ReentrantLock lock = getTaskLock(taskId);
         lock.lock();
         try {
             String jsonLine = objectMapper.writeValueAsString(entry) + "\n";
@@ -119,6 +120,36 @@ public class ActionLogWriter {
     }
 
     /**
+     * Close the current channel without resetting task sequencing so the next append
+     * reopens against the current WAL path after truncation or rotation.
+     */
+    public void rotate(String taskId) {
+        ReentrantLock lock = taskLocks.get(taskId);
+        if (lock == null) {
+            return;
+        }
+        lock.lock();
+        try {
+            FileChannel channel = openChannels.remove(taskId);
+            if (channel != null && channel.isOpen()) {
+                try {
+                    channel.force(true);
+                } catch (IOException e) {
+                    log.warn("WAL force failed during rotate for task={}: {}", taskId, e.getMessage());
+                } finally {
+                    try {
+                        channel.close();
+                    } catch (IOException e) {
+                        log.warn("WAL channel close failed during rotate for task={}: {}", taskId, e.getMessage());
+                    }
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
      * Close the WAL file for a task and remove from caches.
      */
     public void close(String taskId) {
@@ -155,7 +186,21 @@ public class ActionLogWriter {
         return walDir.resolve(taskId + ".wal");
     }
 
+    public <T> T withTaskLock(String taskId, Supplier<T> action) {
+        ReentrantLock lock = getTaskLock(taskId);
+        lock.lock();
+        try {
+            return action.get();
+        } finally {
+            lock.unlock();
+        }
+    }
+
     // ---- Internal ----
+
+    private ReentrantLock getTaskLock(String taskId) {
+        return taskLocks.computeIfAbsent(taskId, k -> new ReentrantLock());
+    }
 
     private FileChannel getOrCreateChannel(String taskId) throws IOException {
         FileChannel existing = openChannels.get(taskId);

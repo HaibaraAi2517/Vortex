@@ -46,8 +46,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 /**
- * Integration test that connects to pre-started docker-compose services.
- * Run: docker compose up -d && mvn verify -pl vortex-app -am -Pintegration
+ * Default compose-backed integration coverage.
+ * Maven verify automatically brings the compose dependencies up, runs these
+ * tests, then tears the stack down again.
  */
 @SpringBootTest(
         classes = {VortexApplication.class, DockerComposeIT.TestEmbeddingConfig.class},
@@ -360,6 +361,122 @@ public class DockerComposeIT {
         AdaptiveWeightLearner.LearningSnapshot after = adaptiveWeightLearner.snapshot(MemoryScenario.CHAT);
         assertThat(after.pendingRecallSessions()).isZero();
         assertThat(after.active().getUpdateCount()).isGreaterThan(initialUpdates);
+    }
+
+    @Test
+    void fullDemoStory_coversStoreRecallEvictCheckpointRecoverContinueAndFeedback() {
+        double initialImportance = 0.10;
+        MemoryFragment primary = fragment(
+                "frag-demo-primary",
+                "java checkpoint recover dag node",
+                new float[]{1.0f, 0.0f, 1.0f, 0.0f},
+                10,
+                initialImportance);
+        MemoryFragment secondary = fragment(
+                "frag-demo-secondary",
+                "java locks concurrency executor",
+                new float[]{1.0f, 0.0f, 0.1f, 0.0f},
+                10,
+                0.80);
+        MemoryFragment distractor = fragment(
+                "frag-demo-distractor",
+                "python notebook dataframe joins",
+                new float[]{0.0f, 1.0f, 0.0f, 0.0f},
+                10,
+                0.80);
+
+        storeFragment(primary);
+        storeFragment(secondary);
+        storeFragment(distractor);
+
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(l2WarmStore.get(primary.getId())).isPresent());
+
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            assertThat(l1HotStore.peek(primary.getId())).isEmpty();
+            assertThat(l1HotStore.peek(secondary.getId())).isPresent();
+            assertThat(l1HotStore.peek(distractor.getId())).isPresent();
+        });
+
+        AdaptiveWeightLearner.LearningSnapshot learningBefore =
+                adaptiveWeightLearner.snapshot(MemoryScenario.CHAT);
+
+        ResponseEntity<RecallResult> recallResponse = restTemplate.postForEntity(
+                "/api/v1/memory/recall",
+                RecallQuery.builder()
+                        .query("java checkpoint recover node")
+                        .namespace(namespace)
+                        .topK(3)
+                        .tokenBudget(64)
+                        .scenario(MemoryScenario.CHAT)
+                        .build(),
+                RecallResult.class);
+        assertThat(recallResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        RecallResult recall = recallResponse.getBody();
+        assertThat(recall).isNotNull();
+        assertThat(recall.getRecallSessionId()).isNotBlank();
+        assertThat(recall.getFragments()).isNotEmpty();
+        RecallResult.ScoredFragment primaryRecall = recall.getFragments().stream()
+                .filter(fragment -> primary.getId().equals(fragment.getFragment().getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(primaryRecall.getTier()).isEqualTo("L2");
+
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            MemoryFragment refreshed = l1HotStore.peek(primary.getId()).orElseThrow();
+            assertThat(refreshed.getImportance()).isGreaterThan(initialImportance);
+        });
+
+        ResponseEntity<Map> createTask = restTemplate.postForEntity(
+                "/api/v1/tasks",
+                Map.of("description", "compose full demo lifecycle", "namespace", namespace),
+                Map.class);
+        assertThat(createTask.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String taskId = (String) createTask.getBody().get("taskId");
+        assertThat(taskId).isNotBlank();
+
+        restTemplate.postForEntity(
+                "/api/v1/tasks/" + taskId + "/nodes",
+                Map.of("type", "THOUGHT", "content", "before-checkpoint"),
+                Map.class);
+        String checkpointId = checkpoint(taskId);
+
+        restTemplate.postForEntity(
+                "/api/v1/tasks/" + taskId + "/nodes",
+                Map.of("type", "ACTION", "content", "after-checkpoint"),
+                Map.class);
+
+        snapshotService.evictFromCacheForTest(taskId);
+
+        ResponseEntity<Map> recoverResponse = restTemplate.postForEntity(
+                "/api/v1/tasks/" + taskId + "/recover",
+                Map.of("checkpointId", checkpointId),
+                Map.class);
+        assertThat(recoverResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(recoverResponse.getBody()).containsEntry("taskId", taskId);
+        assertDagContains(taskId, "before-checkpoint", "after-checkpoint");
+
+        ResponseEntity<DagNode> continueAppend = restTemplate.postForEntity(
+                "/api/v1/tasks/" + taskId + "/nodes",
+                Map.of("type", "OBSERVATION", "content", "after-recover"),
+                DagNode.class);
+        assertThat(continueAppend.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(continueAppend.getBody()).isNotNull();
+        assertDagContains(taskId, "before-checkpoint", "after-checkpoint", "after-recover");
+
+        ResponseEntity<Map> feedbackResponse = restTemplate.postForEntity(
+                "/api/v1/memory/feedback",
+                MemoryFeedbackRequest.builder()
+                        .recallSessionId(recall.getRecallSessionId())
+                        .usedFragmentIds(List.of(primaryRecall.getFragment().getId()))
+                        .answerAccepted(true)
+                        .build(),
+                Map.class);
+        assertThat(feedbackResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+                assertThat(adaptiveWeightLearner.snapshot(MemoryScenario.CHAT).active().getUpdateCount())
+                        .isGreaterThan(learningBefore.active().getUpdateCount()));
     }
 
     private void storeFragment(MemoryFragment fragment) {

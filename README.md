@@ -1,56 +1,70 @@
 # Vortex
 
-当前仓库的集成测试有两条路径，但在 Windows 上推荐使用 `docker compose` 绕行方案。
+Vortex 是一个面向 AI Agent 的记忆、分页、checkpoint/recover 与反馈学习内核。
 
-## Integration Tests
+## Stable Workflow
 
-### 推荐：`DockerComposeIT`
+当前仓库已经收口到一条默认可执行的稳定回归路径：
 
-适用场景：
-- Windows + Docker Desktop
-- 当前 Docker Engine 版本下，Java `docker-java` / Testcontainers 对 Windows named pipe 兼容性不稳定
-
-启动依赖容器：
-
-```powershell
-docker --host tcp://localhost:2375 compose up -d
+```bash
+mvn verify -pl vortex-app -am
 ```
 
-执行集成测试：
+这条命令会自动完成：
 
-```powershell
-mvn verify -pl vortex-app -am -Pintegration "-Dit.test=DockerComposeIT"
-```
+- 编译并运行模块级单元测试
+- 启动 `docker-compose.yml` 中的 `Redis / etcd / MinIO / Milvus`
+- 执行 `vortex-app` 的默认集成测试闭环
+- 在测试结束后自动关闭 compose 依赖
 
-当前这条路径已验证通过，覆盖：
+前提：
+
+- 本机 Docker Desktop / Docker daemon 已启动
+- `docker compose` 命令可用
+
+## What The Default Verify Covers
+
+默认集成回归重点覆盖：
+
 - memory store -> evict -> L2 recall -> L1 re-admission
 - task checkpoint -> recover
+- checkpoint retention / delta chain recoverability
 - recall feedback -> adaptive weight evolution
+- compose 环境下的完整 demo 故事线
 
-如果直接使用 `docker compose` 命令遇到 Windows named pipe 权限问题，可继续显式指定：
+## Manual Demo
 
-```powershell
-docker --host tcp://localhost:2375 compose ps
+如果你想手动看一遍 API 演示：
+
+1. 启动应用
+
+```bash
+mvn spring-boot:run -pl vortex-app
 ```
 
-前提是 Docker Desktop 已开启：
+2. 在另一个终端执行
 
-- `Settings -> General -> Expose daemon on tcp://localhost:2375 without TLS`
-
-### 备用：`FullLifecycleIT`
-
-`FullLifecycleIT` 仍然保留为 Testcontainers 路径：
-
-```powershell
-mvn verify -pl vortex-app -am -Pintegration "-Dit.test=FullLifecycleIT"
+```bash
+bash ops/demo.sh
 ```
 
-但在当前 Windows + Docker Desktop + Docker Engine 29 环境下，这条路径可能因为上游 `docker-java` / Testcontainers 对 named pipe 的兼容性问题失败。更稳的做法是：
+## Optional Testcontainers Path
 
-- 在 Linux / WSL2 里运行
-- 或暂时使用上面的 `DockerComposeIT`
+仓库仍保留 `FullLifecycleIT` 作为附加验证路径，但它不属于默认稳定回归集合。
 
-## Notes
+显式执行方式：
 
-- `DockerComposeIT` 连接的是预启动容器，不负责容器生命周期管理。
-- 语义分页元数据现在使用可稳定序列化的并发集合，重启加载不再依赖 `Collections$SetFromMap` 这种 Kryo 不兼容类型。
+```bash
+mvn --% verify -pl vortex-app -am -Dit.test=FullLifecycleIT -Drun.full.lifecycle.it=true
+```
+
+适用场景：
+
+- 你明确想验证 Testcontainers 路径
+- 当前机器上的 Docker / Testcontainers 兼容性已经确认稳定
+
+## Ops
+
+- [compose-verify.md](ops/compose-verify.md)
+- [compose-up.sh](ops/compose-up.sh)
+- [demo.sh](ops/demo.sh)

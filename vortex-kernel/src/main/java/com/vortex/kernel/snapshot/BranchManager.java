@@ -42,6 +42,10 @@ public class BranchManager {
      * @return the created branch
      */
     public TaskBranch createBranch(TaskState task, String branchName, String sourceNodeId) {
+        return createBranch(task, null, branchName, sourceNodeId);
+    }
+
+    public void validateCreateBranch(TaskState task, String sourceNodeId) {
         // Validate source node exists
         Optional<DagNode> sourceNode = task.getGraph().getNode(sourceNodeId);
         if (sourceNode.isEmpty()) {
@@ -55,9 +59,13 @@ public class BranchManager {
         if (activeBranches >= maxBranchesPerTask) {
             throw new IllegalStateException("Max branches per task reached: " + maxBranchesPerTask);
         }
+    }
+
+    public TaskBranch createBranch(TaskState task, String branchId, String branchName, String sourceNodeId) {
+        validateCreateBranch(task, sourceNodeId);
 
         // Mark source node as FORK type if it isn't already
-        DagNode forkNode = sourceNode.get();
+        DagNode forkNode = task.getGraph().getNode(sourceNodeId).orElseThrow();
         if (forkNode.getType() != DagNode.NodeType.FORK && forkNode.getType() != DagNode.NodeType.JOIN) {
             // Create a separate FORK node
             DagNode forkMarker = DagNode.builder()
@@ -66,9 +74,11 @@ public class BranchManager {
                     .status(DagNode.NodeStatus.COMPLETED)
                     .build();
             task.getGraph().addNode(forkMarker);
+            task.setCurrentNodeId(forkMarker.getNodeId());
         }
 
         TaskBranch branch = TaskBranch.builder()
+                .branchId(branchId != null ? branchId : java.util.UUID.randomUUID().toString())
                 .branchName(branchName)
                 .sourceNodeId(sourceNodeId)
                 .status(TaskBranch.BranchStatus.ACTIVE)
@@ -102,14 +112,17 @@ public class BranchManager {
     /**
      * Switch the active branch.
      */
-    public void switchBranch(TaskState task, String branchId) {
+    public void validateSwitchBranch(TaskState task, String branchId) {
         boolean exists = task.getBranches().stream()
                 .anyMatch(b -> b.getBranchId().equals(branchId)
                         && b.getStatus() == TaskBranch.BranchStatus.ACTIVE);
         if (!exists) {
             throw new IllegalArgumentException("Active branch not found: " + branchId);
         }
+    }
 
+    public void switchBranch(TaskState task, String branchId) {
+        validateSwitchBranch(task, branchId);
         task.setCurrentBranchId(branchId);
         log.info("Branch switched: taskId={} branchId={}", task.getTaskId(), branchId);
     }
@@ -122,7 +135,7 @@ public class BranchManager {
      * @param targetBranchId    branch to merge into
      * @return the merged branch (source is marked MERGED, target is returned)
      */
-    public TaskBranch mergeBranch(TaskState task, String sourceBranchId, String targetBranchId) {
+    public void validateMergeBranch(TaskState task, String sourceBranchId, String targetBranchId) {
         TaskBranch source = getBranch(task, sourceBranchId)
                 .orElseThrow(() -> new IllegalArgumentException("Source branch not found: " + sourceBranchId));
         TaskBranch target = getBranch(task, targetBranchId)
@@ -143,6 +156,12 @@ public class BranchManager {
             throw new IllegalStateException("Branch merge blocked: " + conflicts.size() + " conflicts detected. "
                     + "Resolve conflicts before merging. Conflicts: " + conflicts);
         }
+    }
+
+    public TaskBranch mergeBranch(TaskState task, String sourceBranchId, String targetBranchId) {
+        validateMergeBranch(task, sourceBranchId, targetBranchId);
+        TaskBranch source = getBranch(task, sourceBranchId).orElseThrow();
+        TaskBranch target = getBranch(task, targetBranchId).orElseThrow();
 
         source.markMerged(targetBranchId);
         task.setCurrentBranchId(targetBranchId);
@@ -154,6 +173,7 @@ public class BranchManager {
                 .status(DagNode.NodeStatus.COMPLETED)
                 .build();
         task.getGraph().addNode(mergeNode);
+        task.setCurrentNodeId(mergeNode.getNodeId());
 
         log.info("Branch merged: taskId={} source={} target={}",
                 task.getTaskId(), sourceBranchId, targetBranchId);

@@ -108,9 +108,10 @@ public class PageFaultHandler {
                 }
             }
         }
+        prioritizeFaultingFragment(loadedFragments, fragmentId);
 
         // 3. Admit all fragments to L1
-        admitPageToL1(page, loadedFragments);
+        admitPageToL1(page, loadedFragments, fragmentId);
 
         // 4. Mark as resident
         pageTable.markResident(page.getPageId());
@@ -155,10 +156,10 @@ public class PageFaultHandler {
      * Each fragment is individually put into L1 — the caller (SemanticPagingManager)
      * should wrap this in a single admissionLock for atomicity.
      */
-    void admitPageToL1(SemanticPage page, List<MemoryFragment> fragments) {
+    void admitPageToL1(SemanticPage page, List<MemoryFragment> fragments, String primaryFragmentId) {
         HierarchicalMemoryController hmc = hmcProvider.getIfAvailable();
         if (hmc != null) {
-            hmc.admitPage(page, fragments);
+            hmc.admitPage(page, fragments, primaryFragmentId);
             page.recordAccess();
             log.debug("Page admitted to L1 via HMC pageId={} fragmentCount={}", page.getPageId(), fragments.size());
             return;
@@ -169,6 +170,20 @@ public class PageFaultHandler {
         }
         page.recordAccess();
         log.debug("Page admitted to L1 pageId={} fragmentCount={}", page.getPageId(), fragments.size());
+    }
+
+    private void prioritizeFaultingFragment(List<MemoryFragment> fragments, String fragmentId) {
+        int index = -1;
+        for (int i = 0; i < fragments.size(); i++) {
+            if (fragmentId.equals(fragments.get(i).getId())) {
+                index = i;
+                break;
+            }
+        }
+        if (index > 0) {
+            MemoryFragment requested = fragments.remove(index);
+            fragments.add(0, requested);
+        }
     }
 
     /**
@@ -247,7 +262,7 @@ public class PageFaultHandler {
                     }
                 }
             }
-            admitPageToL1(page, fragments);
+            admitPageToL1(page, fragments, null);
             pageTable.markResident(pageId);
         }, virtualThreadExecutor);
     }

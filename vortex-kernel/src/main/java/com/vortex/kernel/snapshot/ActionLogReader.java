@@ -71,14 +71,24 @@ public class ActionLogReader {
                 } catch (IOException e) {
                     // If the last line is corrupt (crash during write), skip it
                     if (reader.ready()) {
-                        log.warn("Corrupt WAL entry in task={}: {}", taskId, e.getMessage());
+                        throw new CheckpointRecoveryException(
+                                CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                                taskId,
+                                null,
+                                "Corrupt WAL entry encountered before EOF for taskId=" + taskId,
+                                e);
                     } else {
                         log.debug("Trailing incomplete WAL line in task={} (expected after crash)", taskId);
                     }
                 }
             }
         } catch (IOException e) {
-            log.error("Failed to read WAL for task={}: {}", taskId, e.getMessage());
+            throw new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                    taskId,
+                    null,
+                    "Failed to read WAL for taskId=" + taskId,
+                    e);
         }
 
         log.debug("Read {} WAL entries for task={} from seqNo={}", entries.size(), taskId, fromSequenceNumber);
@@ -103,13 +113,23 @@ public class ActionLogReader {
                         if (entryId.equals(entry.getEntryId())) {
                             return Optional.of(entry);
                         }
-                    } catch (IOException ignored) {
-                        // Continue scanning
+                    } catch (IOException e) {
+                        throw new CheckpointRecoveryException(
+                                CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                                taskId,
+                                null,
+                                "Failed to parse matching WAL entry for taskId=" + taskId + " entryId=" + entryId,
+                                e);
                     }
                 }
             }
         } catch (IOException e) {
-            log.error("Failed to search WAL for task={}: {}", taskId, e.getMessage());
+            throw new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                    taskId,
+                    null,
+                    "Failed to search WAL for taskId=" + taskId,
+                    e);
         }
 
         return Optional.empty();

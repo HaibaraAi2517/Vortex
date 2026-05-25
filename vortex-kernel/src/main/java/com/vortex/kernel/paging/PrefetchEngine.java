@@ -5,11 +5,14 @@ import com.vortex.common.model.DagGraph;
 import com.vortex.common.model.PageState;
 import com.vortex.common.model.SemanticPage;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Prefetch engine with three strategies:
@@ -29,13 +32,11 @@ import java.util.concurrent.*;
 @Component
 public class PrefetchEngine {
 
-    private static final int MAX_PREFETCH_QUEUE_SIZE = 500;
-
     private final SemanticPageTable pageTable;
     private final PageFaultHandler pageFaultHandler;
     private final ExecutorService virtualThreadExecutor;
 
-    private final PriorityBlockingQueue<PrefetchTask> prefetchQueue = new PriorityBlockingQueue<>();
+    private final BoundedPrefetchQueue prefetchQueue;
     private final Set<String> inflightPages = ConcurrentHashMap.newKeySet();
 
     // Hit-rate tracking for stats
@@ -48,6 +49,7 @@ public class PrefetchEngine {
     private final double centroidSimilarityThreshold;
     private final int branchMaxPagesPerBranch;
 
+    @Autowired
     public PrefetchEngine(
             SemanticPageTable pageTable,
             PageFaultHandler pageFaultHandler,
@@ -55,20 +57,37 @@ public class PrefetchEngine {
             @Value("${vortex.kernel.paging.prefetch.dag-topology.max-pages:3}") int dagMaxPages,
             @Value("${vortex.kernel.paging.prefetch.semantic-neighborhood.max-pages:3}") int semanticMaxPages,
             @Value("${vortex.kernel.paging.prefetch.semantic-neighborhood.centroid-similarity-threshold:0.7}") double centroidSimilarityThreshold,
-            @Value("${vortex.kernel.paging.prefetch.branch-speculative.max-pages-per-branch:1}") int branchMaxPagesPerBranch) {
+            @Value("${vortex.kernel.paging.prefetch.branch-speculative.max-pages-per-branch:1}") int branchMaxPagesPerBranch,
+            @Value("${vortex.kernel.paging.prefetch.queue.max-size:500}") int maxPrefetchQueueSize) {
+        this(pageTable, pageFaultHandler, dagMaxDepth, dagMaxPages, semanticMaxPages,
+                centroidSimilarityThreshold, branchMaxPagesPerBranch, maxPrefetchQueueSize, true);
+    }
+
+    PrefetchEngine(
+            SemanticPageTable pageTable,
+            PageFaultHandler pageFaultHandler,
+            int dagMaxDepth,
+            int dagMaxPages,
+            int semanticMaxPages,
+            double centroidSimilarityThreshold,
+            int branchMaxPagesPerBranch,
+            int maxPrefetchQueueSize,
+            boolean startWorker) {
         this.pageTable = pageTable;
         this.pageFaultHandler = pageFaultHandler;
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        this.prefetchQueue = new BoundedPrefetchQueue(Math.max(1, maxPrefetchQueueSize));
         this.dagMaxDepth = dagMaxDepth;
         this.dagMaxPages = dagMaxPages;
         this.semanticMaxPages = semanticMaxPages;
         this.centroidSimilarityThreshold = centroidSimilarityThreshold;
         this.branchMaxPagesPerBranch = branchMaxPagesPerBranch;
 
-        // Start prefetch worker
-        Thread worker = Thread.ofVirtual()
-                .name("prefetch-worker")
-                .start(this::prefetchWorkerLoop);
+        if (startWorker) {
+            Thread.ofVirtual()
+                    .name("prefetch-worker")
+                    .start(this::prefetchWorkerLoop);
+        }
         log.info("PrefetchEngine initialized: dagDepth={}, dagPages={}, semPages={}, branchPages={}",
                 dagMaxDepth, dagMaxPages, semanticMaxPages, branchMaxPagesPerBranch);
     }
@@ -253,13 +272,25 @@ public class PrefetchEngine {
         }
     }
 
-    private void submitPrefetch(PrefetchTask task) {
-        if (prefetchQueue.size() >= MAX_PREFETCH_QUEUE_SIZE) {
+    private boolean submitPrefetch(PrefetchTask task) {
+        boolean accepted = prefetchQueue.offer(task);
+        if (!accepted) {
             log.debug("Prefetch queue at capacity ({}), dropping task: {} priority={}",
-                    MAX_PREFETCH_QUEUE_SIZE, task.source(), task.priority());
-            return;
+                    prefetchQueue.capacity(), task.source(), task.priority());
         }
-        prefetchQueue.offer(task);
+        return accepted;
+    }
+
+    boolean submitPrefetchForTest(String pageId, int priority, String source) {
+        return submitPrefetch(new PrefetchTask(pageId, priority, source));
+    }
+
+    long queuedTaskCountForTest() {
+        return prefetchQueue.size();
+    }
+
+    List<String> queuedPageIdsForTest() {
+        return prefetchQueue.snapshot().stream().map(PrefetchTask::pageId).toList();
     }
 
     /**
@@ -314,4 +345,86 @@ public class PrefetchEngine {
     }
 
     private record ScoredPage(SemanticPage page, double similarity) {}
+
+    private static final class BoundedPrefetchQueue {
+        private final int capacity;
+        private final PriorityQueue<PrefetchTask> queue = new PriorityQueue<>();
+        private final ReentrantLock lock = new ReentrantLock();
+        private final Condition notEmpty = lock.newCondition();
+
+        private BoundedPrefetchQueue(int capacity) {
+            this.capacity = capacity;
+        }
+
+        boolean offer(PrefetchTask task) {
+            lock.lock();
+            try {
+                if (queue.size() < capacity) {
+                    queue.offer(task);
+                    notEmpty.signal();
+                    return true;
+                }
+                PrefetchTask lowestPriorityTask = findLowestPriorityTask();
+                if (lowestPriorityTask != null && task.priority() > lowestPriorityTask.priority()) {
+                    queue.remove(lowestPriorityTask);
+                    queue.offer(task);
+                    notEmpty.signal();
+                    return true;
+                }
+                return false;
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        PrefetchTask poll(long timeout, TimeUnit unit) throws InterruptedException {
+            long nanos = unit.toNanos(timeout);
+            lock.lockInterruptibly();
+            try {
+                while (queue.isEmpty()) {
+                    if (nanos <= 0L) {
+                        return null;
+                    }
+                    nanos = notEmpty.awaitNanos(nanos);
+                }
+                return queue.poll();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        int size() {
+            lock.lock();
+            try {
+                return queue.size();
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        int capacity() {
+            return capacity;
+        }
+
+        List<PrefetchTask> snapshot() {
+            lock.lock();
+            try {
+                List<PrefetchTask> tasks = new ArrayList<>(queue);
+                tasks.sort(null);
+                return tasks;
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        private PrefetchTask findLowestPriorityTask() {
+            PrefetchTask lowest = null;
+            for (PrefetchTask candidate : queue) {
+                if (lowest == null || candidate.priority() < lowest.priority()) {
+                    lowest = candidate;
+                }
+            }
+            return lowest;
+        }
+    }
 }

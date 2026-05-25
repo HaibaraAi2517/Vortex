@@ -29,6 +29,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.util.*;
 
 /**
@@ -46,7 +47,7 @@ import java.util.*;
 @Component
 public class MilvusWarmStore implements L2WarmStore {
 
-    private static final String COLLECTION = "vortex_memory";
+    private static final String DEFAULT_COLLECTION = "vortex_memory";
     private static final String FIELD_ID = "id";
     private static final String FIELD_NS = "namespace";
     private static final String FIELD_CONTENT = "content";
@@ -56,6 +57,7 @@ public class MilvusWarmStore implements L2WarmStore {
 
     private final MilvusServiceClient client;
     private final int embeddingDim;
+    private final String collectionName;
     private final boolean dropCollectionOnStartup;
     private final String dropCollectionConfirmToken;
 
@@ -63,9 +65,11 @@ public class MilvusWarmStore implements L2WarmStore {
             @Value("${vortex.storage.l2.milvus.host:localhost}") String host,
             @Value("${vortex.storage.l2.milvus.port:19530}") int port,
             @Value("${vortex.storage.l2.embedding-dim:512}") int embeddingDim,
+            @Value("${vortex.storage.l2.milvus.collection:" + DEFAULT_COLLECTION + "}") String collectionName,
             @Value("${vortex.storage.l2.milvus.drop-collection-on-startup:false}") boolean dropCollectionOnStartup,
             @Value("${vortex.storage.l2.milvus.drop-collection-confirm-token:}") String dropCollectionConfirmToken) {
         this.embeddingDim = embeddingDim;
+        this.collectionName = collectionName;
         this.dropCollectionOnStartup = dropCollectionOnStartup;
         this.dropCollectionConfirmToken = dropCollectionConfirmToken;
         this.client = new MilvusServiceClient(
@@ -75,19 +79,19 @@ public class MilvusWarmStore implements L2WarmStore {
     @PostConstruct
     public void init() {
         R<Boolean> hasCollection = client.hasCollection(
-                HasCollectionParam.newBuilder().withCollectionName(COLLECTION).build());
+                HasCollectionParam.newBuilder().withCollectionName(collectionName).build());
         boolean exists = Boolean.TRUE.equals(hasCollection.getData());
 
         if (exists && dropCollectionOnStartup) {
             if (!"I-KNOW-WHAT-I-AM-DOING".equals(dropCollectionConfirmToken)) {
-                log.error("drop-collection-on-startup=true but confirm token missing or invalid; refusing to drop '{}'", COLLECTION);
+                log.error("drop-collection-on-startup=true but confirm token missing or invalid; refusing to drop '{}'", collectionName);
                 throw new IllegalStateException(
                         "Set MILVUS_DROP_CONFIRM_TOKEN=I-KNOW-WHAT-I-AM-DOING to confirm collection drop");
             }
-            log.warn("drop-collection-on-startup=true: dropping Milvus collection '{}' for dim migration", COLLECTION);
+            log.warn("drop-collection-on-startup=true: dropping Milvus collection '{}' for dim migration", collectionName);
             client.dropCollection(
                     DropCollectionParam.newBuilder()
-                            .withCollectionName(COLLECTION).build());
+                            .withCollectionName(collectionName).build());
             exists = false;
         }
 
@@ -95,17 +99,22 @@ public class MilvusWarmStore implements L2WarmStore {
             createCollection();
             createIndex();
             loadCollection();
-            log.info("Milvus collection '{}' created with dim={}", COLLECTION, embeddingDim);
+            log.info("Milvus collection '{}' created with dim={}", collectionName, embeddingDim);
         } else {
             validateCollectionDimension();
             loadCollection();
-            log.info("Milvus collection '{}' already exists (dim={})", COLLECTION, embeddingDim);
+            log.info("Milvus collection '{}' already exists (dim={})", collectionName, embeddingDim);
         }
+    }
+
+    @PreDestroy
+    void close() {
+        client.close();
     }
 
     private void createCollection() {
         CreateCollectionParam.Builder builder = CreateCollectionParam.newBuilder()
-                .withCollectionName(COLLECTION);
+                .withCollectionName(collectionName);
         builder.addFieldType(FieldType.newBuilder().withName(FIELD_ID).withDataType(DataType.VarChar)
                 .withMaxLength(256).withPrimaryKey(true).withAutoID(false).build());
         builder.addFieldType(FieldType.newBuilder().withName(FIELD_NS).withDataType(DataType.VarChar)
@@ -121,7 +130,7 @@ public class MilvusWarmStore implements L2WarmStore {
 
     private void createIndex() {
         client.createIndex(CreateIndexParam.newBuilder()
-                .withCollectionName(COLLECTION)
+                .withCollectionName(collectionName)
                 .withFieldName(FIELD_EMBEDDING)
                 .withIndexType(io.milvus.param.IndexType.IVF_FLAT)
                 .withMetricType(io.milvus.param.MetricType.COSINE)
@@ -131,7 +140,7 @@ public class MilvusWarmStore implements L2WarmStore {
 
     private void loadCollection() {
         client.loadCollection(LoadCollectionParam.newBuilder()
-                .withCollectionName(COLLECTION)
+                .withCollectionName(collectionName)
                 .build());
     }
 
@@ -155,7 +164,7 @@ public class MilvusWarmStore implements L2WarmStore {
                 new UpsertParam.Field(FIELD_TOKEN_COUNT, List.of(fragment.getTokenCount()))
         );
         R<MutationResult> result = client.upsert(
-                UpsertParam.newBuilder().withCollectionName(COLLECTION).withFields(fields).build());
+                UpsertParam.newBuilder().withCollectionName(collectionName).withFields(fields).build());
         if (result.getStatus() != 0) {
             log.error("Milvus upsert failed for id={}: {}", fragment.getId(), result.getMessage());
             throw new IllegalStateException("Milvus upsert failed for fragment " + fragment.getId()
@@ -171,7 +180,7 @@ public class MilvusWarmStore implements L2WarmStore {
         }
         String expr = FIELD_NS + " == \"" + namespace + "\"";
         R<SearchResults> result = client.search(SearchParam.newBuilder()
-                .withCollectionName(COLLECTION)
+                .withCollectionName(collectionName)
                 .withMetricType(io.milvus.param.MetricType.COSINE)
                 .withTopK(topK)
                 .withFloatVectors(List.of(toFloatList(queryEmbedding)))
@@ -206,7 +215,7 @@ public class MilvusWarmStore implements L2WarmStore {
     @Override
     public Optional<MemoryFragment> get(String id) {
         R<QueryResults> result = client.query(QueryParam.newBuilder()
-                .withCollectionName(COLLECTION)
+                .withCollectionName(collectionName)
                 .withExpr(FIELD_ID + " in [\"" + id + "\"]")
                 .withOutFields(List.of(FIELD_ID, FIELD_NS, FIELD_CONTENT,
                         FIELD_IMPORTANCE, FIELD_TOKEN_COUNT))
@@ -234,7 +243,7 @@ public class MilvusWarmStore implements L2WarmStore {
     @Override
     public void delete(String id) {
         client.delete(io.milvus.param.dml.DeleteParam.newBuilder()
-                .withCollectionName(COLLECTION)
+                .withCollectionName(collectionName)
                 .withExpr(FIELD_ID + " in [\"" + id + "\"]")
                 .build());
     }
@@ -256,10 +265,10 @@ public class MilvusWarmStore implements L2WarmStore {
 
     private void validateCollectionDimension() {
         R<DescribeCollectionResponse> result = client.describeCollection(
-                DescribeCollectionParam.newBuilder().withCollectionName(COLLECTION).build());
+                DescribeCollectionParam.newBuilder().withCollectionName(collectionName).build());
         if (result.getStatus() != 0 || result.getData() == null) {
             throw new IllegalStateException(
-                    "Failed to describe Milvus collection '" + COLLECTION + "': " + result.getMessage());
+                    "Failed to describe Milvus collection '" + collectionName + "': " + result.getMessage());
         }
 
         int actualDim = result.getData().getSchema().getFieldsList().stream()
@@ -267,11 +276,11 @@ public class MilvusWarmStore implements L2WarmStore {
                 .findFirst()
                 .map(this::extractDimension)
                 .orElseThrow(() -> new IllegalStateException(
-                        "Milvus collection '" + COLLECTION + "' is missing embedding field '" + FIELD_EMBEDDING + "'"));
+                        "Milvus collection '" + collectionName + "' is missing embedding field '" + FIELD_EMBEDDING + "'"));
 
         if (actualDim != embeddingDim) {
             throw new IllegalStateException(
-                    "Milvus collection '" + COLLECTION + "' dimension mismatch: configured="
+                    "Milvus collection '" + collectionName + "' dimension mismatch: configured="
                             + embeddingDim + ", actual=" + actualDim
                             + ". Align vortex.storage.l2.embedding-dim or recreate the collection "
                             + "(for one-time migration set vortex.storage.l2.milvus.drop-collection-on-startup=true).");

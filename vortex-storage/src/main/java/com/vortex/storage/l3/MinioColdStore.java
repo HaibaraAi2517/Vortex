@@ -6,8 +6,10 @@ import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.model.TaskState;
 import com.vortex.common.serialization.JacksonCompatibilityBridge;
 import com.vortex.common.serialization.KryoSerializer;
+import com.vortex.storage.api.CheckpointStoreException;
 import com.vortex.storage.api.L3ColdStore;
 import io.minio.*;
+import io.minio.errors.ErrorResponseException;
 import io.minio.messages.Item;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -172,13 +174,32 @@ public class MinioColdStore implements L3ColdStore {
                     TaskState state = kryoSerializer.deserializeCompressed(data, TaskState.class);
                     log.debug("Checkpoint loaded via Kryo: {}", checkpointRef);
                     return Optional.of(state);
+                } catch (KryoSerializer.VersionMismatchException e) {
+                    throw new CheckpointStoreException(
+                            CheckpointStoreException.FailureType.VERSION_MISMATCH,
+                            "Checkpoint payload version mismatch for ref " + checkpointRef
+                                    + " expected=" + e.getExpectedVersion()
+                                    + " actual=" + e.getActualVersion(),
+                            e);
                 } catch (Exception e) {
                     log.warn("Kryo deserialization failed for {}, trying decompress fallback", checkpointRef, e);
                     // Try uncompressed Kryo
                     try {
                         return Optional.of(kryoSerializer.deserialize(data, TaskState.class));
+                    } catch (KryoSerializer.VersionMismatchException e2) {
+                        e2.addSuppressed(e);
+                        throw new CheckpointStoreException(
+                                CheckpointStoreException.FailureType.VERSION_MISMATCH,
+                                "Checkpoint payload version mismatch for ref " + checkpointRef
+                                        + " expected=" + e2.getExpectedVersion()
+                                        + " actual=" + e2.getActualVersion(),
+                                e2);
                     } catch (Exception e2) {
-                        log.error("All Kryo fallbacks failed for {}", checkpointRef, e2);
+                        e2.addSuppressed(e);
+                        throw new CheckpointStoreException(
+                                CheckpointStoreException.FailureType.PAYLOAD_INVALID,
+                                "Checkpoint payload invalid for ref " + checkpointRef,
+                                e2);
                     }
                 }
             } else if (JacksonCompatibilityBridge.isJacksonFormat(data)) {
@@ -186,8 +207,16 @@ public class MinioColdStore implements L3ColdStore {
                 try {
                     return Optional.of(JacksonCompatibilityBridge.migrateFromJackson(data));
                 } catch (Exception e) {
-                    log.error("Jackson migration failed for {}", checkpointRef, e);
+                    throw new CheckpointStoreException(
+                            CheckpointStoreException.FailureType.PAYLOAD_INVALID,
+                            "Checkpoint payload invalid for ref " + checkpointRef,
+                            e);
                 }
+            } else {
+                throw new CheckpointStoreException(
+                        CheckpointStoreException.FailureType.PAYLOAD_INVALID,
+                        "Checkpoint payload invalid for ref " + checkpointRef + ": unsupported format in " + kryoKey,
+                        null);
             }
         }
 
@@ -198,7 +227,10 @@ public class MinioColdStore implements L3ColdStore {
             try {
                 return Optional.of(JacksonCompatibilityBridge.migrateFromJackson(jsonData));
             } catch (Exception e) {
-                log.error("Legacy JSON load failed for {}", checkpointRef, e);
+                throw new CheckpointStoreException(
+                        CheckpointStoreException.FailureType.PAYLOAD_INVALID,
+                        "Checkpoint payload invalid for ref " + checkpointRef,
+                        e);
             }
         }
 
@@ -318,6 +350,10 @@ public class MinioColdStore implements L3ColdStore {
             }
         } catch (Exception e) {
             log.error("Failed to list objects with prefix '{}': {}", prefix, e.getMessage());
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.METADATA_READ_FAILED,
+                    "MinIO list failed for prefix " + prefix,
+                    e);
         }
         return keys;
     }
@@ -410,12 +446,13 @@ public class MinioColdStore implements L3ColdStore {
     }
 
     private CheckpointMetadata buildFallbackMetadata(String taskId, String checkpointId, String key) {
+        StatObjectResponse stat = statObject(key);
         return CheckpointMetadata.builder()
                 .checkpointId(checkpointId)
                 .taskId(taskId)
                 .type(CheckpointMetadata.CheckpointType.FULL)
-                .sizeBytes(getObjectSize(key))
-                .createdAt(getLastModified(key).orElse(Instant.EPOCH))
+                .sizeBytes(stat.size())
+                .createdAt(Optional.ofNullable(stat.lastModified()).map(t -> t.toInstant()).orElse(Instant.EPOCH))
                 .l3Key(key)
                 .build();
     }
@@ -436,13 +473,16 @@ public class MinioColdStore implements L3ColdStore {
         return Optional.of(key.substring(prefix.length(), key.length() - suffix.length()));
     }
 
-    private Optional<Instant> getLastModified(String key) {
+    private StatObjectResponse statObject(String key) {
         try {
-            StatObjectResponse stat = minioClient.statObject(
+            return minioClient.statObject(
                     StatObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(key)).build());
-            return Optional.ofNullable(stat.lastModified()).map(t -> t.toInstant());
         } catch (Exception e) {
-            return Optional.empty();
+            log.error("MinIO stat failed key={}: {}", key, e.getMessage());
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.METADATA_READ_FAILED,
+                    "MinIO stat failed for key " + key,
+                    e);
         }
     }
 
@@ -450,12 +490,28 @@ public class MinioColdStore implements L3ColdStore {
         try (InputStream is = minioClient.getObject(
                 GetObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(key)).build())) {
             return Optional.of(objectMapper.readValue(is, type));
+        } catch (ErrorResponseException e) {
+            if (isNotFound(e)) {
+                log.debug("MinIO object not found key={}", key);
+                return Optional.empty();
+            }
+            log.error("MinIO get failed key={}: {}", key, e.getMessage());
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.READ_FAILED,
+                    "MinIO get failed for key " + key,
+                    e);
         } catch (io.minio.errors.MinioException e) {
-            log.debug("MinIO object not found key={}", key);
-            return Optional.empty();
+            log.error("MinIO get failed key={}: {}", key, e.getMessage());
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.READ_FAILED,
+                    "MinIO get failed for key " + key,
+                    e);
         } catch (Exception e) {
             log.error("MinIO get failed key={}: {}", key, e.getMessage());
-            return Optional.empty();
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.READ_FAILED,
+                    "MinIO get failed for key " + key,
+                    e);
         }
     }
 
@@ -463,13 +519,35 @@ public class MinioColdStore implements L3ColdStore {
         try (InputStream is = minioClient.getObject(
                 GetObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(key)).build())) {
             return is.readAllBytes();
+        } catch (ErrorResponseException e) {
+            if (isNotFound(e)) {
+                log.debug("MinIO binary object not found key={}", key);
+                return null;
+            }
+            log.error("MinIO binary get failed key={}: {}", key, e.getMessage());
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.READ_FAILED,
+                    "MinIO binary get failed for key " + key,
+                    e);
         } catch (io.minio.errors.MinioException e) {
-            log.debug("MinIO binary object not found key={}", key);
-            return null;
+            log.error("MinIO binary get failed key={}: {}", key, e.getMessage());
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.READ_FAILED,
+                    "MinIO binary get failed for key " + key,
+                    e);
         } catch (Exception e) {
             log.error("MinIO binary get failed key={}: {}", key, e.getMessage());
-            return null;
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.READ_FAILED,
+                    "MinIO binary get failed for key " + key,
+                    e);
         }
+    }
+
+    private boolean isNotFound(ErrorResponseException e) {
+        return e.errorResponse() != null
+                && ("NoSuchKey".equalsIgnoreCase(e.errorResponse().code())
+                || "NoSuchObject".equalsIgnoreCase(e.errorResponse().code()));
     }
 
     private String fragmentKey(String fragmentId) {

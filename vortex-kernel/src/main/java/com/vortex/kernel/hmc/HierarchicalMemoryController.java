@@ -628,19 +628,29 @@ public class HierarchicalMemoryController {
      * Used by the paging subsystem when handling page faults.
      */
     public void admitPage(SemanticPage page, List<MemoryFragment> fragments) {
+        admitPage(page, fragments, null);
+    }
+
+    public void admitPage(SemanticPage page, List<MemoryFragment> fragments, String primaryFragmentId) {
         if (page == null || fragments == null || fragments.isEmpty()) return;
         Set<String> residentAtAdmissionStart = fragments.stream()
                 .map(MemoryFragment::getId)
                 .filter(fragmentId -> l1.peek(fragmentId).isPresent())
                 .collect(Collectors.toSet());
+        boolean primaryAdmissionConsumed = primaryFragmentId != null
+                && residentAtAdmissionStart.contains(primaryFragmentId);
         admissionLock.lock();
         try {
             for (MemoryFragment fragment : fragments) {
+                boolean isPrimary = Objects.equals(primaryFragmentId, fragment.getId());
                 if (residentAtAdmissionStart.contains(fragment.getId())) {
                     if (l1.peek(fragment.getId()).isPresent()) {
                         l1.put(fragment);
                         indexPin(fragment);
                         reindexTierMembership(fragment);
+                    }
+                    if (isPrimary) {
+                        primaryAdmissionConsumed = true;
                     }
                     continue;
                 }
@@ -648,11 +658,23 @@ public class HierarchicalMemoryController {
                     l1.put(fragment);
                     indexPin(fragment);
                     reindexTierMembership(fragment);
+                    if (isPrimary) {
+                        primaryAdmissionConsumed = true;
+                    }
                     continue;
                 }
-                enforceQuotaBeforeInsert(fragment);
-                maybeEvict(fragment.getNamespace(), fragment.getEmbedding());
-                if (ensureCapacityForAdmission(fragment, "page-fault")) {
+                if (isPrimary || (primaryFragmentId == null && !primaryAdmissionConsumed)) {
+                    primaryAdmissionConsumed = true;
+                    enforceQuotaBeforeInsert(fragment);
+                    maybeEvict(fragment.getNamespace(), fragment.getEmbedding());
+                    if (ensureCapacityForAdmission(fragment, "page-fault")) {
+                        l1.put(fragment);
+                        indexPin(fragment);
+                        reindexTierMembership(fragment);
+                    }
+                    continue;
+                }
+                if (canAdmitPageCompanionWithoutReclaim(fragment)) {
                     l1.put(fragment);
                     indexPin(fragment);
                     reindexTierMembership(fragment);
@@ -661,6 +683,28 @@ public class HierarchicalMemoryController {
         } finally {
             admissionLock.unlock();
         }
+    }
+
+    private boolean canAdmitPageCompanionWithoutReclaim(MemoryFragment incomingFragment) {
+        clearExpiredPins();
+        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
+            return true;
+        }
+        long capacity = l1.maxTokenCapacity();
+        long requiredTokens = incomingFragment.getTokenCount();
+        if (pinnedTokenCount.get() + requiredTokens > capacity) {
+            return false;
+        }
+        List<MemoryFragment> allFragments = new ArrayList<>(caffeineStore.getAllFragments());
+        NamespaceQuotaManager.QuotaSnapshot snapshot = namespaceQuotaManager.snapshot(
+                allFragments,
+                capacity,
+                incomingFragment.getNamespace());
+        long projectedUsage = snapshot.focusNamespaceUsage() + requiredTokens;
+        if (projectedUsage > snapshot.hardQuotaPerNamespace()) {
+            return false;
+        }
+        return caffeineStore.currentTokenCount() + requiredTokens <= capacity;
     }
 
     private boolean ensureCapacityForAdmission(MemoryFragment incomingFragment, String context) {

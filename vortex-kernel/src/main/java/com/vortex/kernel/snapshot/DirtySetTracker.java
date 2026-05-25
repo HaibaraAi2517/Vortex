@@ -66,6 +66,24 @@ public class DirtySetTracker {
     }
 
     /**
+     * Restore a previously captured dirty snapshot when checkpoint persistence fails.
+     */
+    public void restore(String taskId, DirtySnapshot snapshot) {
+        if (snapshot == null || snapshot.isEmpty()) {
+            return;
+        }
+        if (!snapshot.nodeIds().isEmpty()) {
+            dirtyNodeIds.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).addAll(snapshot.nodeIds());
+        }
+        if (!snapshot.edgeIds().isEmpty()) {
+            dirtyEdgeIds.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).addAll(snapshot.edgeIds());
+        }
+        if (!snapshot.contextKeys().isEmpty()) {
+            dirtyContextKeys.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).addAll(snapshot.contextKeys());
+        }
+    }
+
+    /**
      * Check if a task has any dirty state (without clearing).
      */
     public boolean isDirty(String taskId) {
@@ -75,6 +93,10 @@ public class DirtySetTracker {
         return (nodes != null && !nodes.isEmpty())
                 || (edges != null && !edges.isEmpty())
                 || (context != null && !context.isEmpty());
+    }
+
+    public boolean hasDirty(String taskId) {
+        return isDirty(taskId);
     }
 
     /**

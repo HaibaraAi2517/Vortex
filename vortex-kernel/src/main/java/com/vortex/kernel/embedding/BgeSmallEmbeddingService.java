@@ -128,10 +128,11 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
         try {
             // BGE models perform better with the instruction prefix for retrieval
             String input = "为这个句子生成表示以用于检索相关文章：" + text;
-            float[] raw = predictor.predict(input);
-            return l2Normalize(raw);
+            return normalizeAndValidateEmbedding(predictSingle(input), "BGE embed");
+        } catch (EmbeddingException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Embedding failed for text (len={}): {}", text.length(), e.getMessage());
+            log.error("Embedding failed for text (len={}): {}", text == null ? 0 : text.length(), e.getMessage());
             throw new EmbeddingException("BGE embed failed: " + e.getMessage(), e);
         }
     }
@@ -155,23 +156,27 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
         for (int offset = 0; offset < prefixedTexts.size(); offset += BATCH_SIZE) {
             int end = Math.min(offset + BATCH_SIZE, prefixedTexts.size());
             List<String> subBatch = prefixedTexts.subList(offset, end);
+            List<float[]> batchResults;
             try {
-                List<float[]> batchResults = predictor.batchPredict(subBatch);
-                for (float[] raw : batchResults) {
-                    results.add(l2Normalize(raw));
-                }
+                batchResults = predictBatch(subBatch);
             } catch (Exception e) {
                 log.warn("Batch predict failed for sub-batch size={}, falling back to sequential: {}",
                         subBatch.size(), e.getMessage());
                 // Fallback: sequential
                 for (String text : subBatch) {
                     try {
-                        results.add(l2Normalize(predictor.predict(text)));
+                        results.add(normalizeAndValidateEmbedding(predictSingle(text), "BGE sequential fallback"));
+                    } catch (EmbeddingException e2) {
+                        throw e2;
                     } catch (Exception e2) {
                         log.error("Sequential fallback embed failed: {}", e2.getMessage());
                         throw new EmbeddingException("Sequential fallback also failed", e2);
                     }
                 }
+                continue;
+            }
+            for (float[] raw : batchResults) {
+                results.add(normalizeAndValidateEmbedding(raw, "BGE batch embed"));
             }
         }
         return results;
@@ -228,6 +233,37 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
             centroid[i] /= count;
         }
         return l2Normalize(centroid);
+    }
+
+    List<float[]> predictBatch(List<String> texts) throws Exception {
+        return predictor.batchPredict(texts);
+    }
+
+    float[] predictSingle(String input) throws Exception {
+        return predictor.predict(input);
+    }
+
+    static boolean isZeroVector(float[] vector) {
+        if (vector == null || vector.length == 0) {
+            return true;
+        }
+        for (float value : vector) {
+            if (Float.isFinite(value) && Math.abs(value) > 1.0e-12f) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static float[] normalizeAndValidateEmbedding(float[] raw, String context) {
+        if (raw == null || raw.length == 0) {
+            throw new EmbeddingException(context + " returned an empty embedding");
+        }
+        float[] normalized = l2Normalize(raw);
+        if (isZeroVector(normalized)) {
+            throw new EmbeddingException(context + " returned a zero vector");
+        }
+        return normalized;
     }
 
     /** L2-normalise a vector so cosine similarity == dot product. */
