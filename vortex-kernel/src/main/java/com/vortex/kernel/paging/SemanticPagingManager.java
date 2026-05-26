@@ -140,6 +140,13 @@ public class SemanticPagingManager {
         CompletableFuture.runAsync(() -> prefetchEngine.onRecall(queryEmbedding));
     }
 
+    public void onFragmentAccess(String fragmentId) {
+        if (!enabled || fragmentId == null || fragmentId.isBlank()) {
+            return;
+        }
+        prefetchEngine.recordFragmentAccess(fragmentId);
+    }
+
     /**
      * Admit an entire page of fragments to L1 atomically.
      * Called by HMC when a page fault is resolved.

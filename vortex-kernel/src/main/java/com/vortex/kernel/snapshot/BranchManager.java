@@ -1,6 +1,6 @@
 package com.vortex.kernel.snapshot;
 
-import com.vortex.common.model.DagGraph;
+import com.vortex.common.model.DagEdge;
 import com.vortex.common.model.DagNode;
 import com.vortex.common.model.TaskBranch;
 import com.vortex.common.model.TaskState;
@@ -9,9 +9,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Manages branching and merging of alternative execution paths within a task's DAG.
@@ -22,6 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Component
 public class BranchManager {
+
+    public static final String BRANCH_ID_METADATA_KEY = "branchId";
 
     private final int maxBranchesPerTask;
     private final BranchMergeConflictDetector conflictDetector;
@@ -42,7 +45,7 @@ public class BranchManager {
      * @return the created branch
      */
     public TaskBranch createBranch(TaskState task, String branchName, String sourceNodeId) {
-        return createBranch(task, null, branchName, sourceNodeId);
+        return createBranch(task, null, branchName, sourceNodeId, null, null);
     }
 
     public void validateCreateBranch(TaskState task, String sourceNodeId) {
@@ -62,30 +65,48 @@ public class BranchManager {
     }
 
     public TaskBranch createBranch(TaskState task, String branchId, String branchName, String sourceNodeId) {
+        return createBranch(task, branchId, branchName, sourceNodeId, null, null);
+    }
+
+    public TaskBranch createBranch(
+            TaskState task,
+            String branchId,
+            String branchName,
+            String sourceNodeId,
+            String forkNodeId,
+            String branchEdgeId) {
         validateCreateBranch(task, sourceNodeId);
 
-        // Mark source node as FORK type if it isn't already
-        DagNode forkNode = task.getGraph().getNode(sourceNodeId).orElseThrow();
-        if (forkNode.getType() != DagNode.NodeType.FORK && forkNode.getType() != DagNode.NodeType.JOIN) {
-            // Create a separate FORK node
-            DagNode forkMarker = DagNode.builder()
-                    .type(DagNode.NodeType.FORK)
-                    .content("Fork: " + branchName)
-                    .status(DagNode.NodeStatus.COMPLETED)
-                    .build();
-            task.getGraph().addNode(forkMarker);
-            task.setCurrentNodeId(forkMarker.getNodeId());
-        }
+        String resolvedBranchId = branchId != null ? branchId : java.util.UUID.randomUUID().toString();
+        DagNode forkMarker = DagNode.builder()
+                .nodeId(forkNodeId != null ? forkNodeId : java.util.UUID.randomUUID().toString())
+                .type(DagNode.NodeType.FORK)
+                .content("Fork: " + branchName)
+                .status(DagNode.NodeStatus.COMPLETED)
+                .metadata(branchMetadata(resolvedBranchId))
+                .build();
+        task.getGraph().addNode(forkMarker);
+
+        DagEdge branchEdge = DagEdge.builder()
+                .edgeId(branchEdgeId != null ? branchEdgeId : java.util.UUID.randomUUID().toString())
+                .sourceNodeId(sourceNodeId)
+                .targetNodeId(forkMarker.getNodeId())
+                .dependencyType(DagEdge.EdgeType.BRANCH)
+                .condition(branchName)
+                .build();
+        task.getGraph().addEdge(branchEdge);
 
         TaskBranch branch = TaskBranch.builder()
-                .branchId(branchId != null ? branchId : java.util.UUID.randomUUID().toString())
+                .branchId(resolvedBranchId)
                 .branchName(branchName)
                 .sourceNodeId(sourceNodeId)
+                .forkNodeId(forkMarker.getNodeId())
                 .status(TaskBranch.BranchStatus.ACTIVE)
                 .build();
 
         task.getBranches().add(branch);
         task.setCurrentBranchId(branch.getBranchId());
+        task.setCurrentNodeId(forkMarker.getNodeId());
 
         log.info("Branch created: taskId={} branchId={} branchName={} sourceNodeId={}",
                 task.getTaskId(), branch.getBranchId(), branchName, sourceNodeId);
@@ -123,7 +144,9 @@ public class BranchManager {
 
     public void switchBranch(TaskState task, String branchId) {
         validateSwitchBranch(task, branchId);
+        TaskBranch branch = getBranch(task, branchId).orElseThrow();
         task.setCurrentBranchId(branchId);
+        task.setCurrentNodeId(resolveBranchCursor(task, branch));
         log.info("Branch switched: taskId={} branchId={}", task.getTaskId(), branchId);
     }
 
@@ -171,6 +194,7 @@ public class BranchManager {
                 .type(DagNode.NodeType.MERGE)
                 .content("Merged branch '" + source.getBranchName() + "' → '" + target.getBranchName() + "'")
                 .status(DagNode.NodeStatus.COMPLETED)
+                .metadata(branchMetadata(targetBranchId))
                 .build();
         task.getGraph().addNode(mergeNode);
         task.setCurrentNodeId(mergeNode.getNodeId());
@@ -208,4 +232,35 @@ public class BranchManager {
             String nodeId,
             String suggestedResolution
     ) {}
+
+    public static boolean nodeBelongsToBranch(DagNode node, String branchId) {
+        if (node == null || node.getMetadata() == null || branchId == null || branchId.isBlank()) {
+            return false;
+        }
+        return branchId.equals(node.getMetadata().get(BRANCH_ID_METADATA_KEY));
+    }
+
+    public static Map<String, String> branchMetadata(String branchId) {
+        Map<String, String> metadata = new HashMap<>();
+        if (branchId != null && !branchId.isBlank()) {
+            metadata.put(BRANCH_ID_METADATA_KEY, branchId);
+        }
+        return metadata;
+    }
+
+    private String resolveBranchCursor(TaskState task, TaskBranch branch) {
+        List<DagNode> branchNodes = task.getGraph().getNodes().values().stream()
+                .filter(node -> nodeBelongsToBranch(node, branch.getBranchId()))
+                .sorted(java.util.Comparator.comparing(
+                        DagNode::getCreatedAt,
+                        java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
+                .toList();
+        if (!branchNodes.isEmpty()) {
+            return branchNodes.getLast().getNodeId();
+        }
+        if (branch.getForkNodeId() != null && task.getGraph().getNode(branch.getForkNodeId()).isPresent()) {
+            return branch.getForkNodeId();
+        }
+        return branch.getSourceNodeId();
+    }
 }

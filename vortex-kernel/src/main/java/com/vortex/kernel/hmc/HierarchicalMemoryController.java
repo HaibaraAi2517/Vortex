@@ -1,11 +1,11 @@
 package com.vortex.kernel.hmc;
 
 import com.github.benmanes.caffeine.cache.RemovalCause;
-import com.vortex.common.exception.EmbeddingException;
 import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.exception.EmbeddingException;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.model.SemanticPage;
 import com.vortex.kernel.embedding.EmbeddingService;
@@ -19,29 +19,21 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.PostConstruct;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.PriorityBlockingQueue;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Hierarchical Memory Controller (HMC).
+ * Hierarchical Memory Controller (HMC) — facade.
  *
- * Orchestrates the three-tier memory pipeline:
- *   L1 (Caffeine) → L2 (Milvus) → L3 (MinIO)
- *
- * Key flows:
- *   store()  — write to L1; async propagate to L2/L3
- *   recall() — L1 hit → return; L1 miss → L2 search → prefetch to L1
- *   evict()  — proactive Semantic-LRU eviction when L1 is near capacity
+ * Orchestrates the three-tier memory pipeline (L1 Caffeine → L2 Milvus → L3 MinIO)
+ * by delegating to specialized components:
+ *   {@link TieredEvictionCoordinator} — eviction, admission, quota, tier indexing
+ *   {@link FragmentPinManager} — pin lifecycle
+ *   {@link RecallOrchestrator} — semantic recall pipeline
+ *   {@link MemoryDiagnosticsCollector} — health diagnostics snapshots
+ *   {@link RedundancyAnalyzer} — redundancy/novelty computation
  */
 @Slf4j
 @Service
@@ -51,20 +43,12 @@ public class HierarchicalMemoryController {
     private final L2WarmStore l2;
     private final L3ColdStore l3;
     private final SemanticEvictionPolicy evictionPolicy;
-    private final NamespaceQuotaManager namespaceQuotaManager;
     private final AdaptiveWeightLearner adaptiveWeightLearner;
     private final EvictionDecisionLogger evictionDecisionLogger;
     private final EvictionRegretTracker regretTracker;
     private final MemorySloTracker sloTracker;
     private final FragmentPersistenceManager persistenceManager;
     private final SemanticTextSplitter splitter;
-    private final PriorityBlockingQueue<PinnedFragmentRef> pinExpirations = new PriorityBlockingQueue<>();
-    private final ConcurrentMap<String, Long> pinnedFragmentDeadlines = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, NavigableSet<TieredGroupRef>> hotTierIndex = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, NavigableSet<TieredGroupRef>> coldTierIndex = new ConcurrentHashMap<>();
-    private final AtomicBoolean clearingExpiredPins = new AtomicBoolean(false);
-    private final AtomicLong pinnedTokenCount = new AtomicLong(0);
-    private final ReentrantLock admissionLock = new ReentrantLock();
 
     /** BGE-Small: always available, used for L1 fast scoring. */
     private final EmbeddingService l1EmbeddingService;
@@ -76,52 +60,13 @@ public class HierarchicalMemoryController {
      */
     private final EmbeddingService l2EmbeddingService;
 
-    /** Fraction of L1 capacity that triggers proactive eviction. */
-    private final double evictionThreshold;
-    private final long hotTierRecencyWindowMillis;
-    private final int maxColdTierCandidates;
-    private final int hotTierExpansionFactor;
-
     /** Semantic paging — optional, graceful no-op when not configured. */
     private final SemanticPagingManager pagingManager;
 
-    public HierarchicalMemoryController(
-            L1HotStore l1,
-            L2WarmStore l2,
-            L3ColdStore l3,
-            SemanticEvictionPolicy evictionPolicy,
-            NamespaceQuotaManager namespaceQuotaManager,
-            AdaptiveWeightLearner adaptiveWeightLearner,
-            EvictionDecisionLogger evictionDecisionLogger,
-            EvictionRegretTracker regretTracker,
-            MemorySloTracker sloTracker,
-            FragmentPersistenceManager persistenceManager,
-            SemanticTextSplitter splitter,
-            @Qualifier("bgeSmallEmbeddingService") EmbeddingService l1EmbeddingService,
-            @Qualifier("cloudEmbeddingService") ObjectProvider<EmbeddingService> cloudEmbeddingProvider,
-            ObjectProvider<SemanticPagingManager> pagingManagerProvider,
-            double evictionThreshold) {
-        this(
-                l1,
-                l2,
-                l3,
-                evictionPolicy,
-                namespaceQuotaManager,
-                adaptiveWeightLearner,
-                evictionDecisionLogger,
-                regretTracker,
-                sloTracker,
-                persistenceManager,
-                splitter,
-                l1EmbeddingService,
-                cloudEmbeddingProvider,
-                pagingManagerProvider,
-                evictionThreshold,
-                30_000L,
-                300_000L,
-                64,
-                2);
-    }
+    private final TieredEvictionCoordinator evictionCoordinator;
+    private final FragmentPinManager pinManager;
+    private final RecallOrchestrator recallOrchestrator;
+    private final MemoryDiagnosticsCollector diagnosticsCollector;
 
     @Autowired
     public HierarchicalMemoryController(
@@ -140,15 +85,14 @@ public class HierarchicalMemoryController {
             @Qualifier("cloudEmbeddingService") ObjectProvider<EmbeddingService> cloudEmbeddingProvider,
             ObjectProvider<SemanticPagingManager> pagingManagerProvider,
             @Value("${vortex.kernel.eviction.threshold:0.85}") double evictionThreshold,
-            @Value("${vortex.kernel.pin.cleanup-interval-ms:30000}") long pinCleanupIntervalMillis,
-            @Value("${vortex.kernel.eviction.hot-tier-window-ms:300000}") long hotTierRecencyWindowMillis,
-            @Value("${vortex.kernel.eviction.max-cold-tier-candidates:64}") int maxColdTierCandidates,
-            @Value("${vortex.kernel.eviction.hot-tier-expansion-factor:2}") int hotTierExpansionFactor) {
+            TieredEvictionCoordinator evictionCoordinator,
+            FragmentPinManager pinManager,
+            RecallOrchestrator recallOrchestrator,
+            MemoryDiagnosticsCollector diagnosticsCollector) {
         this.l1 = l1;
         this.l2 = l2;
         this.l3 = l3;
         this.evictionPolicy = evictionPolicy;
-        this.namespaceQuotaManager = namespaceQuotaManager;
         this.adaptiveWeightLearner = adaptiveWeightLearner;
         this.evictionDecisionLogger = evictionDecisionLogger;
         this.regretTracker = regretTracker;
@@ -158,10 +102,11 @@ public class HierarchicalMemoryController {
         this.l1EmbeddingService = l1EmbeddingService;
         this.l2EmbeddingService = cloudEmbeddingProvider.getIfAvailable();
         this.pagingManager = pagingManagerProvider.getIfAvailable();
-        this.evictionThreshold = evictionThreshold;
-        this.hotTierRecencyWindowMillis = Math.max(1L, hotTierRecencyWindowMillis);
-        this.maxColdTierCandidates = Math.max(8, maxColdTierCandidates);
-        this.hotTierExpansionFactor = Math.max(1, hotTierExpansionFactor);
+        this.evictionCoordinator = evictionCoordinator;
+        this.pinManager = pinManager;
+        this.recallOrchestrator = recallOrchestrator;
+        this.diagnosticsCollector = diagnosticsCollector;
+
         if (l1 instanceof CaffeineHotStore caffeineStore) {
             caffeineStore.setEvictionListener(this::handleCaffeineEviction);
         }
@@ -179,23 +124,12 @@ public class HierarchicalMemoryController {
         validateL2DimensionCompatibility();
     }
 
-    @PostConstruct
-    void cleanPinsOnStartup() {
-        rebuildPinIndex();
-        clearExpiredPins();
-    }
-
     // ---- Public API ----
 
     /**
      * Store a raw text fragment.
      * The text is split at semantic boundaries, each chunk stored in L1.
      * Async propagation to L2/L3 happens in the background.
-     *
-     * @param content   raw text
-     * @param namespace agent/session namespace
-     * @param tags      optional tags
-     * @return list of created fragment IDs
      */
     public List<String> store(
             String content,
@@ -221,156 +155,14 @@ public class HierarchicalMemoryController {
         long startedAt = System.nanoTime();
         ensureL1Embedding(fragment);
         populateOptionalL2Embedding(fragment);
-        admitToL1(fragment, "initial-store");
-        // Async: persist to L2 and L3
+        evictionCoordinator.admitToL1(fragment, "initial-store");
         persistenceManager.persistAsync(fragment, "initial-store");
         sloTracker.recordStoreLatency(System.nanoTime() - startedAt);
     }
 
-    /**
-     * Recall semantically relevant fragments for a query.
-     *
-     * Strategy:
-     *   1. Embed query with BGE-Small → score all L1 fragments by cosine similarity.
-     *   2. If cloud embedding is enabled, also embed query with DeepSeek → search L2 Milvus.
-     *   3. Prefetch L2 results back into L1 for subsequent calls.
-     */
+    /** Delegate to {@link RecallOrchestrator#recall}. */
     public RecallResult recall(RecallQuery query) {
-        long startedAt = System.nanoTime();
-        List<String> requiredTags = normalizeTags(query.getTags());
-        MemoryScenario scenario = query.getScenario() == null ? MemoryScenario.CHAT : query.getScenario();
-        AdaptiveWeightLearner.ProfileSelection profileSelection = adaptiveWeightLearner.selectProfiles(scenario);
-        AdaptiveWeightProfile baselineProfile = evictionPolicy.defaultProfile();
-        // L1 query embedding — BGE-Small (fast, local)
-        float[] l1QueryEmbedding = requireEmbedding(l1EmbeddingService, query.getQuery(), "L1 recall query");
-        // L2 query embedding — DeepSeek if available, else reuse BGE-Small
-        float[] l2QueryEmbedding = resolveL2QueryEmbedding(query.getQuery(), l1QueryEmbedding);
-
-        List<RecallResult.ScoredFragment> results = new ArrayList<>();
-        int tokensSoFar = 0;
-
-        List<MemoryFragment> l1Candidates = l1.getAll(query.getNamespace());
-        List<MemoryFragment> filteredL1Candidates = l1Candidates.stream()
-                .filter(fragment -> matchesAllTags(fragment, requiredTags))
-                .toList();
-        List<RankedRecallCandidate> activeSelected = new ArrayList<>();
-        Set<String> selectedIds = new HashSet<>();
-        for (ScoredCandidate candidate : rankForRecall(filteredL1Candidates, l1QueryEmbedding, profileSelection.active())) {
-            if (activeSelected.size() >= query.getTopK()) {
-                break;
-            }
-            if (tokensSoFar + candidate.fragment().getTokenCount() > query.getTokenBudget()) {
-                continue;
-            }
-            activeSelected.add(new RankedRecallCandidate(candidate.fragment(), candidate.score(), "L1"));
-            selectedIds.add(candidate.fragment().getId());
-            tokensSoFar += candidate.fragment().getTokenCount();
-        }
-
-        List<MemoryFragment> evaluationPool = new ArrayList<>(filteredL1Candidates);
-        if (activeSelected.size() < query.getTopK()) {
-            int needed = query.getTopK() - activeSelected.size();
-            int l2SearchLimit = Math.max(
-                    needed * 4,
-                    query.getTopK() * 4);
-            List<MemoryFragment> l2Hits = l2.search(l2QueryEmbedding, query.getNamespace(), l2SearchLimit);
-            IncrementalRedundancyState redundancyState = IncrementalRedundancyState.from(filteredL1Candidates);
-            for (MemoryFragment hit : l2Hits) {
-                if (activeSelected.size() >= query.getTopK()) {
-                    break;
-                }
-                if (selectedIds.contains(hit.getId())) {
-                    continue;
-                }
-                MemoryFragment candidate = enrichForRecall(hit, requiredTags);
-                if (candidate == null) {
-                    continue;
-                }
-                if (candidate.getEmbedding() == null) {
-                    ensureL1Embedding(candidate);
-                }
-                candidate.reinforceImportanceOnRecall();
-                if (tokensSoFar + candidate.getTokenCount() > query.getTokenBudget()) {
-                    continue;
-                }
-                redundancyState.add(candidate);
-                activeSelected.add(new RankedRecallCandidate(
-                        candidate,
-                        scoreForRecall(candidate, l1QueryEmbedding, profileSelection.active(), redundancyState.snapshot()),
-                        "L2"));
-                selectedIds.add(candidate.getId());
-                tokensSoFar += candidate.getTokenCount();
-                evaluationPool.add(candidate);
-
-                // Trigger page fault for this L2 fragment (async, best-effort)
-                if (pagingManager != null) {
-                    pagingManager.handlePageFault(candidate.getId(), query.getNamespace());
-                }
-            }
-        }
-
-        List<ScoredCandidate> activeRanked = rankForRecall(evaluationPool, l1QueryEmbedding, profileSelection.active());
-        List<ScoredCandidate> shadowRanked = rankForRecall(evaluationPool, l1QueryEmbedding, profileSelection.shadow());
-        List<ScoredCandidate> baselineRanked = rankForRecall(evaluationPool, l1QueryEmbedding, baselineProfile);
-        List<String> activeEvictionRanked = rankEvictionForEvaluation(evaluationPool, l1QueryEmbedding, profileSelection.active());
-        List<String> shadowEvictionRanked = rankEvictionForEvaluation(evaluationPool, l1QueryEmbedding, profileSelection.shadow());
-        List<String> baselineEvictionRanked = rankEvictionForEvaluation(evaluationPool, l1QueryEmbedding, baselineProfile);
-
-        for (RankedRecallCandidate selected : activeSelected) {
-            MemoryFragment recalled;
-            if ("L1".equals(selected.tier())) {
-                recalled = refreshL1Fragment(selected.fragment());
-            } else {
-                recalled = prepareL2RecallCandidate(selected.fragment());
-            }
-            results.add(RecallResult.ScoredFragment.builder()
-                    .fragment(recalled)
-                    .score(selected.score())
-                    .tier(selected.tier())
-                    .build());
-        }
-
-        List<String> trace = results.stream().map(RecallResult.ScoredFragment::getTier).toList();
-        String recallSessionId = adaptiveWeightLearner.recordRecallSession(RecallSessionRecord.builder()
-                .namespace(query.getNamespace())
-                .scenario(scenario)
-                .activeProfileName(profileSelection.active().getProfileName())
-                .shadowProfileName(profileSelection.shadow().getProfileName())
-                .activeArmIndex(extractArmIndex(profileSelection.active().getProfileName()))
-                .shadowArmIndex(extractArmIndex(profileSelection.shadow().getProfileName()))
-                .activeSelectionProbability(extractSelectionProbability(profileSelection.active().getProfileName()))
-                .shadowSelectionProbability(extractSelectionProbability(profileSelection.shadow().getProfileName()))
-                .rankedFragmentIds(activeRanked.stream().map(sc -> sc.fragment().getId()).toList())
-                .shadowRankedFragmentIds(shadowRanked.stream().map(sc -> sc.fragment().getId()).toList())
-                .baselineRankedFragmentIds(baselineRanked.stream().map(sc -> sc.fragment().getId()).toList())
-                .activeEvictionRankedFragmentIds(activeEvictionRanked)
-                .shadowEvictionRankedFragmentIds(shadowEvictionRanked)
-                .baselineEvictionRankedFragmentIds(baselineEvictionRanked)
-                .createdAt(java.time.Instant.now())
-                .build());
-        EvictionRegretTracker.RegretSnapshot regretSnapshot = regretTracker.snapshot();
-        sloTracker.recordRegretRate(regretSnapshot.regretRate());
-        ShadowEvaluationTracker.ShadowEvaluationSnapshot learningSnapshot =
-                adaptiveWeightLearner.snapshot(scenario).shadowEvaluation();
-        sloTracker.recordLearningLift(
-                learningSnapshot.relativeLift(),
-                learningSnapshot.baselineRelativeLift(),
-                learningSnapshot.baselineWinRate());
-        sloTracker.recordRecallLatency(System.nanoTime() - startedAt);
-
-        // Trigger semantic neighborhood prefetch (async, best-effort)
-        if (pagingManager != null) {
-            pagingManager.onRecall(l1QueryEmbedding);
-        }
-
-        return RecallResult.builder()
-                .fragments(results)
-                .totalTokens(tokensSoFar)
-                .sourceTrace(trace)
-                .recallSessionId(recallSessionId)
-                .activeProfileName(profileSelection.active().getProfileName())
-                .shadowProfileName(profileSelection.shadow().getProfileName())
-                .build();
+        return recallOrchestrator.recall(query);
     }
 
     public void recordFeedback(MemoryFeedbackRequest feedbackRequest) {
@@ -397,122 +189,44 @@ public class HierarchicalMemoryController {
         return sloTracker.snapshot();
     }
 
+    /** Delegate to {@link MemoryDiagnosticsCollector#diagnosticsSnapshot}. */
+    public MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot diagnosticsSnapshot() {
+        return diagnosticsCollector.diagnosticsSnapshot();
+    }
+
+    /** Delegate to {@link FragmentPinManager#pinFragment}. */
     public Optional<MemoryFragment> pinFragment(String fragmentId, long ttlMillis) {
-        if (fragmentId == null || fragmentId.isBlank() || ttlMillis <= 0) {
-            return Optional.empty();
-        }
-        Optional<MemoryFragment> fragment = findFragment(fragmentId);
-        fragment.ifPresent(found -> {
-            found.pinForMillis(ttlMillis);
-            l1.put(found, false);
-            indexPin(found);
-            reindexTierMembership(found);
-            persistenceManager.persistAsync(found, "pin-update");
-        });
-        return fragment;
+        return pinManager.pinFragment(fragmentId, ttlMillis);
     }
 
+    /** Delegate to {@link FragmentPinManager#unpinFragment}. */
     public Optional<MemoryFragment> unpinFragment(String fragmentId) {
-        if (fragmentId == null || fragmentId.isBlank()) {
-            return Optional.empty();
-        }
-        Optional<MemoryFragment> fragment = findFragment(fragmentId);
-        fragment.ifPresent(found -> {
-            found.unpin();
-            l1.put(found, false);
-            indexPin(found);
-            reindexTierMembership(found);
-            persistenceManager.persistAsync(found, "pin-update");
-        });
-        return fragment;
+        return pinManager.unpinFragment(fragmentId);
     }
 
-    @Scheduled(fixedDelayString = "${vortex.kernel.pin.cleanup-interval-ms:30000}")
+    /** Delegate to {@link FragmentPinManager#clearExpiredPins} (also called by @Scheduled). */
     public void clearExpiredPins() {
-        if (!clearingExpiredPins.compareAndSet(false, true)) {
-            return;
-        }
-        try {
-        long now = System.currentTimeMillis();
-        int cleared = 0;
-        while (true) {
-            PinnedFragmentRef ref = pinExpirations.peek();
-            if (ref == null || ref.pinnedUntilEpochMillis() > now) {
-                break;
-            }
-            pinExpirations.poll();
-            Long currentDeadline = pinnedFragmentDeadlines.get(ref.fragmentId());
-            if (currentDeadline == null || currentDeadline.longValue() != ref.pinnedUntilEpochMillis()) {
-                continue;
-            }
-            Optional<MemoryFragment> fragment = findFragment(ref.fragmentId());
-            if (fragment.isEmpty()) {
-                pinnedFragmentDeadlines.remove(ref.fragmentId(), currentDeadline);
-                continue;
-            }
-            MemoryFragment found = fragment.get();
-            if (!found.clearExpiredPin()) {
-                indexPin(found);
-                continue;
-            }
-            l1.put(found, false);
-            indexPin(found);
-            reindexTierMembership(found);
-            persistenceManager.persistAsync(found, "pin-expired");
-            cleared++;
-        }
-        if (cleared > 0) {
-            log.debug("Cleared expired pins count={}", cleared);
-        }
-        } finally {
-            clearingExpiredPins.set(false);
-        }
+        pinManager.clearExpiredPins();
     }
 
-    @Scheduled(fixedDelayString = "${vortex.kernel.eviction.tier-rebalance-interval-ms:120000}")
-    public void rebalanceTierIndexes() {
-        rebuildTierIndexes();
-    }
-
-    private record ScoredCandidate(MemoryFragment fragment, double score) {}
-
-    private record RankedRecallCandidate(MemoryFragment fragment, double score, String tier) {}
-
-    /**
-     * Proactively evict low-score fragments from L1 when approaching capacity.
-     * Called before each store() to keep L1 healthy.
-     */
+    /** Delegate to {@link TieredEvictionCoordinator#maybeEvict}. */
     public void maybeEvict(String namespace, float[] queryEmbedding) {
-        clearExpiredPins();
-        if (namespace == null || namespace.isBlank()) return;
-        long current = l1.currentTokenCount();
-        long max = l1.maxTokenCapacity();
-        if (max == 0 || (double) current / max < evictionThreshold) return;
+        evictionCoordinator.maybeEvict(namespace, queryEmbedding);
+    }
 
-        List<MemoryFragment> candidates = new ArrayList<>(l1.getAll(namespace));
-        if (candidates.isEmpty()) return;
+    /** Delegate to {@link TieredEvictionCoordinator#admitPage}. */
+    public void admitPage(SemanticPage page, List<MemoryFragment> fragments) {
+        evictionCoordinator.admitPage(page, fragments);
+    }
 
-        long targetEvict = Math.max(1L, (long) Math.ceil(max * 0.10));
-        List<SemanticEvictionPolicy.EvictionCandidate> toEvict = rankTieredCandidates(
-                candidates,
-                queryEmbedding,
-                targetEvict);
-        long evictedTokens = 0;
-        Set<String> evictedGroups = new HashSet<>();
-        Map<String, Long> namespaceTokenUsage = computeNamespaceTokenUsage(candidates);
-        for (SemanticEvictionPolicy.EvictionCandidate candidate : toEvict) {
-            evictedTokens += evictCandidateGroup(
-                    candidate,
-                    namespace,
-                    targetEvict,
-                    "semantic",
-                    evictedGroups,
-                    0L,
-                    namespaceTokenUsage);
-            if (evictedTokens >= targetEvict) break;
-        }
-        log.debug("Proactive eviction: namespace={} removed {} fragments ({} tokens)",
-                namespace, toEvict.size(), evictedTokens);
+    /** Delegate to {@link TieredEvictionCoordinator#admitPage}. */
+    public void admitPage(SemanticPage page, List<MemoryFragment> fragments, String primaryFragmentId) {
+        evictionCoordinator.admitPage(page, fragments, primaryFragmentId);
+    }
+
+    /** Delegate to {@link TieredEvictionCoordinator#rebalanceTierIndexes}. */
+    public void rebalanceTierIndexes() {
+        evictionCoordinator.rebalanceTierIndexes();
     }
 
     /** Expose L1 store for monitoring (e.g., health endpoints). */
@@ -522,473 +236,10 @@ public class HierarchicalMemoryController {
 
     // ---- Internal helpers ----
 
-    private MemoryFragment refreshL1Fragment(MemoryFragment fragment) {
-        MemoryFragment refreshed = l1.get(fragment.getId()).orElse(fragment);
-        refreshed.clearExpiredPin();
-        refreshed.reinforceImportanceOnRecall();
-        reindexTierMembership(refreshed);
-        return refreshed;
-    }
-
-    private MemoryFragment prepareL2RecallCandidate(MemoryFragment candidate) {
-        candidate.clearExpiredPin();
-        admitToL1(candidate, "recall-reinforcement");
-        persistenceManager.persistAsync(candidate, "recall-reinforcement");
-        regretTracker.recordRecall(candidate, "L2");
-        reindexTierMembership(candidate);
-        return candidate;
-    }
-
-    private void enforceQuotaBeforeInsert(MemoryFragment incomingFragment) {
-        clearExpiredPins();
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
-            return;
-        }
-        List<MemoryFragment> allFragments = new ArrayList<>(caffeineStore.getAllFragments());
-        NamespaceQuotaManager.QuotaSnapshot snapshot = namespaceQuotaManager.snapshot(
-                allFragments,
-                l1.maxTokenCapacity(),
-                incomingFragment.getNamespace());
-        long projectedUsage = snapshot.focusNamespaceUsage() + incomingFragment.getTokenCount();
-        if (projectedUsage <= snapshot.hardQuotaPerNamespace()) {
-            return;
-        }
-
-        long requiredTokens = projectedUsage - snapshot.hardQuotaPerNamespace();
-        List<SemanticEvictionPolicy.EvictionCandidate> ownCandidates = rankTieredCandidates(
-                l1.getAll(incomingFragment.getNamespace()),
-                incomingFragment.getEmbedding(),
-                requiredTokens);
-        long released = evictCandidatesUntil(
-                ownCandidates,
-                incomingFragment.getNamespace(),
-                requiredTokens,
-                "quota-self-reclaim",
-                0L);
-        if (released >= requiredTokens) {
-            return;
-        }
-
-        long remainingRequired = requiredTokens - released;
-        for (String otherNamespace : namespaceQuotaManager.evictionPriorityNamespaces(
-                allFragments, l1.maxTokenCapacity(), incomingFragment.getNamespace())) {
-            List<MemoryFragment> namespaceFragments = l1.getAll(otherNamespace);
-            NamespaceQuotaManager.QuotaSnapshot currentSnapshot = namespaceQuotaManager.snapshot(
-                    allFragments,
-                    l1.maxTokenCapacity(),
-                    otherNamespace);
-            long borrowedTokens = Math.max(0L,
-                    namespaceFragments.stream().mapToLong(MemoryFragment::getTokenCount).sum()
-                            - currentSnapshot.hardQuotaPerNamespace());
-                if (borrowedTokens <= 0) {
-                    continue;
-                }
-            List<SemanticEvictionPolicy.EvictionCandidate> ranked = rankTieredCandidates(
-                    namespaceFragments,
-                    incomingFragment.getEmbedding(),
-                    Math.min(remainingRequired, borrowedTokens));
-            long evicted = evictCandidatesUntil(
-                    ranked,
-                    otherNamespace,
-                    Math.min(remainingRequired, borrowedTokens),
-                    "quota-borrow-reclaim",
-                    currentSnapshot.hardQuotaPerNamespace());
-            remainingRequired -= evicted;
-            if (remainingRequired <= 0) {
-                break;
-            }
-        }
-    }
-
-    private boolean admitToL1(MemoryFragment fragment, String context) {
-        admissionLock.lock();
-        try {
-            if (l1.peek(fragment.getId()).isPresent()) {
-                l1.put(fragment);
-                indexPin(fragment);
-                reindexTierMembership(fragment);
-                return true;
-            }
-            enforceQuotaBeforeInsert(fragment);
-            maybeEvict(fragment.getNamespace(), fragment.getEmbedding());
-            if (!ensureCapacityForAdmission(fragment, context)) {
-                return false;
-            }
-        l1.put(fragment);
-        indexPin(fragment);
-        reindexTierMembership(fragment);
-        return true;
-        } finally {
-            admissionLock.unlock();
-        }
-    }
-
     /**
-     * Admit an entire semantic page to L1 atomically.
-     * Used by the paging subsystem when handling page faults.
+     * Three-tier fragment lookup: L1 → L3 → L2.
      */
-    public void admitPage(SemanticPage page, List<MemoryFragment> fragments) {
-        admitPage(page, fragments, null);
-    }
-
-    public void admitPage(SemanticPage page, List<MemoryFragment> fragments, String primaryFragmentId) {
-        if (page == null || fragments == null || fragments.isEmpty()) return;
-        Set<String> residentAtAdmissionStart = fragments.stream()
-                .map(MemoryFragment::getId)
-                .filter(fragmentId -> l1.peek(fragmentId).isPresent())
-                .collect(Collectors.toSet());
-        boolean primaryAdmissionConsumed = primaryFragmentId != null
-                && residentAtAdmissionStart.contains(primaryFragmentId);
-        admissionLock.lock();
-        try {
-            for (MemoryFragment fragment : fragments) {
-                boolean isPrimary = Objects.equals(primaryFragmentId, fragment.getId());
-                if (residentAtAdmissionStart.contains(fragment.getId())) {
-                    if (l1.peek(fragment.getId()).isPresent()) {
-                        l1.put(fragment);
-                        indexPin(fragment);
-                        reindexTierMembership(fragment);
-                    }
-                    if (isPrimary) {
-                        primaryAdmissionConsumed = true;
-                    }
-                    continue;
-                }
-                if (l1.peek(fragment.getId()).isPresent()) {
-                    l1.put(fragment);
-                    indexPin(fragment);
-                    reindexTierMembership(fragment);
-                    if (isPrimary) {
-                        primaryAdmissionConsumed = true;
-                    }
-                    continue;
-                }
-                if (isPrimary || (primaryFragmentId == null && !primaryAdmissionConsumed)) {
-                    primaryAdmissionConsumed = true;
-                    enforceQuotaBeforeInsert(fragment);
-                    maybeEvict(fragment.getNamespace(), fragment.getEmbedding());
-                    if (ensureCapacityForAdmission(fragment, "page-fault")) {
-                        l1.put(fragment);
-                        indexPin(fragment);
-                        reindexTierMembership(fragment);
-                    }
-                    continue;
-                }
-                if (canAdmitPageCompanionWithoutReclaim(fragment)) {
-                    l1.put(fragment);
-                    indexPin(fragment);
-                    reindexTierMembership(fragment);
-                }
-            }
-        } finally {
-            admissionLock.unlock();
-        }
-    }
-
-    private boolean canAdmitPageCompanionWithoutReclaim(MemoryFragment incomingFragment) {
-        clearExpiredPins();
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
-            return true;
-        }
-        long capacity = l1.maxTokenCapacity();
-        long requiredTokens = incomingFragment.getTokenCount();
-        if (pinnedTokenCount.get() + requiredTokens > capacity) {
-            return false;
-        }
-        List<MemoryFragment> allFragments = new ArrayList<>(caffeineStore.getAllFragments());
-        NamespaceQuotaManager.QuotaSnapshot snapshot = namespaceQuotaManager.snapshot(
-                allFragments,
-                capacity,
-                incomingFragment.getNamespace());
-        long projectedUsage = snapshot.focusNamespaceUsage() + requiredTokens;
-        if (projectedUsage > snapshot.hardQuotaPerNamespace()) {
-            return false;
-        }
-        return caffeineStore.currentTokenCount() + requiredTokens <= capacity;
-    }
-
-    private boolean ensureCapacityForAdmission(MemoryFragment incomingFragment, String context) {
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
-            return true;
-        }
-        long capacity = l1.maxTokenCapacity();
-        long pinnedTokens = pinnedTokenCount.get();
-        long requiredTokens = incomingFragment.getTokenCount();
-        if (pinnedTokens + requiredTokens > capacity) {
-            log.warn(
-                    "Skipped L1 admission due to insufficient effective capacity fragmentId={} namespace={} context={} pinnedTokens={} requiredTokens={} capacity={}",
-                    incomingFragment.getId(),
-                    incomingFragment.getNamespace(),
-                    context,
-                    pinnedTokens,
-                    requiredTokens,
-                    capacity);
-            return false;
-        }
-
-        long gap = (caffeineStore.currentTokenCount() + requiredTokens) - capacity;
-        if (gap <= 0) {
-            return true;
-        }
-
-        long released = reclaimAdmissionGap(incomingFragment, gap);
-        if (released < gap) {
-            log.warn(
-                    "Skipped L1 admission after unsuccessful victim search fragmentId={} namespace={} context={} gap={} released={}",
-                    incomingFragment.getId(),
-                    incomingFragment.getNamespace(),
-                    context,
-                    gap,
-                    released);
-            return false;
-        }
-        return true;
-    }
-
-    private long reclaimAdmissionGap(MemoryFragment incomingFragment, long gap) {
-        List<SemanticEvictionPolicy.EvictionCandidate> localCandidates = rankTieredCandidates(
-                l1.getAll(incomingFragment.getNamespace()),
-                incomingFragment.getEmbedding(),
-                gap);
-        long released = evictCandidatesUntil(
-                localCandidates,
-                incomingFragment.getNamespace(),
-                gap,
-                "capacity-self-reclaim");
-        if (released >= gap) {
-            return released;
-        }
-
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
-            return released;
-        }
-        long remaining = gap - released;
-        List<MemoryFragment> allFragments = new ArrayList<>(caffeineStore.getAllFragments());
-        List<SemanticEvictionPolicy.EvictionCandidate> globalCandidates = rankTieredCandidates(
-                allFragments.stream()
-                        .filter(fragment -> !Objects.equals(fragment.getNamespace(), incomingFragment.getNamespace()))
-                        .toList(),
-                incomingFragment.getEmbedding(),
-                remaining);
-        return released + evictCandidatesUntil(
-                globalCandidates,
-                incomingFragment.getNamespace(),
-                remaining,
-                "capacity-global-reclaim");
-    }
-
-    private long evictCandidatesUntil(
-            List<SemanticEvictionPolicy.EvictionCandidate> candidates,
-            String triggerNamespace,
-            long targetTokens,
-            String reason) {
-        return evictCandidatesUntil(candidates, triggerNamespace, targetTokens, reason, 0L);
-    }
-
-    private long evictCandidatesUntil(
-            List<SemanticEvictionPolicy.EvictionCandidate> candidates,
-            String triggerNamespace,
-            long targetTokens,
-            String reason,
-            long minRemainingTokens) {
-        Set<String> evictedGroups = new HashSet<>();
-        long evictedTokens = 0;
-        Map<String, Long> namespaceTokenUsage = computeNamespaceTokenUsage(
-                candidates.stream().map(SemanticEvictionPolicy.EvictionCandidate::fragment).toList());
-        for (SemanticEvictionPolicy.EvictionCandidate candidate : candidates) {
-            evictedTokens += evictCandidateGroup(
-                    candidate,
-                    triggerNamespace,
-                    targetTokens,
-                    reason,
-                    evictedGroups,
-                    minRemainingTokens,
-                    namespaceTokenUsage);
-            if (evictedTokens >= targetTokens) {
-                break;
-            }
-        }
-        return evictedTokens;
-    }
-
-    private long evictCandidateGroup(
-            SemanticEvictionPolicy.EvictionCandidate candidate,
-            String triggerNamespace,
-            long targetTokens,
-            String reason,
-            Set<String> evictedGroups,
-            long minRemainingTokens,
-            Map<String, Long> namespaceTokenUsage) {
-        if (candidate.pinned()) {
-            return 0;
-        }
-        String groupId = candidate.reasoningChainId();
-        if (groupId != null && !groupId.isBlank() && !evictedGroups.add(groupId)) {
-            return 0;
-        }
-
-        List<MemoryFragment> evictionGroup = resolveEvictionGroup(candidate);
-        if (evictionGroup.isEmpty()) {
-            return 0;
-        }
-        String namespace = candidate.fragment().getNamespace();
-        long currentNamespaceTokens = namespaceTokenUsage.getOrDefault(namespace, 0L);
-        long groupTokens = evictionGroup.stream()
-                .mapToLong(MemoryFragment::getTokenCount)
-                .sum();
-        if (currentNamespaceTokens - groupTokens < minRemainingTokens) {
-            return 0;
-        }
-        long released = 0;
-        for (MemoryFragment fragment : evictionGroup) {
-            SemanticEvictionPolicy.EvictionCandidate scored = evictionPolicy.scoreFragment(fragment, candidate.fragment().getEmbedding());
-            evictionDecisionLogger.logSemanticDecision(scored, triggerNamespace, targetTokens);
-            regretTracker.recordEviction(fragment, reason);
-            l1.remove(fragment.getId());
-            removePinIndex(fragment);
-            removeFromTierIndexes(fragment);
-            persistenceManager.persistAsync(fragment, reason);
-            released += fragment.getTokenCount();
-        }
-        long releasedTokens = released;
-        namespaceTokenUsage.compute(namespace, (key, value) -> Math.max(0L, (value == null ? 0L : value) - releasedTokens));
-        return released;
-    }
-
-    private List<MemoryFragment> resolveEvictionGroup(SemanticEvictionPolicy.EvictionCandidate candidate) {
-        String groupId = candidate.reasoningChainId();
-        if (groupId == null || groupId.isBlank()) {
-            MemoryFragment fragment = l1.peek(candidate.fragment().getId()).orElse(candidate.fragment());
-            if (fragment.clearExpiredPin() || fragment.isPinned()) {
-                if (fragment.isPinned()) {
-                    return List.of();
-                }
-                l1.put(fragment, false);
-                indexPin(fragment);
-                reindexTierMembership(fragment);
-            }
-            return fragment.isPinned() ? List.of() : List.of(fragment);
-        }
-        return l1.getAll(candidate.fragment().getNamespace()).stream()
-                .map(fragment -> {
-                    if (fragment.clearExpiredPin()) {
-                        l1.put(fragment, false);
-                        indexPin(fragment);
-                        reindexTierMembership(fragment);
-                    }
-                    return fragment;
-                })
-                .filter(fragment -> groupId.equals(fragment.getReasoningChainId()))
-                .filter(fragment -> !fragment.isPinned())
-                .toList();
-    }
-
-    private void handleCaffeineEviction(MemoryFragment fragment, RemovalCause cause) {
-        SemanticEvictionPolicy.EvictionCandidate candidate = evictionPolicy.scoreFragment(fragment, null);
-        evictionDecisionLogger.logFallbackEviction(candidate, fragment.getNamespace(), cause.name());
-        regretTracker.recordEviction(fragment, "caffeine-" + cause.name().toLowerCase(Locale.ROOT));
-        persistenceManager.persistAsync(fragment, "caffeine-" + cause.name().toLowerCase(Locale.ROOT));
-    }
-
-    private List<ScoredCandidate> rankForRecall(
-            List<MemoryFragment> candidates,
-            float[] queryEmbedding,
-            AdaptiveWeightProfile profile) {
-        Map<String, RedundancyStats> redundancyStats = computeRedundancyStats(candidates);
-        return candidates.stream()
-                .map(fragment -> new ScoredCandidate(
-                        fragment,
-                        scoreForRecall(fragment, queryEmbedding, profile, redundancyStats)))
-                .sorted((a, b) -> Double.compare(b.score(), a.score()))
-                .toList();
-    }
-
-    private double scoreForRecall(
-            MemoryFragment fragment,
-            float[] queryEmbedding,
-            AdaptiveWeightProfile profile,
-            Map<String, RedundancyStats> redundancyStats) {
-        RedundancyStats stats = redundancyStats.getOrDefault(fragment.getId(), new RedundancyStats(0.0, 0.0));
-        return fragment.describeEvictionScore(
-                queryEmbedding,
-                profile.getAlpha(),
-                profile.getBeta(),
-                profile.getGamma(),
-                stats.redundancyPenalty(),
-                stats.noveltyBonus()).totalScore();
-    }
-
-    private List<MemoryFragment> appendCandidate(List<MemoryFragment> candidates, MemoryFragment candidate) {
-        List<MemoryFragment> expanded = new ArrayList<>(candidates);
-        expanded.add(candidate);
-        return expanded;
-    }
-
-    private static double cosineSimilarity(float[] a, float[] b) {
-        if (a == null || b == null || a.length != b.length) return 0.0;
-        double dot = 0, normA = 0, normB = 0;
-        for (int i = 0; i < a.length; i++) {
-            dot += a[i] * b[i];
-            normA += a[i] * a[i];
-            normB += b[i] * b[i];
-        }
-        double denom = Math.sqrt(normA) * Math.sqrt(normB);
-        return denom == 0 ? 0.0 : dot / denom;
-    }
-
-    private void validateL2DimensionCompatibility() {
-        int configuredL2Dimension = l2.vectorDimension();
-        if (configuredL2Dimension <= 0) {
-            return;
-        }
-
-        int effectiveL2Dimension = (l2EmbeddingService != null)
-                ? l2EmbeddingService.dimension()
-                : l1EmbeddingService.dimension();
-
-        if (configuredL2Dimension != effectiveL2Dimension) {
-            String source = (l2EmbeddingService != null) ? "cloud embedding" : "local fallback embedding";
-            throw new IllegalStateException(
-                    "L2 vector dimension mismatch: store expects " + configuredL2Dimension
-                            + " but " + source + " produces " + effectiveL2Dimension
-                            + ". Align vortex.storage.l2.embedding-dim with the active embedding path.");
-        }
-    }
-
-    private MemoryFragment enrichForRecall(MemoryFragment candidate, List<String> requiredTags) {
-        MemoryFragment fragment = findFragment(candidate.getId()).orElse(candidate);
-        return matchesAllTags(fragment, requiredTags) ? fragment : null;
-    }
-
-    private List<String> normalizeTags(List<String> tags) {
-        if (tags == null || tags.isEmpty()) {
-            return List.of();
-        }
-        return tags.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(tag -> !tag.isEmpty())
-                .distinct()
-                .toList();
-    }
-
-    private boolean matchesAllTags(MemoryFragment fragment, List<String> requiredTags) {
-        if (requiredTags.isEmpty()) {
-            return true;
-        }
-        List<String> fragmentTags = fragment.getTags();
-        if (fragmentTags == null || fragmentTags.isEmpty()) {
-            return false;
-        }
-        Set<String> tagSet = fragmentTags.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(tag -> !tag.isEmpty())
-                .collect(Collectors.toSet());
-        return requiredTags.stream().allMatch(tagSet::contains);
-    }
-
-    private Optional<MemoryFragment> findFragment(String fragmentId) {
+    Optional<MemoryFragment> findFragment(String fragmentId) {
         Optional<MemoryFragment> l1Fragment = l1.peek(fragmentId);
         if (l1Fragment.isPresent()) {
             return l1Fragment;
@@ -1007,121 +258,51 @@ public class HierarchicalMemoryController {
         });
     }
 
-    private void rebuildPinIndex() {
-        pinnedTokenCount.set(0L);
-        pinnedFragmentDeadlines.clear();
-        pinExpirations.clear();
-        hotTierIndex.clear();
-        coldTierIndex.clear();
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
-            return;
+    boolean matchesAllTags(MemoryFragment fragment, List<String> requiredTags) {
+        if (requiredTags.isEmpty()) {
+            return true;
         }
-        Map<String, List<MemoryFragment>> fragmentsByNamespace = new HashMap<>();
-        caffeineStore.getAllFragments().forEach(fragment -> {
-            indexPin(fragment);
-            if (fragment.getNamespace() != null && !fragment.getNamespace().isBlank()) {
-                fragmentsByNamespace
-                        .computeIfAbsent(fragment.getNamespace(), ignored -> new ArrayList<>())
-                        .add(fragment);
-            }
-        });
-        fragmentsByNamespace.values().forEach(this::reindexNamespaceTierMembership);
-    }
-
-    private void indexPin(MemoryFragment fragment) {
-        Long previousDeadline = pinnedFragmentDeadlines.get(fragment.getId());
-        Long pinnedUntil = fragment.getPinnedUntil();
-        if (pinnedUntil == null) {
-            removePinIndex(fragment);
-            return;
+        List<String> fragmentTags = fragment.getTags();
+        if (fragmentTags == null || fragmentTags.isEmpty()) {
+            return false;
         }
-        if (pinnedUntil <= System.currentTimeMillis()) {
-            fragment.clearExpiredPin();
-            removePinIndex(fragment);
-            return;
-        }
-        if (previousDeadline == null) {
-            pinnedTokenCount.addAndGet(fragment.getTokenCount());
-        }
-        pinnedFragmentDeadlines.put(fragment.getId(), pinnedUntil);
-        pinExpirations.offer(new PinnedFragmentRef(fragment.getId(), pinnedUntil));
-        trimStalePinEntries(fragment.getId(), pinnedUntil);
-    }
-
-    private void removePinIndex(MemoryFragment fragment) {
-        Long removed = pinnedFragmentDeadlines.remove(fragment.getId());
-        if (removed != null) {
-            pinnedTokenCount.addAndGet(-fragment.getTokenCount());
-        }
-    }
-
-    private Map<String, Long> computeNamespaceTokenUsage(Collection<MemoryFragment> fragments) {
-        return fragments.stream()
-                .filter(fragment -> fragment.getNamespace() != null && !fragment.getNamespace().isBlank())
-                .collect(Collectors.groupingBy(
-                        MemoryFragment::getNamespace,
-                        Collectors.summingLong(MemoryFragment::getTokenCount)));
-    }
-
-    private List<SemanticEvictionPolicy.EvictionCandidate> rankTieredCandidates(
-            Collection<MemoryFragment> candidates,
-            float[] queryEmbedding,
-            long targetTokens) {
-        return rankTieredCandidates(candidates, queryEmbedding, targetTokens, evictionPolicy.defaultProfile());
-    }
-
-    private List<SemanticEvictionPolicy.EvictionCandidate> rankTieredCandidates(
-            Collection<MemoryFragment> candidates,
-            float[] queryEmbedding,
-            long targetTokens,
-            AdaptiveWeightProfile profile) {
-        List<MemoryFragment> filtered = candidates.stream()
+        Set<String> tagSet = fragmentTags.stream()
                 .filter(Objects::nonNull)
-                .filter(fragment -> !fragment.isPinned())
-                .toList();
-        if (filtered.isEmpty()) {
+                .map(String::trim)
+                .filter(tag -> !tag.isEmpty())
+                .collect(Collectors.toSet());
+        return requiredTags.stream().allMatch(tagSet::contains);
+    }
+
+    List<String> normalizeTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
             return List.of();
         }
-        TieredCandidatePool pool = resolveTieredCandidatePool(filtered);
-        List<MemoryFragment> scoped = pool.coldTier();
-        if (scoped.isEmpty()) {
-            scoped = pool.hotTier();
-        }
-        List<SemanticEvictionPolicy.EvictionCandidate> ranked = evictionPolicy.rankCandidates(scoped, queryEmbedding, profile);
-        long coldCoverage = coveredTokens(ranked);
-        boolean coldOnly = !pool.coldTier().isEmpty() && (coldCoverage >= targetTokens || pool.hotTier().isEmpty());
-        boolean hotOnly = pool.coldTier().isEmpty() && !pool.hotTier().isEmpty();
-        if (coldOnly || hotOnly) {
-            sloTracker.recordTieredSelection(coldOnly, hotOnly, false);
-            return ranked;
-        }
-        List<MemoryFragment> expanded = new ArrayList<>(pool.coldTier());
-        expanded.addAll(limitHotTier(pool.hotTier(), targetTokens - coldCoverage));
-        sloTracker.recordTieredSelection(false, false, true);
-        return evictionPolicy.rankCandidates(expanded, queryEmbedding, profile);
-    }
-
-    private List<String> rankEvictionForEvaluation(
-            Collection<MemoryFragment> candidates,
-            float[] queryEmbedding,
-            AdaptiveWeightProfile profile) {
-        return rankTieredCandidates(candidates, queryEmbedding, Long.MAX_VALUE, profile).stream()
-                .map(candidate -> candidate.fragment().getId())
+        return tags.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(tag -> !tag.isEmpty())
+                .distinct()
                 .toList();
     }
 
-    private Integer extractArmIndex(String profileName) {
-        return parseProfileSuffix(profileName, "arm");
+    private void handleCaffeineEviction(MemoryFragment fragment, RemovalCause cause) {
+        SemanticEvictionPolicy.EvictionCandidate candidate = evictionPolicy.scoreFragment(fragment, null);
+        evictionDecisionLogger.logFallbackEviction(candidate, fragment.getNamespace(), cause.name());
+        regretTracker.recordEviction(fragment, "caffeine-" + cause.name().toLowerCase(Locale.ROOT));
+        persistenceManager.persistAsync(fragment, "caffeine-" + cause.name().toLowerCase(Locale.ROOT));
     }
 
-    private void ensureL1Embedding(MemoryFragment fragment) {
+    // ---- Embedding helpers ----
+
+    void ensureL1Embedding(MemoryFragment fragment) {
         if (fragment.getEmbedding() == null) {
             fragment.setEmbedding(requireEmbedding(l1EmbeddingService, fragment.getContent(),
                     "L1 fragment " + fragment.getId()));
         }
     }
 
-    private void populateOptionalL2Embedding(MemoryFragment fragment) {
+    void populateOptionalL2Embedding(MemoryFragment fragment) {
         if (l2EmbeddingService == null || fragment.getL2Embedding() != null) {
             return;
         }
@@ -1135,7 +316,7 @@ public class HierarchicalMemoryController {
         }
     }
 
-    private float[] resolveL2QueryEmbedding(String query, float[] l1QueryEmbedding) {
+    float[] resolveL2QueryEmbedding(String query, float[] l1QueryEmbedding) {
         if (l2EmbeddingService == null) {
             return l1QueryEmbedding;
         }
@@ -1147,7 +328,7 @@ public class HierarchicalMemoryController {
         }
     }
 
-    private float[] requireEmbedding(EmbeddingService embeddingService, String text, String context) {
+    float[] requireEmbedding(EmbeddingService embeddingService, String text, String context) {
         try {
             return embeddingService.embed(text);
         } catch (EmbeddingException e) {
@@ -1157,12 +338,18 @@ public class HierarchicalMemoryController {
         }
     }
 
-    private double extractSelectionProbability(String profileName) {
+    // ---- Profile parsing ----
+
+    Integer extractArmIndex(String profileName) {
+        return parseProfileSuffix(profileName, "arm");
+    }
+
+    double extractSelectionProbability(String profileName) {
         Integer probabilityEncoded = parseProfileSuffix(profileName, "p");
         return probabilityEncoded == null ? 0.0 : probabilityEncoded / 10_000.0;
     }
 
-    private Integer parseProfileSuffix(String profileName, String marker) {
+    Integer parseProfileSuffix(String profileName, String marker) {
         if (profileName == null) {
             return null;
         }
@@ -1182,380 +369,24 @@ public class HierarchicalMemoryController {
         return Integer.parseInt(profileName.substring(valueStart, valueEnd));
     }
 
-    private TieredCandidatePool resolveTieredCandidatePool(List<MemoryFragment> candidates) {
-        if (candidates.isEmpty()) {
-            return new TieredCandidatePool(List.of(), List.of());
-        }
-        String namespace = candidates.getFirst().getNamespace();
-        if (namespace == null || namespace.isBlank()) {
-            return buildTieredCandidatePool(candidates);
-        }
-        Map<String, MemoryFragment> candidateMap = candidates.stream()
-                .collect(Collectors.toMap(MemoryFragment::getId, fragment -> fragment, (left, right) -> left));
-        Map<String, List<MemoryFragment>> candidateGroups = groupFragments(candidates);
-        List<MemoryFragment> coldTier = collectTierMembers(
-                coldTierIndex.get(namespace),
-                candidateMap,
-                candidateGroups,
-                maxColdTierCandidates);
-        List<MemoryFragment> hotTier = collectTierMembers(
-                hotTierIndex.get(namespace),
-                candidateMap,
-                candidateGroups,
-                Integer.MAX_VALUE);
-        if (coldTier.isEmpty() && hotTier.isEmpty()) {
-            return buildTieredCandidatePool(candidates);
-        }
-        return new TieredCandidatePool(List.copyOf(coldTier), List.copyOf(hotTier));
-    }
+    // ---- Validation ----
 
-    private TieredCandidatePool buildTieredCandidatePool(List<MemoryFragment> candidates) {
-        List<TieredGroupRef> hotGroups = new ArrayList<>();
-        List<TieredGroupRef> coldGroups = new ArrayList<>();
-        Map<String, List<MemoryFragment>> groups = groupFragments(candidates);
-        for (List<MemoryFragment> group : groups.values()) {
-            TieredGroupRef ref = TieredGroupRef.of(group, hotTierRecencyWindowMillis);
-            if (ref == null) {
-                continue;
-            }
-            if (ref.hot()) {
-                hotGroups.add(ref);
-            } else {
-                coldGroups.add(ref);
-            }
-        }
-        Collections.sort(coldGroups);
-        Collections.sort(hotGroups);
-        return new TieredCandidatePool(
-                flattenTierGroups(coldGroups, groups, maxColdTierCandidates),
-                flattenTierGroups(hotGroups, groups, Integer.MAX_VALUE));
-    }
-
-    private List<MemoryFragment> collectTierMembers(
-            NavigableSet<TieredGroupRef> index,
-            Map<String, MemoryFragment> candidateMap,
-            Map<String, List<MemoryFragment>> candidateGroups,
-            int limit) {
-        if (index == null || index.isEmpty()) {
-            return List.of();
-        }
-        List<MemoryFragment> selected = new ArrayList<>();
-        Set<String> selectedIds = new HashSet<>();
-        int selectedGroups = 0;
-        for (TieredGroupRef ref : index) {
-            List<MemoryFragment> group = candidateGroups.get(ref.groupKey());
-            if (group == null || group.isEmpty()) {
-                continue;
-            }
-            List<MemoryFragment> activeMembers = group.stream()
-                    .map(fragment -> candidateMap.get(fragment.getId()))
-                    .filter(Objects::nonNull)
-                    .filter(fragment -> !fragment.isPinned())
-                    .sorted(Comparator
-                            .comparingLong(MemoryFragment::getLastAccessTime)
-                            .thenComparingDouble(MemoryFragment::getImportance)
-                            .thenComparing(MemoryFragment::getId))
-                    .toList();
-            if (activeMembers.isEmpty()) {
-                continue;
-            }
-            for (MemoryFragment fragment : activeMembers) {
-                if (selectedIds.add(fragment.getId())) {
-                    selected.add(fragment);
-                }
-            }
-            selectedGroups++;
-            if (selectedGroups >= limit) {
-                break;
-            }
-        }
-        return selected;
-    }
-
-    private void reindexTierMembership(MemoryFragment fragment) {
-        if (fragment == null || fragment.getNamespace() == null || fragment.getNamespace().isBlank()) {
+    private void validateL2DimensionCompatibility() {
+        int configuredL2Dimension = l2.vectorDimension();
+        if (configuredL2Dimension <= 0) {
             return;
         }
-        List<MemoryFragment> namespaceFragments = l1.getAll(fragment.getNamespace());
-        if (namespaceFragments.isEmpty()) {
-            removeFromTierIndexes(fragment);
-            return;
-        }
-        reindexNamespaceTierMembership(namespaceFragments);
-    }
 
-    private void removeFromTierIndexes(MemoryFragment fragment) {
-        if (fragment == null || fragment.getNamespace() == null || fragment.getNamespace().isBlank()) {
-            return;
-        }
-        String groupKey = groupKey(fragment);
-        removeTierRef(hotTierIndex.get(fragment.getNamespace()), groupKey);
-        removeTierRef(coldTierIndex.get(fragment.getNamespace()), groupKey);
-    }
+        int effectiveL2Dimension = (l2EmbeddingService != null)
+                ? l2EmbeddingService.dimension()
+                : l1EmbeddingService.dimension();
 
-    private void removeTierRef(NavigableSet<TieredGroupRef> index, String groupKey) {
-        if (index == null || groupKey == null) {
-            return;
-        }
-        index.removeIf(ref -> groupKey.equals(ref.groupKey()));
-    }
-
-    private boolean isHot(MemoryFragment fragment) {
-        return System.currentTimeMillis() - fragment.getLastAccessTime() <= hotTierRecencyWindowMillis;
-    }
-
-    private List<MemoryFragment> limitHotTier(List<MemoryFragment> hotTier, long remainingTokens) {
-        int maxGroups = Math.max(1, maxColdTierCandidates * hotTierExpansionFactor);
-        Map<String, List<MemoryFragment>> groups = hotTier.stream()
-                .collect(Collectors.groupingBy(this::groupKey, LinkedHashMap::new, Collectors.toList()));
-        List<MemoryFragment> selected = new ArrayList<>();
-        long covered = 0L;
-        int selectedGroups = 0;
-        for (List<MemoryFragment> group : groups.values()) {
-            if (selectedGroups >= maxGroups) {
-                break;
-            }
-            selected.addAll(group);
-            covered += group.stream().mapToLong(MemoryFragment::getTokenCount).sum();
-            selectedGroups++;
-            if (covered >= remainingTokens && selectedGroups >= Math.min(groups.size(), hotTierExpansionFactor)) {
-                break;
-            }
-        }
-        return selected;
-    }
-
-    private List<MemoryFragment> flattenTierGroups(
-            List<TieredGroupRef> groupOrder,
-            Map<String, List<MemoryFragment>> groups,
-            int maxGroups) {
-        List<MemoryFragment> selected = new ArrayList<>();
-        int selectedGroups = 0;
-        for (TieredGroupRef ref : groupOrder) {
-            List<MemoryFragment> members = groups.get(ref.groupKey());
-            if (members == null || members.isEmpty()) {
-                continue;
-            }
-            selected.addAll(members.stream()
-                    .filter(fragment -> !fragment.isPinned())
-                    .sorted(Comparator
-                            .comparingLong(MemoryFragment::getLastAccessTime)
-                            .thenComparingDouble(MemoryFragment::getImportance)
-                            .thenComparing(MemoryFragment::getId))
-                    .toList());
-            selectedGroups++;
-            if (selectedGroups >= maxGroups) {
-                break;
-            }
-        }
-        return List.copyOf(selected);
-    }
-
-    private long coveredTokens(List<SemanticEvictionPolicy.EvictionCandidate> ranked) {
-        long covered = 0L;
-        Set<String> groups = new HashSet<>();
-        for (SemanticEvictionPolicy.EvictionCandidate candidate : ranked) {
-            String groupKey = groupKey(candidate.fragment());
-            if (groups.add(groupKey)) {
-                covered += candidate.groupTokenCount();
-            }
-        }
-        return covered;
-    }
-
-    private void rebuildTierIndexes() {
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
-            return;
-        }
-        Map<String, List<MemoryFragment>> fragmentsByNamespace = caffeineStore.getAllFragments().stream()
-                .filter(fragment -> fragment.getNamespace() != null && !fragment.getNamespace().isBlank())
-                .collect(Collectors.groupingBy(MemoryFragment::getNamespace));
-        hotTierIndex.clear();
-        coldTierIndex.clear();
-        fragmentsByNamespace.values().forEach(this::reindexNamespaceTierMembership);
-    }
-
-    private void reindexNamespaceTierMembership(List<MemoryFragment> namespaceFragments) {
-        if (namespaceFragments == null || namespaceFragments.isEmpty()) {
-            return;
-        }
-        String namespace = namespaceFragments.getFirst().getNamespace();
-        if (namespace == null || namespace.isBlank()) {
-            return;
-        }
-        NavigableSet<TieredGroupRef> hotGroups = new TreeSet<>();
-        NavigableSet<TieredGroupRef> coldGroups = new TreeSet<>();
-        for (List<MemoryFragment> group : groupFragments(namespaceFragments).values()) {
-            TieredGroupRef ref = TieredGroupRef.of(group, hotTierRecencyWindowMillis);
-            if (ref == null) {
-                continue;
-            }
-            if (ref.hot()) {
-                hotGroups.add(ref);
-            } else {
-                coldGroups.add(ref);
-            }
-        }
-        if (hotGroups.isEmpty()) {
-            hotTierIndex.remove(namespace);
-        } else {
-            hotTierIndex.put(namespace, hotGroups);
-        }
-        if (coldGroups.isEmpty()) {
-            coldTierIndex.remove(namespace);
-        } else {
-            coldTierIndex.put(namespace, coldGroups);
-        }
-    }
-
-    private Map<String, List<MemoryFragment>> groupFragments(Collection<MemoryFragment> fragments) {
-        return fragments.stream()
-                .filter(Objects::nonNull)
-                .collect(Collectors.groupingBy(this::groupKey));
-    }
-
-    private String groupKey(MemoryFragment fragment) {
-        return groupKeyOf(fragment);
-    }
-
-    private Map<String, RedundancyStats> computeRedundancyStats(List<MemoryFragment> candidates) {
-        if (candidates.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, RedundancyStats> stats = new HashMap<>();
-        for (MemoryFragment fragment : candidates) {
-            double maxPenalty = 0.0;
-            double minNovelty = Double.POSITIVE_INFINITY;
-            boolean hasPeer = false;
-            for (MemoryFragment other : candidates) {
-                if (other == fragment) {
-                    continue;
-                }
-                hasPeer = true;
-                maxPenalty = Math.max(maxPenalty, fragment.redundancyPenaltyAgainst(other));
-                minNovelty = Math.min(minNovelty, fragment.noveltyBonusAgainst(other));
-            }
-            stats.put(fragment.getId(), new RedundancyStats(
-                    maxPenalty,
-                    hasPeer ? minNovelty : 0.0));
-        }
-        return stats;
-    }
-
-    private void trimStalePinEntries(String fragmentId, long activeDeadline) {
-        if (pinExpirations.size() <= pinnedFragmentDeadlines.size() * 4L + 32L) {
-            return;
-        }
-        pinExpirations.removeIf(ref -> ref.fragmentId().equals(fragmentId)
-                && ref.pinnedUntilEpochMillis() != activeDeadline);
-    }
-
-    private record RedundancyStats(double redundancyPenalty, double noveltyBonus) {}
-
-    private record TieredCandidatePool(List<MemoryFragment> coldTier, List<MemoryFragment> hotTier) {}
-
-    private record TieredGroupRef(
-            String groupKey,
-            long lastAccessTime,
-            double importance,
-            boolean hot)
-            implements Comparable<TieredGroupRef> {
-        private static TieredGroupRef of(List<MemoryFragment> group, long hotTierRecencyWindowMillis) {
-            if (group == null || group.isEmpty()) {
-                return null;
-            }
-            List<MemoryFragment> activeMembers = group.stream()
-                    .filter(fragment -> !fragment.isPinned())
-                    .toList();
-            if (activeMembers.isEmpty()) {
-                return null;
-            }
-            long mostRecentAccess = activeMembers.stream()
-                    .mapToLong(MemoryFragment::getLastAccessTime)
-                    .max()
-                    .orElse(0L);
-            double averageImportance = activeMembers.stream()
-                    .mapToDouble(MemoryFragment::getImportance)
-                    .average()
-                    .orElse(0.0);
-            MemoryFragment representative = activeMembers.stream()
-                    .max(Comparator.comparingLong(MemoryFragment::getLastAccessTime)
-                            .thenComparingDouble(MemoryFragment::getImportance)
-                            .thenComparing(MemoryFragment::getId))
-                    .orElse(activeMembers.getFirst());
-            return new TieredGroupRef(
-                    groupKeyOf(representative),
-                    mostRecentAccess,
-                    averageImportance,
-                    System.currentTimeMillis() - mostRecentAccess <= hotTierRecencyWindowMillis);
-        }
-
-        @Override
-        public int compareTo(TieredGroupRef other) {
-            int byAccess = Long.compare(this.lastAccessTime, other.lastAccessTime);
-            if (byAccess != 0) {
-                return byAccess;
-            }
-            int byImportance = Double.compare(this.importance, other.importance);
-            if (byImportance != 0) {
-                return byImportance;
-            }
-            return this.groupKey.compareTo(other.groupKey);
-        }
-    }
-
-    private static String groupKeyOf(MemoryFragment fragment) {
-        String reasoningChainId = fragment.getReasoningChainId();
-        if (reasoningChainId == null || reasoningChainId.isBlank()) {
-            return "__self__:" + fragment.getId();
-        }
-        return reasoningChainId;
-    }
-
-    private static final class IncrementalRedundancyState {
-        private final List<MemoryFragment> fragments = new ArrayList<>();
-        private final Map<String, RedundancyStats> stats = new HashMap<>();
-
-        private static IncrementalRedundancyState from(List<MemoryFragment> initial) {
-            IncrementalRedundancyState state = new IncrementalRedundancyState();
-            for (MemoryFragment fragment : initial) {
-                state.add(fragment);
-            }
-            return state;
-        }
-
-        private void add(MemoryFragment candidate) {
-            double candidateMaxPenalty = 0.0;
-            double candidateMinNovelty = Double.POSITIVE_INFINITY;
-            boolean hasPeer = false;
-            for (MemoryFragment existing : fragments) {
-                hasPeer = true;
-                double candidatePenalty = candidate.redundancyPenaltyAgainst(existing);
-                double candidateNovelty = candidate.noveltyBonusAgainst(existing);
-                candidateMaxPenalty = Math.max(candidateMaxPenalty, candidatePenalty);
-                candidateMinNovelty = Math.min(candidateMinNovelty, candidateNovelty);
-
-                RedundancyStats previous = stats.getOrDefault(existing.getId(), new RedundancyStats(0.0, 0.0));
-                double updatedPenalty = Math.max(previous.redundancyPenalty(), existing.redundancyPenaltyAgainst(candidate));
-                double updatedNovelty = fragments.size() == 1
-                        ? existing.noveltyBonusAgainst(candidate)
-                        : Math.min(previous.noveltyBonus(), existing.noveltyBonusAgainst(candidate));
-                stats.put(existing.getId(), new RedundancyStats(updatedPenalty, updatedNovelty));
-            }
-            stats.put(candidate.getId(), new RedundancyStats(candidateMaxPenalty, hasPeer ? candidateMinNovelty : 0.0));
-            fragments.add(candidate);
-        }
-
-        private Map<String, RedundancyStats> snapshot() {
-            return Map.copyOf(stats);
-        }
-    }
-
-    private record PinnedFragmentRef(String fragmentId, long pinnedUntilEpochMillis)
-            implements Comparable<PinnedFragmentRef> {
-        @Override
-        public int compareTo(PinnedFragmentRef other) {
-            return Long.compare(this.pinnedUntilEpochMillis, other.pinnedUntilEpochMillis);
+        if (configuredL2Dimension != effectiveL2Dimension) {
+            String source = (l2EmbeddingService != null) ? "cloud embedding" : "local fallback embedding";
+            throw new IllegalStateException(
+                    "L2 vector dimension mismatch: store expects " + configuredL2Dimension
+                            + " but " + source + " produces " + effectiveL2Dimension
+                            + ". Align vortex.storage.l2.embedding-dim with the active embedding path.");
         }
     }
 }

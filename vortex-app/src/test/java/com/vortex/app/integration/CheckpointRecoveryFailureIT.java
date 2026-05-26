@@ -36,9 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         classes = {VortexApplication.class, CheckpointRecoveryFailureIT.TestEmbeddingConfig.class},
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
-                "spring.main.allow-bean-definition-overriding=true",
-                "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
-                        + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration"
+                "spring.main.allow-bean-definition-overriding=true"
         })
 @Import(IsolatedIntegrationTestSupport.Config.class)
 @ContextConfiguration(initializers = IsolatedIntegrationTestSupport.Initializer.class)
@@ -110,7 +108,7 @@ class CheckpointRecoveryFailureIT {
     void getTaskWhenLazyRecoveryFails_returns500() {
         String taskId = createTask("lazy-recover-failure-" + UUID.randomUUID());
         checkpoint(taskId);
-        snapshotService.evictFromCacheForTest(taskId);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(snapshotService, "evictFromCacheForTest", taskId);
         failingRecoveryStore.failMetadataReadsForTask(taskId);
 
         ResponseEntity<Map> getTaskResponse = restTemplate.getForEntity(

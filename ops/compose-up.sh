@@ -35,19 +35,6 @@ cd "${ROOT_DIR}"
 echo "Starting docker compose dependencies"
 docker compose up -d
 
-echo "Checking Redis"
-for ((i=1; i<=30; i++)); do
-  if docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
-    echo "Redis is healthy"
-    break
-  fi
-  if [[ "$i" -eq 30 ]]; then
-    echo "Redis did not become healthy" >&2
-    exit 1
-  fi
-  sleep 2
-done
-
 wait_http "etcd" "http://localhost:2379/health"
 wait_http "MinIO" "http://localhost:9000/minio/health/live"
 wait_http "Milvus" "http://localhost:9091/healthz" 90 3
@@ -59,7 +46,11 @@ Compose dependencies are ready.
 Next steps:
 1. Start the application:
    mvn spring-boot:run -pl vortex-app
-2. Run the API walkthrough:
+2. Verify observability endpoints:
+   curl http://localhost:8080/api/v1/memory/health
+   curl http://localhost:8080/api/v1/memory/health/catalog
+   curl http://localhost:8080/actuator/prometheus
+3. Run the API walkthrough:
    BASE_URL=http://localhost:8080 bash ops/demo.sh
 
 For the default automated regression, you usually do not need this script:

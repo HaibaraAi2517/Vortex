@@ -36,12 +36,15 @@ class SemanticPageTableTest {
                 "fragment-a", page.getPageId(),
                 "fragment-b", page.getPageId(),
                 "fragment-c", page.getPageId());
-        Map<String, java.util.Set<String>> dagNodeToPages = Map.of(
-                "node-1", new HashSet<>(java.util.Set.of(page.getPageId())));
+        Map<String, String> fragmentToPageWithOrphan = new HashMap<>(fragmentToPage);
+        fragmentToPageWithOrphan.put("fragment-orphan", "missing-page");
+        Map<String, java.util.Set<String>> dagNodeToPages = new HashMap<>();
+        dagNodeToPages.put("node-1", new HashSet<>(java.util.Set.of(page.getPageId())));
+        dagNodeToPages.put("node-orphan", new HashSet<>(java.util.Set.of("missing-page")));
         SemanticPageTable.PageTableSnapshot snapshot = new SemanticPageTable.PageTableSnapshot(
                 new HashMap<>(pages),
-                new HashMap<>(fragmentToPage),
-                new HashMap<>(dagNodeToPages),
+                fragmentToPageWithOrphan,
+                dagNodeToPages,
                 2L);
         l3.putBytes(SemanticPageTable.DEFAULT_PAGE_TABLE_KEY, new KryoSerializer().serialize(snapshot));
 
@@ -55,7 +58,9 @@ class SemanticPageTableTest {
                 .containsExactlyInAnyOrder("fragment-a", "fragment-b", "fragment-c");
         assertThat(loaded.orElseThrow().getDagNodeIds()).containsExactly("node-1");
         assertThat(reader.lookup("fragment-c")).contains("page-1");
+        assertThat(reader.lookup("fragment-orphan")).isEmpty();
         assertThat(reader.lookupPagesForDagNode("node-1")).containsExactly("page-1");
+        assertThat(reader.lookupPagesForDagNode("node-orphan")).isEmpty();
     }
 
     @Test
@@ -99,6 +104,26 @@ class SemanticPageTableTest {
         assertThat(reloaded.lookup("f-9")).isPresent();
         assertThat(reloaded.lookup("f-10")).isPresent();
         assertThat(reloaded.allPages()).hasSize(initialPageCount);
+    }
+
+    @Test
+    void incrementalAssignmentCreatesNewPageWhenNearestPageIsTooFar() {
+        RecordingL3ColdStore l3 = new RecordingL3ColdStore();
+        SemanticPageTable table = new SemanticPageTable(l3, SemanticPageTable.DEFAULT_PAGE_TABLE_KEY, 0.05);
+
+        List<MemoryFragment> initialFragments = List.of(
+                fragment("near-a", 1.0f, 0.0f),
+                fragment("near-b", 0.99f, 0.01f),
+                fragment("near-c", 0.98f, 0.02f),
+                fragment("near-d", 0.97f, 0.03f));
+        table.buildPagesFromFragments(initialFragments);
+        int initialPageCount = table.allPages().size();
+
+        List<SemanticPage> updatedPages = table.buildPagesFromFragments(List.of(fragment("far-away", 0.0f, 1.0f)));
+
+        assertThat(updatedPages).hasSize(1);
+        assertThat(table.allPages()).hasSize(initialPageCount + 1);
+        assertThat(table.lookup("far-away")).isPresent();
     }
 
     private static MemoryFragment fragment(String id, float x, float y) {

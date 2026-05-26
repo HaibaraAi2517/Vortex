@@ -7,7 +7,10 @@ import com.vortex.storage.api.L2WarmStore;
 import com.vortex.storage.api.L3ColdStore;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -19,13 +22,14 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@ExtendWith(OutputCaptureExtension.class)
 class FragmentPersistenceManagerTest {
 
     @TempDir
     Path tempDir;
 
     @Test
-    void failedPersistenceIsQueuedAndCanBeReplayed() {
+    void failedPersistenceIsQueuedAndCanBeReplayed(CapturedOutput output) {
         ToggleableL2WarmStore l2 = new ToggleableL2WarmStore();
         RecordingL3ColdStore l3 = new RecordingL3ColdStore();
         FileBackedDeadLetterQueue queue = new FileBackedDeadLetterQueue(
@@ -54,6 +58,11 @@ class FragmentPersistenceManagerTest {
 
         assertThat(queue.size()).isEqualTo(1);
         assertThat(l3.archivedIds).isEmpty();
+        assertThat(output.toString()).contains("memory_durability_degraded");
+        assertThat(output.toString()).contains("healthCode=memory_persistence_success_rate_low");
+        assertThat(output.toString()).contains("chain=memory-persistence");
+        assertThat(output.toString()).contains("phase=l2-upsert");
+        assertThat(output.toString()).contains("severity=warning");
 
         l2.failWrites = false;
         manager.replayPendingTasks();
@@ -62,6 +71,8 @@ class FragmentPersistenceManagerTest {
         assertThat(l2.upsertedIds).containsExactly("persist-me");
         assertThat(l3.archivedIds).containsExactly("persist-me");
         assertThat(processed.size()).isEqualTo(1);
+        assertThat(output.toString()).contains("memory_durability_recovered");
+        assertThat(output.toString()).contains("phase=complete");
     }
 
     @Test
@@ -141,7 +152,7 @@ class FragmentPersistenceManagerTest {
     }
 
     @Test
-    void exhaustedDlqTaskIsDroppedAfterMaxAttempts() {
+    void exhaustedDlqTaskIsDroppedAfterMaxAttempts(CapturedOutput output) {
         ToggleableL2WarmStore l2 = new ToggleableL2WarmStore();
         l2.failWrites = true;
         RecordingL3ColdStore l3 = new RecordingL3ColdStore();
@@ -176,6 +187,10 @@ class FragmentPersistenceManagerTest {
         assertThat(l2.upsertedIds).isEmpty();
         assertThat(l3.archivedIds).isEmpty();
         assertThat(processed.size()).isZero();
+        assertThat(output.toString()).contains("memory_durability_degraded");
+        assertThat(output.toString()).contains("healthCode=memory_persistence_success_rate_low");
+        assertThat(output.toString()).contains("phase=dlq-drop");
+        assertThat(output.toString()).contains("severity=critical");
     }
 
     @Test

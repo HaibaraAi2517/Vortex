@@ -2,17 +2,24 @@ package com.vortex.app.controller;
 
 import com.vortex.common.model.*;
 import com.vortex.kernel.snapshot.SnapshotService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/tasks")
 @RequiredArgsConstructor
+@Tag(name = "Tasks", description = "Task DAG lifecycle, branching, checkpointing, and recovery APIs")
 public class TaskController {
 
     private final SnapshotService snapshotService;
@@ -20,16 +27,23 @@ public class TaskController {
     // ---- Task Lifecycle ----
 
     @PostMapping
-    public ResponseEntity<TaskState> createTask(@RequestBody CreateTaskRequest req) {
+    @Operation(summary = "Create a task")
+    public ResponseEntity<TaskState> createTask(@Valid @RequestBody CreateTaskRequest req) {
         return ResponseEntity.ok(snapshotService.createTask(req.description(), req.namespace()));
     }
 
     @GetMapping
-    public ResponseEntity<List<TaskState>> listTasks() {
-        return ResponseEntity.ok(snapshotService.listActiveTasks());
+    @Operation(summary = "List active tasks with pagination")
+    public ResponseEntity<TaskPageResponse> listTasks(
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "50") int size) {
+        SnapshotService.TaskPage result = snapshotService.listActiveTasks(page, size);
+        return ResponseEntity.ok(new TaskPageResponse(
+                result.items(), result.page(), result.size(), result.total(), result.hasNext()));
     }
 
     @GetMapping("/{taskId}")
+    @Operation(summary = "Get a task by ID")
     public ResponseEntity<TaskState> getTask(@PathVariable("taskId") String taskId) {
         return snapshotService.getTask(taskId)
                 .map(ResponseEntity::ok)
@@ -37,20 +51,29 @@ public class TaskController {
     }
 
     @PostMapping("/{taskId}/complete")
+    @Operation(summary = "Mark a task as completed")
     public ResponseEntity<Map<String, String>> completeTask(@PathVariable("taskId") String taskId) {
         snapshotService.completeTask(taskId);
         return ResponseEntity.ok(Map.of("taskId", taskId, "status", "COMPLETED"));
     }
 
+    @PostMapping("/{taskId}/fail")
+    @Operation(summary = "Mark a task as failed")
+    public ResponseEntity<Map<String, String>> failTask(@PathVariable("taskId") String taskId) {
+        snapshotService.failTask(taskId);
+        return ResponseEntity.ok(Map.of("taskId", taskId, "status", "FAILED"));
+    }
+
     // ---- DAG Node Operations ----
 
     @PostMapping("/{taskId}/nodes")
+    @Operation(summary = "Append a DAG node")
     public ResponseEntity<DagNode> appendNode(
             @PathVariable("taskId") String taskId,
-            @RequestBody AppendNodeRequest req) {
+            @Valid @RequestBody AppendNodeRequest req) {
         if (req.targetNodeId() != null) {
             DagEdge.EdgeType edgeType = req.edgeType() != null
-                    ? DagEdge.EdgeType.valueOf(req.edgeType().toUpperCase())
+                    ? DagEdge.EdgeType.valueOf(req.edgeType().toUpperCase(Locale.ROOT))
                     : DagEdge.EdgeType.CONTROL_DEP;
             return ResponseEntity.ok(snapshotService.appendNodeWithTarget(
                     taskId, req.type(), req.content(), req.targetNodeId(), edgeType));
@@ -59,62 +82,87 @@ public class TaskController {
     }
 
     @PostMapping("/{taskId}/nodes/complete")
+    @Operation(summary = "Complete a DAG node")
     public ResponseEntity<DagNode> completeNode(
             @PathVariable("taskId") String taskId,
-            @RequestBody CompleteNodeRequest req) {
+            @Valid @RequestBody CompleteNodeRequest req) {
         return ResponseEntity.ok(snapshotService.completeNode(taskId, req.nodeId(), req.result()));
     }
 
     @PostMapping("/{taskId}/nodes/edge")
+    @Operation(summary = "Add an edge between two DAG nodes")
     public ResponseEntity<DagEdge> addEdge(
             @PathVariable("taskId") String taskId,
-            @RequestBody AddEdgeRequest req) {
+            @Valid @RequestBody AddEdgeRequest req) {
         DagEdge.EdgeType edgeType = req.dependencyType() != null
-                ? DagEdge.EdgeType.valueOf(req.dependencyType().toUpperCase())
+                ? DagEdge.EdgeType.valueOf(req.dependencyType().toUpperCase(Locale.ROOT))
                 : DagEdge.EdgeType.CONTROL_DEP;
         return ResponseEntity.ok(snapshotService.addEdge(
                 taskId, req.sourceNodeId(), req.targetNodeId(), edgeType, req.condition()));
     }
 
+    @PutMapping("/{taskId}/context")
+    @Operation(summary = "Upsert or delete a task context entry")
+    public ResponseEntity<Map<String, String>> updateContext(
+            @PathVariable("taskId") String taskId,
+            @Valid @RequestBody UpdateContextRequest req) {
+        snapshotService.updateContext(taskId, req.key(), req.value());
+        return ResponseEntity.ok(Map.of("taskId", taskId, "key", req.key()));
+    }
+
     // ---- Checkpoint & Recovery ----
 
     @PostMapping("/{taskId}/checkpoint")
+    @Operation(summary = "Create a checkpoint for a task")
     public ResponseEntity<Map<String, String>> checkpoint(@PathVariable("taskId") String taskId) {
         String checkpointId = snapshotService.checkpoint(taskId);
         return ResponseEntity.ok(Map.of("taskId", taskId, "checkpointId", checkpointId));
     }
 
     @GetMapping("/{taskId}/checkpoints")
+    @Operation(summary = "List checkpoints for a task")
     public ResponseEntity<List<CheckpointMetadata>> listCheckpoints(@PathVariable("taskId") String taskId) {
         return ResponseEntity.ok(snapshotService.listCheckpoints(taskId));
     }
 
     @PostMapping("/{taskId}/recover")
+    @Operation(summary = "Recover a task from a checkpoint or latest durable state")
     public ResponseEntity<TaskState> recover(
             @PathVariable("taskId") String taskId,
-            @RequestBody(required = false) Map<String, String> body) {
-        String checkpointId = (body != null) ? body.get("checkpointId") : null;
-        return ResponseEntity.ok(snapshotService.recover(taskId, checkpointId));
+            @Valid @RequestBody(required = false) RecoverRequest body) {
+        return ResponseEntity.ok(snapshotService.recover(taskId, body != null ? body.checkpointId() : null));
     }
 
     // ---- Branching ----
 
     @GetMapping("/{taskId}/branches")
+    @Operation(summary = "List branches for a task")
     public ResponseEntity<List<TaskBranch>> listBranches(@PathVariable("taskId") String taskId) {
         return ResponseEntity.ok(snapshotService.listBranches(taskId));
     }
 
     @PostMapping("/{taskId}/branch")
+    @Operation(summary = "Create a branch from a DAG node")
     public ResponseEntity<TaskBranch> createBranch(
             @PathVariable("taskId") String taskId,
-            @RequestBody CreateBranchRequest req) {
+            @Valid @RequestBody CreateBranchRequest req) {
         return ResponseEntity.ok(snapshotService.createBranch(taskId, req.branchName(), req.sourceNodeId()));
     }
 
+    @PostMapping("/{taskId}/branch/switch")
+    @Operation(summary = "Switch the active branch")
+    public ResponseEntity<Map<String, String>> switchBranch(
+            @PathVariable("taskId") String taskId,
+            @Valid @RequestBody SwitchBranchRequest req) {
+        snapshotService.switchBranch(taskId, req.branchId());
+        return ResponseEntity.ok(Map.of("taskId", taskId, "branchId", req.branchId()));
+    }
+
     @PostMapping("/{taskId}/merge")
+    @Operation(summary = "Merge a branch into another branch")
     public ResponseEntity<TaskBranch> mergeBranch(
             @PathVariable("taskId") String taskId,
-            @RequestBody MergeBranchRequest req) {
+            @Valid @RequestBody MergeBranchRequest req) {
         return ResponseEntity.ok(snapshotService.mergeBranch(
                 taskId, req.sourceBranchId(), req.targetBranchId()));
     }
@@ -122,6 +170,7 @@ public class TaskController {
     // ---- DAG Visualization ----
 
     @GetMapping(value = "/{taskId}/dag", produces = MediaType.TEXT_PLAIN_VALUE)
+    @Operation(summary = "Export a task DAG in Graphviz DOT format")
     public ResponseEntity<String> exportDag(
             @PathVariable("taskId") String taskId,
             @RequestParam(name = "branchId", required = false) String branchId) {
@@ -133,25 +182,48 @@ public class TaskController {
 
     // ---- Request DTOs ----
 
-    public record CreateTaskRequest(String description, String namespace) {}
+    public record CreateTaskRequest(
+            @NotBlank @Size(max = 4_000) String description,
+            @NotBlank @Size(max = 128) String namespace) {}
 
     public record AppendNodeRequest(
-            String type,
-            String content,
+            @NotBlank @Size(max = 32) String type,
+            @NotBlank @Size(max = 20_000) String content,
             /** Optional: create edge to this existing node. */
-            String targetNodeId,
+            @Size(max = 128) String targetNodeId,
             /** Optional: edge type (CONTROL_DEP, DATA_DEP, BRANCH). Defaults to CONTROL_DEP. */
-            String edgeType) {}
+            @Size(max = 32) String edgeType) {}
 
-    public record CompleteNodeRequest(String nodeId, String result) {}
+    public record CompleteNodeRequest(
+            @NotBlank @Size(max = 128) String nodeId,
+            @Size(max = 20_000) String result) {}
+
+    public record UpdateContextRequest(
+            @NotBlank @Size(max = 128) String key,
+            @Size(max = 20_000) String value) {}
 
     public record AddEdgeRequest(
-            String sourceNodeId,
-            String targetNodeId,
-            String dependencyType,
-            String condition) {}
+            @NotBlank @Size(max = 128) String sourceNodeId,
+            @NotBlank @Size(max = 128) String targetNodeId,
+            @Size(max = 32) String dependencyType,
+            @Size(max = 2_000) String condition) {}
 
-    public record CreateBranchRequest(String branchName, String sourceNodeId) {}
+    public record RecoverRequest(@Size(max = 128) String checkpointId) {}
 
-    public record MergeBranchRequest(String sourceBranchId, String targetBranchId) {}
+    public record CreateBranchRequest(
+            @NotBlank @Size(max = 128) String branchName,
+            @NotBlank @Size(max = 128) String sourceNodeId) {}
+
+    public record SwitchBranchRequest(@NotBlank @Size(max = 128) String branchId) {}
+
+    public record MergeBranchRequest(
+            @NotBlank @Size(max = 128) String sourceBranchId,
+            @NotBlank @Size(max = 128) String targetBranchId) {}
+
+    public record TaskPageResponse(
+            List<TaskState> items,
+            int page,
+            int size,
+            long total,
+            boolean hasNext) {}
 }

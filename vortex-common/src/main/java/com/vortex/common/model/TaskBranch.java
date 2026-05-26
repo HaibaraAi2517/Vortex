@@ -27,6 +27,9 @@ public class TaskBranch {
     /** The DAG node from which this branch was forked. */
     private String sourceNodeId;
 
+    /** The explicit FORK node inserted into the DAG for this branch. */
+    private String forkNodeId;
+
     @Builder.Default
     private Instant branchedAt = Instant.now();
 

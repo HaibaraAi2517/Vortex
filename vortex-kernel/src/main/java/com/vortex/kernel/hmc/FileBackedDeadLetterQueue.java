@@ -1,6 +1,8 @@
 package com.vortex.kernel.hmc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vortex.common.health.MemoryHealthCodes;
+import com.vortex.kernel.health.MemoryDurabilityLogSupport;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -60,8 +62,6 @@ public class FileBackedDeadLetterQueue {
             task.setAttemptCount(task.getAttemptCount() + 1);
             task.setLastFailure(failure == null ? null : failure.getMessage());
             if (task.getAttemptCount() >= maxAttempts) {
-                log.error("Dropping DLQ task after reaching max attempts idempotencyKey={} attempts={} failure={}",
-                        task.getIdempotencyKey(), task.getAttemptCount(), task.getLastFailure());
                 return false;
             }
             appendTask(task);
@@ -92,8 +92,24 @@ public class FileBackedDeadLetterQueue {
                 task.setLastFailure(ex.getMessage());
                 if (task.getAttemptCount() >= maxAttempts) {
                     discarded++;
-                    log.error("Dropping DLQ task after replay attempts exhausted idempotencyKey={} attempts={} failure={}",
-                            task.getIdempotencyKey(), task.getAttemptCount(), task.getLastFailure());
+                    MemoryDurabilityLogSupport.logCritical(
+                            log,
+                            MemoryHealthCodes.MEMORY_PERSISTENCE_SUCCESS_RATE_LOW,
+                            MemoryDurabilityLogSupport.CHAIN_MEMORY_PERSISTENCE,
+                            MemoryDurabilityLogSupport.PHASE_DLQ_DROP,
+                            null,
+                            null,
+                            task.getFragment() == null ? null : task.getFragment().getId(),
+                            task.getIdempotencyKey(),
+                            null,
+                            "DLQ_MAX_ATTEMPTS_EXHAUSTED",
+                            "DLQ replay discarded a persistence task after exhausting the retry budget.",
+                            ex,
+                            Map.of(
+                                    "attempts", task.getAttemptCount(),
+                                    "reason", task.getReason(),
+                                    "lastFailure", safe(task.getLastFailure()),
+                                    "failedPhase", failedPhase(task)));
                 } else {
                     failedTasks.add(task);
                 }
@@ -200,5 +216,19 @@ public class FileBackedDeadLetterQueue {
     }
 
     public record ReplayReport(int recoveredCount, int retriedCount, int discardedCount) {
+    }
+
+    private static String failedPhase(FragmentPersistenceTask task) {
+        if (task == null) {
+            return MemoryDurabilityLogSupport.PHASE_L3_ARCHIVE;
+        }
+        if (!task.isL2Persisted() && task.getFragment() != null && task.getFragment().getEmbedding() != null) {
+            return MemoryDurabilityLogSupport.PHASE_L2_UPSERT;
+        }
+        return MemoryDurabilityLogSupport.PHASE_L3_ARCHIVE;
+    }
+
+    private static String safe(String value) {
+        return value == null || value.isBlank() ? "n/a" : value;
     }
 }

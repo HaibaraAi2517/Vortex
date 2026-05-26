@@ -33,10 +33,14 @@ public class DotGraphExporter {
      * Export a task's DAG to DOT format.
      */
     public String export(DagGraph graph, String taskId) {
+        return export(graph, taskId, "Task: " + taskId);
+    }
+
+    public String export(DagGraph graph, String graphId, String label) {
         StringBuilder sb = new StringBuilder();
-        sb.append("digraph Task_").append(sanitize(taskId)).append(" {\n");
+        sb.append("digraph Task_").append(sanitize(graphId)).append(" {\n");
         sb.append("  rankdir=TB;\n");
-        sb.append("  label=\"Task: ").append(taskId).append("\";\n");
+        sb.append("  label=\"").append(escapeDot(label)).append("\";\n");
         sb.append("  fontsize=14;\n");
         sb.append("  node [fontsize=11];\n");
         sb.append("  edge [fontsize=9];\n");

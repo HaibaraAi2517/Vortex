@@ -93,7 +93,12 @@ public class CheckpointLifecycleManager {
                         meta.getTaskId(), meta.getCheckpointId(),
                         Duration.between(meta.getCreatedAt(), now));
             } catch (Exception e) {
-                log.warn("Failed to delete checkpoint {}: {}", meta.getCheckpointId(), e.getMessage());
+                SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(
+                        log,
+                        "checkpoint-retention-delete",
+                        meta.getTaskId(),
+                        meta.getCheckpointId(),
+                        e);
             }
         }
 

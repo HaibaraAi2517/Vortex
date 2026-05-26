@@ -4,6 +4,7 @@ import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
 import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.MemoryScenario;
+import com.vortex.common.health.MemoryHealthCodes;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.model.PageState;
 import com.vortex.common.model.SemanticPage;
@@ -38,31 +39,82 @@ class HierarchicalMemoryControllerTest {
     private static final AdaptiveWeightLearner TEST_WEIGHT_LEARNER =
             new AdaptiveWeightLearner(new ShadowEvaluationTracker(0.20, 14), 0.05, 100, 0.3, 0.5, 0.2);
 
+    private static HierarchicalMemoryController createHmc(
+            CaffeineHotStore l1, FakeL2WarmStore l2, FakeL3ColdStore l3,
+            EmbeddingService embedding, com.vortex.kernel.embedding.TokenCounter tokenCounter, int maxTokens) {
+        ObjectProvider<EmbeddingService> cloudProvider = emptyProvider();
+        ObjectProvider<SemanticPagingManager> pagingProvider = emptyPagingProvider();
+        SemanticEvictionPolicy evictionPolicy = new SemanticEvictionPolicy(0.3, 0.5, 0.2);
+        NamespaceQuotaManager quotaManager = new NamespaceQuotaManager(0.25, 0.15, 16);
+        EvictionDecisionLogger decisionLogger = new EvictionDecisionLogger(TEST_SLO_TRACKER);
+        EvictionRegretTracker regretTracker = new EvictionRegretTracker(3_600_000L, System::currentTimeMillis);
+        FragmentPersistenceManager pm = persistenceManager(l2, l3);
+
+        FragmentPinManager pinMgr = new FragmentPinManager(l1, l2, l3, pm, embedding, cloudProvider, null);
+        TieredEvictionCoordinator tec = new TieredEvictionCoordinator(
+                l1, evictionPolicy, quotaManager, decisionLogger, regretTracker,
+                TEST_SLO_TRACKER, pm, TEST_WEIGHT_LEARNER, pinMgr,
+                0.85, 300_000, 64, 2);
+        pinMgr.setEvictionCoordinator(tec);
+        RedundancyAnalyzer redundancyAnalyzer = new RedundancyAnalyzer();
+        RecallOrchestrator recallOrch = new RecallOrchestrator(
+                l1, l2, l3, embedding, cloudProvider, TEST_WEIGHT_LEARNER,
+                evictionPolicy, regretTracker, TEST_SLO_TRACKER, pm, pagingProvider,
+                redundancyAnalyzer, pinMgr, tec);
+        MemoryDiagnosticsCollector diagCollector = new MemoryDiagnosticsCollector(
+                TEST_SLO_TRACKER, regretTracker, pagingProvider, TEST_WEIGHT_LEARNER);
+
+        return new HierarchicalMemoryController(
+                l1, l2, l3, evictionPolicy, quotaManager, TEST_WEIGHT_LEARNER,
+                decisionLogger, regretTracker, TEST_SLO_TRACKER, pm,
+                new SemanticTextSplitter(tokenCounter, maxTokens),
+                embedding, cloudProvider, pagingProvider, 0.85,
+                tec, pinMgr, recallOrch, diagCollector);
+    }
+
+    private static HierarchicalMemoryController createHmc(
+            CaffeineHotStore l1, FakeL2WarmStore l2, FakeL3ColdStore l3,
+            EmbeddingService embedding, com.vortex.kernel.embedding.TokenCounter tokenCounter, int maxTokens,
+            SemanticEvictionPolicy evictionPolicy, NamespaceQuotaManager quotaManager,
+            double evictionThreshold, long hotTierRecencyWindowMillis,
+            int maxColdTierCandidates, int hotTierExpansionFactor) {
+        ObjectProvider<EmbeddingService> cloudProvider = emptyProvider();
+        ObjectProvider<SemanticPagingManager> pagingProvider = emptyPagingProvider();
+        EvictionDecisionLogger decisionLogger = new EvictionDecisionLogger(TEST_SLO_TRACKER);
+        EvictionRegretTracker regretTracker = new EvictionRegretTracker(3_600_000L, System::currentTimeMillis);
+        FragmentPersistenceManager pm = persistenceManager(l2, l3);
+
+        FragmentPinManager pinMgr = new FragmentPinManager(l1, l2, l3, pm, embedding, cloudProvider, null);
+        TieredEvictionCoordinator tec = new TieredEvictionCoordinator(
+                l1, evictionPolicy, quotaManager, decisionLogger, regretTracker,
+                TEST_SLO_TRACKER, pm, TEST_WEIGHT_LEARNER, pinMgr,
+                evictionThreshold, hotTierRecencyWindowMillis, maxColdTierCandidates, hotTierExpansionFactor);
+        pinMgr.setEvictionCoordinator(tec);
+        RedundancyAnalyzer redundancyAnalyzer = new RedundancyAnalyzer();
+        RecallOrchestrator recallOrch = new RecallOrchestrator(
+                l1, l2, l3, embedding, cloudProvider, TEST_WEIGHT_LEARNER,
+                evictionPolicy, regretTracker, TEST_SLO_TRACKER, pm, pagingProvider,
+                redundancyAnalyzer, pinMgr, tec);
+        MemoryDiagnosticsCollector diagCollector = new MemoryDiagnosticsCollector(
+                TEST_SLO_TRACKER, regretTracker, pagingProvider, TEST_WEIGHT_LEARNER);
+
+        return new HierarchicalMemoryController(
+                l1, l2, l3, evictionPolicy, quotaManager, TEST_WEIGHT_LEARNER,
+                decisionLogger, regretTracker, TEST_SLO_TRACKER, pm,
+                new SemanticTextSplitter(tokenCounter, maxTokens),
+                embedding, cloudProvider, pagingProvider, 0.85,
+                tec, pinMgr, recallOrch, diagCollector);
+    }
+
     @Test
     void constructorFailsFastWhenL2DimensionDoesNotMatchActiveEmbeddingPath() {
         CaffeineHotStore l1 = new CaffeineHotStore(128);
         FakeL2WarmStore l2 = new FakeL2WarmStore(1024);
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(512);
-        ObjectProvider<EmbeddingService> cloudProvider = emptyProvider();
 
-        assertThatThrownBy(() -> new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> 1, 64),
-                localEmbedding,
-                cloudProvider,
-                emptyPagingProvider(),
-                0.85
-        )).isInstanceOf(IllegalStateException.class)
+        assertThatThrownBy(() -> createHmc(l1, l2, l3, localEmbedding, text -> 1, 64))
+                .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("L2 vector dimension mismatch");
     }
 
@@ -72,25 +124,8 @@ class HierarchicalMemoryControllerTest {
         FakeL2WarmStore l2 = new FakeL2WarmStore(4);
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
-        ObjectProvider<EmbeddingService> cloudProvider = emptyProvider();
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                cloudProvider,
-                emptyPagingProvider(),
-                0.85
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         MemoryFragment l1Match = fragment("l1-match", "ns", "query hit", List.of("role:user"), 4);
         MemoryFragment l1Miss = fragment("l1-miss", "ns", "query miss", List.of("role:system"), 4);
@@ -129,23 +164,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.85
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         long oldAccessTime = System.currentTimeMillis() - 86_400_000L;
         MemoryFragment fragment = fragment("l1-hit", "ns", "query hit", List.of("role:user"), 4);
@@ -173,23 +192,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.5
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         MemoryFragment namespaceA = fragment("a-fragment", "ns-a", "ns-a fragment", List.of(), 4);
         namespaceA.setImportance(0.1);
@@ -213,27 +216,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
-                new NamespaceQuotaManager(1.0, 1.0, 1),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.5,
-                30_000L,
-                60_000L,
-                2,
-                2
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         long now = System.currentTimeMillis();
         MemoryFragment coldLow = fragment("cold-low", "ns", "cold-low", List.of(), 4);
@@ -274,27 +257,10 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64,
                 new SemanticEvictionPolicy(0.0, 0.0, 1.0),
                 new NamespaceQuotaManager(1.0, 1.0, 1),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.5,
-                30_000L,
-                60_000L,
-                1,
-                2
-        );
+                0.5, 60_000L, 1, 2);
 
         long now = System.currentTimeMillis();
         MemoryFragment coldSolo = fragment("cold-solo", "ns", "cold-solo", List.of(), 4);
@@ -339,23 +305,30 @@ class HierarchicalMemoryControllerTest {
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
         EvictionRegretTracker regretTracker = new EvictionRegretTracker(60_000L, System::currentTimeMillis);
 
+        SemanticEvictionPolicy evictionPolicy = new SemanticEvictionPolicy(0.3, 0.5, 0.2);
+        NamespaceQuotaManager quotaManager = new NamespaceQuotaManager(0.25, 0.15, 16);
+        EvictionDecisionLogger decisionLogger = new EvictionDecisionLogger(TEST_SLO_TRACKER);
+        FragmentPersistenceManager pm = persistenceManager(l2, l3);
+        ObjectProvider<EmbeddingService> cloudProvider = emptyProvider();
+        FragmentPinManager pinMgr = new FragmentPinManager(l1, l2, l3, pm, localEmbedding, cloudProvider, null);
+        TieredEvictionCoordinator tec = new TieredEvictionCoordinator(
+                l1, evictionPolicy, quotaManager, decisionLogger, regretTracker,
+                TEST_SLO_TRACKER, pm, TEST_WEIGHT_LEARNER, pinMgr, 0.85, 300_000, 64, 2);
+        pinMgr.setEvictionCoordinator(tec);
+        RedundancyAnalyzer redundancyAnalyzer = new RedundancyAnalyzer();
+        RecallOrchestrator recallOrch = new RecallOrchestrator(
+                l1, l2, l3, localEmbedding, cloudProvider, TEST_WEIGHT_LEARNER,
+                evictionPolicy, regretTracker, TEST_SLO_TRACKER, pm, emptyPagingProvider(),
+                redundancyAnalyzer, pinMgr, tec);
+        MemoryDiagnosticsCollector diagCollector = new MemoryDiagnosticsCollector(
+                TEST_SLO_TRACKER, regretTracker, emptyPagingProvider(), TEST_WEIGHT_LEARNER);
+
         HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                regretTracker,
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
+                l1, l2, l3, evictionPolicy, quotaManager, TEST_WEIGHT_LEARNER,
+                decisionLogger, regretTracker, TEST_SLO_TRACKER, pm,
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.85
-        );
+                localEmbedding, cloudProvider, emptyPagingProvider(), 0.85,
+                tec, pinMgr, recallOrch, diagCollector);
 
         MemoryFragment evicted = fragment("evicted", "ns", "query hit", List.of(), 4);
         regretTracker.recordEviction(evicted, "semantic");
@@ -374,29 +347,120 @@ class HierarchicalMemoryControllerTest {
     }
 
     @Test
+    void recentRegretProtectionMovesVictimBehindOtherEligibleFragments() {
+        CaffeineHotStore l1 = new CaffeineHotStore(100);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+        EvictionRegretTracker regretTracker = new EvictionRegretTracker(60_000L, System::currentTimeMillis);
+
+        SemanticEvictionPolicy evictionPolicy = new SemanticEvictionPolicy(0.0, 0.0, 1.0);
+        NamespaceQuotaManager quotaManager = new NamespaceQuotaManager(0.25, 0.15, 16);
+        EvictionDecisionLogger decisionLogger = new EvictionDecisionLogger(TEST_SLO_TRACKER);
+        FragmentPersistenceManager pm = persistenceManager(l2, l3);
+        ObjectProvider<EmbeddingService> cloudProvider = emptyProvider();
+        FragmentPinManager pinMgr = new FragmentPinManager(l1, l2, l3, pm, localEmbedding, cloudProvider, null);
+        TieredEvictionCoordinator tec = new TieredEvictionCoordinator(
+                l1, evictionPolicy, quotaManager, decisionLogger, regretTracker,
+                TEST_SLO_TRACKER, pm, TEST_WEIGHT_LEARNER, pinMgr, 0.5, 300_000, 64, 2);
+        pinMgr.setEvictionCoordinator(tec);
+        RedundancyAnalyzer redundancyAnalyzer = new RedundancyAnalyzer();
+        RecallOrchestrator recallOrch = new RecallOrchestrator(
+                l1, l2, l3, localEmbedding, cloudProvider, TEST_WEIGHT_LEARNER,
+                evictionPolicy, regretTracker, TEST_SLO_TRACKER, pm, emptyPagingProvider(),
+                redundancyAnalyzer, pinMgr, tec);
+        MemoryDiagnosticsCollector diagCollector = new MemoryDiagnosticsCollector(
+                TEST_SLO_TRACKER, regretTracker, emptyPagingProvider(), TEST_WEIGHT_LEARNER);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1, l2, l3, evictionPolicy, quotaManager, TEST_WEIGHT_LEARNER,
+                decisionLogger, regretTracker, TEST_SLO_TRACKER, pm,
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding, cloudProvider, emptyPagingProvider(), 0.5,
+                tec, pinMgr, recallOrch, diagCollector);
+
+        MemoryFragment protectedLow = fragment("protected-low", "ns", "protected-low", List.of(), 4);
+        protectedLow.setTokenCount(30);
+        protectedLow.setImportance(0.0);
+        MemoryFragment unprotectedLow = fragment("unprotected-low", "ns", "unprotected-low", List.of(), 4);
+        unprotectedLow.setTokenCount(30);
+        unprotectedLow.setImportance(0.1);
+        MemoryFragment survivor = fragment("survivor-high", "ns", "survivor-high", List.of(), 4);
+        survivor.setTokenCount(30);
+        survivor.setImportance(0.9);
+
+        regretTracker.recordEviction(protectedLow, "semantic");
+        regretTracker.recordRecall(protectedLow, "L2");
+
+        l1.put(protectedLow, false);
+        l1.put(unprotectedLow, false);
+        l1.put(survivor, false);
+
+        hmc.maybeEvict("ns", vector(4));
+
+        assertThat(l1.peek("protected-low")).isPresent();
+        assertThat(l1.peek("unprotected-low")).isEmpty();
+        assertThat(l1.peek("survivor-high")).isPresent();
+    }
+
+    @Test
+    void diagnosticsSnapshotSummarizesElevatedRegretModes() {
+        CaffeineHotStore l1 = new CaffeineHotStore(256);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+        EvictionRegretTracker regretTracker = new EvictionRegretTracker(60_000L, System::currentTimeMillis);
+
+        SemanticEvictionPolicy evictionPolicy = new SemanticEvictionPolicy(0.3, 0.5, 0.2);
+        NamespaceQuotaManager quotaManager = new NamespaceQuotaManager(0.25, 0.15, 16);
+        EvictionDecisionLogger decisionLogger = new EvictionDecisionLogger(TEST_SLO_TRACKER);
+        FragmentPersistenceManager pm = persistenceManager(l2, l3);
+        ObjectProvider<EmbeddingService> cloudProvider = emptyProvider();
+        FragmentPinManager pinMgr = new FragmentPinManager(l1, l2, l3, pm, localEmbedding, cloudProvider, null);
+        TieredEvictionCoordinator tec = new TieredEvictionCoordinator(
+                l1, evictionPolicy, quotaManager, decisionLogger, regretTracker,
+                TEST_SLO_TRACKER, pm, TEST_WEIGHT_LEARNER, pinMgr, 0.85, 300_000, 64, 2);
+        pinMgr.setEvictionCoordinator(tec);
+        RedundancyAnalyzer redundancyAnalyzer = new RedundancyAnalyzer();
+        RecallOrchestrator recallOrch = new RecallOrchestrator(
+                l1, l2, l3, localEmbedding, cloudProvider, TEST_WEIGHT_LEARNER,
+                evictionPolicy, regretTracker, TEST_SLO_TRACKER, pm, emptyPagingProvider(),
+                redundancyAnalyzer, pinMgr, tec);
+        MemoryDiagnosticsCollector diagCollector = new MemoryDiagnosticsCollector(
+                TEST_SLO_TRACKER, regretTracker, emptyPagingProvider(), TEST_WEIGHT_LEARNER);
+
+        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
+                l1, l2, l3, evictionPolicy, quotaManager, TEST_WEIGHT_LEARNER,
+                decisionLogger, regretTracker, TEST_SLO_TRACKER, pm,
+                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
+                localEmbedding, cloudProvider, emptyPagingProvider(), 0.85,
+                tec, pinMgr, recallOrch, diagCollector);
+
+        for (int i = 0; i < 5; i++) {
+            MemoryFragment fragment = fragment("diag-" + i, "ns", "query hit", List.of(), 4);
+            regretTracker.recordEviction(fragment, "semantic");
+            regretTracker.recordRecall(fragment, "L2");
+        }
+
+        MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot diagnostics = hmc.diagnosticsSnapshot();
+
+        assertThat(diagnostics.regret().modes()).isNotEmpty();
+        assertThat(diagnostics.regret().modes().getFirst().mode()).isEqualTo("semantic");
+        assertThat(diagnostics.signals()).anyMatch(signal -> MemoryHealthCodes.EVICTION_REGRET_MODE_HIGH.equals(signal.code()));
+        assertThat(diagnostics.warnings()).anyMatch(warning -> warning.contains("eviction mode semantic regret elevated"));
+    }
+
+    @Test
     void pinnedFragmentsAreNotEvictedAndReasoningChainEvictsAsGroup() {
         CaffeineHotStore l1 = new CaffeineHotStore(100);
         FakeL2WarmStore l2 = new FakeL2WarmStore(4);
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64,
                 new SemanticEvictionPolicy(0.0, 0.0, 1.0),
                 new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.5
-        );
+                0.5, 300_000L, 64, 2);
 
         MemoryFragment pinned = fragment("pinned", "ns", "pinned", List.of(), 4);
         pinned.setTokenCount(20);
@@ -433,23 +497,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
-                new NamespaceQuotaManager(0.25, 0.15, 20),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.95
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         MemoryFragment coreB = fragment("b-core", "ns-b", "b-core", List.of(), 4);
         coreB.setTokenCount(20);
@@ -485,23 +533,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.85
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         MemoryFragment archived = fragment("archived", "ns", "archived", List.of("role:user"), 4);
         l3.archiveFragment(archived);
@@ -523,23 +555,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.85
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         MemoryFragment expired = fragment("expired", "ns", "expired", List.of(), 4);
         hmc.storeFragment(expired);
@@ -567,23 +583,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.85
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         MemoryFragment fragment = fragment("pin-recency", "ns", "pin-recency", List.of(), 4);
         fragment.setLastAccessTime(System.currentTimeMillis() - 60_000L);
@@ -614,23 +614,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.85
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         MemoryFragment l2Shell = fragment("l2-rich", "ns", "shell", List.of(), 4);
         l2.seedSearchResults(List.of(l2Shell));
@@ -663,23 +647,31 @@ class HierarchicalMemoryControllerTest {
         AdaptiveWeightLearner learner = new AdaptiveWeightLearner(new ShadowEvaluationTracker(0.20, 14), 0.05, 100, 0.3, 0.5, 0.2);
         MemorySloTracker sloTracker = new MemorySloTracker(new SimpleMeterRegistry());
 
+        SemanticEvictionPolicy evictionPolicy = new SemanticEvictionPolicy(0.3, 0.5, 0.2);
+        NamespaceQuotaManager quotaManager = new NamespaceQuotaManager(0.25, 0.15, 16);
+        EvictionDecisionLogger decisionLogger = new EvictionDecisionLogger(sloTracker);
+        EvictionRegretTracker regretTracker = new EvictionRegretTracker(3_600_000L, System::currentTimeMillis);
+        FragmentPersistenceManager pm = persistenceManager(l2, l3);
+        ObjectProvider<EmbeddingService> cloudProvider = emptyProvider();
+        FragmentPinManager pinMgr = new FragmentPinManager(l1, l2, l3, pm, localEmbedding, cloudProvider, null);
+        TieredEvictionCoordinator tec = new TieredEvictionCoordinator(
+                l1, evictionPolicy, quotaManager, decisionLogger, regretTracker,
+                sloTracker, pm, learner, pinMgr, 0.85, 300_000, 64, 2);
+        pinMgr.setEvictionCoordinator(tec);
+        RedundancyAnalyzer redundancyAnalyzer = new RedundancyAnalyzer();
+        RecallOrchestrator recallOrch = new RecallOrchestrator(
+                l1, l2, l3, localEmbedding, cloudProvider, learner,
+                evictionPolicy, regretTracker, sloTracker, pm, emptyPagingProvider(),
+                redundancyAnalyzer, pinMgr, tec);
+        MemoryDiagnosticsCollector diagCollector = new MemoryDiagnosticsCollector(
+                sloTracker, regretTracker, emptyPagingProvider(), learner);
+
         HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                learner,
-                new EvictionDecisionLogger(sloTracker),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                sloTracker,
-                persistenceManager(l2, l3),
+                l1, l2, l3, evictionPolicy, quotaManager, learner,
+                decisionLogger, regretTracker, sloTracker, pm,
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.85
-        );
+                localEmbedding, cloudProvider, emptyPagingProvider(), 0.85,
+                tec, pinMgr, recallOrch, diagCollector);
 
         MemoryFragment fragment = fragment("learn-me", "ns", "query hit", List.of(), 4);
         l1.put(fragment);
@@ -713,23 +705,31 @@ class HierarchicalMemoryControllerTest {
         AdaptiveWeightLearner learner = new AdaptiveWeightLearner(new ShadowEvaluationTracker(0.20, 14), 0.05, 100, 0.3, 0.5, 0.2);
         MemorySloTracker sloTracker = new MemorySloTracker(new SimpleMeterRegistry());
 
+        SemanticEvictionPolicy evictionPolicy = new SemanticEvictionPolicy(0.3, 0.5, 0.2);
+        NamespaceQuotaManager quotaManager = new NamespaceQuotaManager(0.25, 0.15, 16);
+        EvictionDecisionLogger decisionLogger = new EvictionDecisionLogger(sloTracker);
+        EvictionRegretTracker regretTracker = new EvictionRegretTracker(3_600_000L, System::currentTimeMillis);
+        FragmentPersistenceManager pm = persistenceManager(l2, l3);
+        ObjectProvider<EmbeddingService> cloudProvider = emptyProvider();
+        FragmentPinManager pinMgr = new FragmentPinManager(l1, l2, l3, pm, localEmbedding, cloudProvider, null);
+        TieredEvictionCoordinator tec = new TieredEvictionCoordinator(
+                l1, evictionPolicy, quotaManager, decisionLogger, regretTracker,
+                sloTracker, pm, learner, pinMgr, 0.85, 300_000, 64, 2);
+        pinMgr.setEvictionCoordinator(tec);
+        RedundancyAnalyzer redundancyAnalyzer = new RedundancyAnalyzer();
+        RecallOrchestrator recallOrch = new RecallOrchestrator(
+                l1, l2, l3, localEmbedding, cloudProvider, learner,
+                evictionPolicy, regretTracker, sloTracker, pm, emptyPagingProvider(),
+                redundancyAnalyzer, pinMgr, tec);
+        MemoryDiagnosticsCollector diagCollector = new MemoryDiagnosticsCollector(
+                sloTracker, regretTracker, emptyPagingProvider(), learner);
+
         HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                learner,
-                new EvictionDecisionLogger(sloTracker),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                sloTracker,
-                persistenceManager(l2, l3),
+                l1, l2, l3, evictionPolicy, quotaManager, learner,
+                decisionLogger, regretTracker, sloTracker, pm,
                 new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.85
-        );
+                localEmbedding, cloudProvider, emptyPagingProvider(), 0.85,
+                tec, pinMgr, recallOrch, diagCollector);
 
         long now = System.currentTimeMillis();
         MemoryFragment recent = fragment("recent", "ns", "recent", List.of(), 4);
@@ -782,26 +782,8 @@ class HierarchicalMemoryControllerTest {
         FakeL2WarmStore l2 = new FakeL2WarmStore(4);
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
-        AdaptiveWeightLearner learner = new AdaptiveWeightLearner(new ShadowEvaluationTracker(0.20, 14), 0.05, 100, 0.3, 0.5, 0.2);
-        MemorySloTracker sloTracker = new MemorySloTracker(new SimpleMeterRegistry());
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
-                new NamespaceQuotaManager(1.0, 1.0, 1),
-                learner,
-                new EvictionDecisionLogger(sloTracker),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                sloTracker,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.95
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         MemoryFragment pinned = fragment("pinned-overflow", "ns", "pin-a", List.of(), 4);
         pinned.setTokenCount(8);
@@ -825,26 +807,8 @@ class HierarchicalMemoryControllerTest {
         FakeL2WarmStore l2 = new FakeL2WarmStore(4);
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
-        AdaptiveWeightLearner learner = new AdaptiveWeightLearner(new ShadowEvaluationTracker(0.20, 14), 0.05, 100, 0.3, 0.5, 0.2);
-        MemorySloTracker sloTracker = new MemorySloTracker(new SimpleMeterRegistry());
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
-                new NamespaceQuotaManager(1.0, 1.0, 1),
-                learner,
-                new EvictionDecisionLogger(sloTracker),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                sloTracker,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.95
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         MemoryFragment pinned = fragment("pinned-core", "ns", "pin-a", List.of(), 4);
         pinned.setTokenCount(4);
@@ -873,27 +837,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
-                new NamespaceQuotaManager(1.0, 1.0, 1),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.95,
-                30_000L,
-                60_000L,
-                1,
-                2
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         long now = System.currentTimeMillis();
         MemoryFragment coldVictim = fragment("cold-victim", "ns", "cold", List.of(), 4);
@@ -928,27 +872,10 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64,
                 new SemanticEvictionPolicy(0.0, 0.0, 1.0),
                 new NamespaceQuotaManager(1.0, 1.0, 1),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.95,
-                30_000L,
-                60_000L,
-                1,
-                2
-        );
+                0.95, 60_000L, 1, 2);
 
         long now = System.currentTimeMillis();
         MemoryFragment coldVictim = fragment("cold-expand", "ns", "cold", List.of(), 4);
@@ -982,27 +909,10 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64,
                 new SemanticEvictionPolicy(0.3, 0.5, 0.2),
                 new NamespaceQuotaManager(1.0, 1.0, 1),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.95,
-                30_000L,
-                60_000L,
-                1,
-                2
-        );
+                0.95, 60_000L, 1, 2);
 
         MemoryFragment residentA = fragment("resident-a", "ns", "resident-a", List.of(), 4);
         residentA.setTokenCount(10);
@@ -1038,27 +948,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(1.0, 1.0, 1),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.95,
-                30_000L,
-                60_000L,
-                1,
-                2
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         MemoryFragment medium = fragment("medium", "ns", "medium", List.of(), 4);
         medium.setTokenCount(10);
@@ -1089,27 +979,10 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64,
                 new SemanticEvictionPolicy(0.3, 0.5, 0.2),
                 new NamespaceQuotaManager(1.0, 1.0, 1),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.95,
-                30_000L,
-                60_000L,
-                1,
-                2
-        );
+                0.95, 60_000L, 1, 2);
 
         MemoryFragment medium = fragment("medium-keep", "ns", "medium", List.of(), 4);
         medium.setTokenCount(10);
@@ -1145,27 +1018,10 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64,
                 new SemanticEvictionPolicy(0.0, 0.0, 1.0),
                 new NamespaceQuotaManager(1.0, 1.0, 1),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.5,
-                30_000L,
-                60_000L,
-                1,
-                2
-        );
+                0.5, 60_000L, 1, 2);
 
         long now = System.currentTimeMillis();
         MemoryFragment driftingA = fragment("drift-a", "ns", "drift-a", List.of(), 4);
@@ -1220,23 +1076,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.0, 0.0, 1.0),
-                new NamespaceQuotaManager(1.0, 1.0, 1),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.95
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         MemoryFragment pinnedA = fragment("pinned-a", "ns", "aaaa", List.of(), 4);
         pinnedA.setTokenCount(6);
@@ -1264,23 +1104,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.85
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         hmc.storeFragment(fragment("l1-1", "ns", "base-one", List.of(), 4));
         hmc.storeFragment(fragment("l1-2", "ns", "base-two", List.of(), 4));
@@ -1310,23 +1134,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.85
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         MemoryFragment identicalL1 = fragment("l1-same", "ns", "same", List.of(), 4);
         identicalL1.setEmbedding(new float[]{1.0f, 0.0f, 0.0f, 0.0f});
@@ -1382,23 +1190,7 @@ class HierarchicalMemoryControllerTest {
         FakeL3ColdStore l3 = new FakeL3ColdStore();
         EmbeddingService localEmbedding = new FixedEmbeddingService(4);
 
-        HierarchicalMemoryController hmc = new HierarchicalMemoryController(
-                l1,
-                l2,
-                l3,
-                new SemanticEvictionPolicy(0.3, 0.5, 0.2),
-                new NamespaceQuotaManager(0.25, 0.15, 16),
-                TEST_WEIGHT_LEARNER,
-                new EvictionDecisionLogger(TEST_SLO_TRACKER),
-                new EvictionRegretTracker(3_600_000L, System::currentTimeMillis),
-                TEST_SLO_TRACKER,
-                persistenceManager(l2, l3),
-                new SemanticTextSplitter(text -> Math.max(1, text.length()), 64),
-                localEmbedding,
-                emptyProvider(),
-                emptyPagingProvider(),
-                0.85
-        );
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
         hmc.storeFragment(fragment("re-pin", "ns", "re-pin", List.of(), 4));
         hmc.pinFragment("re-pin", 5L);

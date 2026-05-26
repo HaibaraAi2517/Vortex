@@ -21,8 +21,10 @@ public class MemorySloTracker {
     private final AtomicLong evictionDecisionCount = new AtomicLong();
     private final AtomicLong evictionDecisionLoggedCount = new AtomicLong();
     private final AtomicLong namespaceIsolationViolations = new AtomicLong();
-    private final AtomicLong recoverySuccessCount = new AtomicLong();
-    private final AtomicLong recoveryFailureCount = new AtomicLong();
+    private final AtomicLong checkpointRecoverySuccessCount = new AtomicLong();
+    private final AtomicLong checkpointRecoveryFailureCount = new AtomicLong();
+    private final AtomicLong persistenceSuccessCount = new AtomicLong();
+    private final AtomicLong persistenceFailureCount = new AtomicLong();
     private final AtomicLong storeLatencyNanosMax = new AtomicLong();
     private final AtomicLong recallLatencyNanosMax = new AtomicLong();
     private final RollingPercentile storeLatencyPercentiles = new RollingPercentile(LATENCY_SAMPLE_WINDOW);
@@ -46,6 +48,12 @@ public class MemorySloTracker {
         Gauge.builder("vortex.hmc.slo.namespace.isolation.violations", namespaceIsolationViolations, AtomicLong::get)
                 .register(meterRegistry);
         Gauge.builder("vortex.hmc.slo.recovery.success.rate", this, tracker -> tracker.recoverySuccessRate())
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.slo.checkpoint.recovery.success.rate", this, tracker -> tracker.checkpointRecoverySuccessRate())
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.slo.persistence.success.rate", this, tracker -> tracker.persistenceSuccessRate())
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.slo.durability.success.rate", this, tracker -> tracker.durabilitySuccessRate())
                 .register(meterRegistry);
         Gauge.builder("vortex.hmc.slo.store.latency.max.ms", storeLatencyNanosMax, nanos -> nanos.get() / 1_000_000.0)
                 .register(meterRegistry);
@@ -99,11 +107,19 @@ public class MemorySloTracker {
         namespaceIsolationViolations.incrementAndGet();
     }
 
-    public void recordRecoveryResult(boolean success) {
+    public void recordCheckpointRecoveryResult(boolean success) {
         if (success) {
-            recoverySuccessCount.incrementAndGet();
+            checkpointRecoverySuccessCount.incrementAndGet();
         } else {
-            recoveryFailureCount.incrementAndGet();
+            checkpointRecoveryFailureCount.incrementAndGet();
+        }
+    }
+
+    public void recordPersistenceResult(boolean success) {
+        if (success) {
+            persistenceSuccessCount.incrementAndGet();
+        } else {
+            persistenceFailureCount.incrementAndGet();
         }
     }
 
@@ -147,6 +163,9 @@ public class MemorySloTracker {
                 baselineLiftSustainedRatio.get(),
                 namespaceIsolationViolations.get(),
                 recoverySuccessRate(),
+                checkpointRecoverySuccessRate(),
+                persistenceSuccessRate(),
+                durabilitySuccessRate(),
                 storeLatencyNanosMax.get() / 1_000_000.0,
                 storeLatencyPercentiles.percentileMillis(0.95),
                 storeLatencyPercentiles.percentileMillis(0.99),
@@ -165,8 +184,23 @@ public class MemorySloTracker {
     }
 
     private double recoverySuccessRate() {
-        long total = recoverySuccessCount.get() + recoveryFailureCount.get();
-        return total == 0 ? 1.0 : recoverySuccessCount.get() / (double) total;
+        return checkpointRecoverySuccessRate();
+    }
+
+    private double checkpointRecoverySuccessRate() {
+        long total = checkpointRecoverySuccessCount.get() + checkpointRecoveryFailureCount.get();
+        return total == 0 ? 1.0 : checkpointRecoverySuccessCount.get() / (double) total;
+    }
+
+    private double persistenceSuccessRate() {
+        long total = persistenceSuccessCount.get() + persistenceFailureCount.get();
+        return total == 0 ? 1.0 : persistenceSuccessCount.get() / (double) total;
+    }
+
+    private double durabilitySuccessRate() {
+        long success = checkpointRecoverySuccessCount.get() + persistenceSuccessCount.get();
+        long total = success + checkpointRecoveryFailureCount.get() + persistenceFailureCount.get();
+        return total == 0 ? 1.0 : success / (double) total;
     }
 
     public record SloSnapshot(
@@ -179,6 +213,9 @@ public class MemorySloTracker {
             double baselineLiftSustainedRatio,
             long namespaceIsolationViolations,
             double recoverySuccessRate,
+            double checkpointRecoverySuccessRate,
+            double persistenceSuccessRate,
+            double durabilitySuccessRate,
             double storeLatencyMaxMs,
             double storeLatencyP95Ms,
             double storeLatencyP99Ms,

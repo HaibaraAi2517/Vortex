@@ -5,6 +5,7 @@ groups:
         expr: vortex_hmc_slo_eviction_log_coverage < 1
         for: 5m
         labels:
+          health_code: eviction_log_coverage_low
           severity: warning
         annotations:
           summary: "Vortex eviction log coverage dropped below 100%"
@@ -14,6 +15,7 @@ groups:
         expr: vortex_hmc_slo_eviction_regret_rate > 0.05
         for: 10m
         labels:
+          health_code: eviction_regret_high
           severity: critical
         annotations:
           summary: "Vortex eviction regret exceeds target"
@@ -23,24 +25,41 @@ groups:
         expr: vortex_hmc_slo_namespace_isolation_violations > 0
         for: 1m
         labels:
+          health_code: namespace_isolation_violation
           severity: critical
         annotations:
           summary: "Vortex namespace isolation violation detected"
           description: "A cross-namespace eviction or retrieval violation has been recorded."
 
-      - alert: VortexMemoryRecoverySuccessRateLow
-        expr: vortex_hmc_slo_recovery_success_rate < 1
+      - alert: VortexCheckpointRecoverySuccessRateLow
+        expr: vortex_hmc_slo_checkpoint_recovery_success_rate < 1
         for: 5m
         labels:
+          health_code: checkpoint_recovery_success_rate_low
           severity: critical
         annotations:
-          summary: "Vortex recovery success rate is below 100%"
-          description: "At least one replay or recovery path failed."
+          summary: "Vortex checkpoint recovery success rate is below 100%"
+          description: "At least one checkpoint chain load or WAL replay operation failed."
+          runbook: "ops/runbooks/memory-health-signals.md#checkpoint_recovery_success_rate_low"
+          migration_guide: "ops/runbooks/memory-health-migration.md"
+
+      - alert: VortexMemoryPersistenceSuccessRateLow
+        expr: vortex_hmc_slo_persistence_success_rate < 1
+        for: 5m
+        labels:
+          health_code: memory_persistence_success_rate_low
+          severity: critical
+        annotations:
+          summary: "Vortex memory persistence success rate is below 100%"
+          description: "At least one fragment persistence task was dropped or permanently failed."
+          runbook: "ops/runbooks/memory-health-signals.md#memory_persistence_success_rate_low"
+          migration_guide: "ops/runbooks/memory-health-migration.md"
 
       - alert: VortexMemoryStoreLatencyP99High
         expr: vortex_hmc_slo_store_latency_p99_ms > 10
         for: 15m
         labels:
+          health_code: store_latency_p99_high
           severity: warning
         annotations:
           summary: "Vortex store p99 latency exceeds budget"
@@ -50,6 +69,7 @@ groups:
         expr: vortex_hmc_slo_recall_latency_p99_ms > 10
         for: 15m
         labels:
+          health_code: recall_latency_p99_high
           severity: warning
         annotations:
           summary: "Vortex recall p99 latency exceeds budget"
@@ -59,6 +79,7 @@ groups:
         expr: vortex_hmc_slo_shadow_relative_lift < -0.05
         for: 10m
         labels:
+          health_code: shadow_lift_regression
           severity: warning
         annotations:
           summary: "Vortex shadow weights are underperforming"
@@ -68,6 +89,7 @@ groups:
         expr: vortex_hmc_slo_baseline_relative_lift < 0.20
         for: 10m
         labels:
+          health_code: baseline_lift_low
           severity: critical
         annotations:
           summary: "Vortex baseline lift is below the 20% target"
@@ -77,7 +99,40 @@ groups:
         expr: vortex_hmc_slo_baseline_sustained_ratio < 0.90
         for: 30m
         labels:
+          health_code: baseline_lift_not_sustained
           severity: warning
         annotations:
           summary: "Vortex baseline lift is not sustained"
           description: "The baseline lift requirement has not been met in at least 90% of the recent promotion window."
+
+      - alert: VortexMemoryPrefetchStrategyDegraded
+        expr: vortex_hmc_paging_prefetch_strategy_hit_rate{source=~"dag-topo|semantic-nbhd|branch-spec"} < 0.10
+          and vortex_hmc_paging_prefetch_strategy_requested{source=~"dag-topo|semantic-nbhd|branch-spec"} > 20
+        for: 15m
+        labels:
+          health_code: prefetch_strategy_degraded
+          severity: warning
+        annotations:
+          summary: "Vortex prefetch strategy is underperforming"
+          description: "Prefetch strategy {{ $labels.source }} has stayed below 10% hit rate after at least 20 requests."
+
+      - alert: VortexMemoryEvictionRegretModeHigh
+        expr: vortex_hmc_eviction_regret_mode_rate > 0.10 and vortex_hmc_eviction_mode_count > 10
+        for: 10m
+        labels:
+          health_code: eviction_regret_mode_high
+          severity: critical
+        annotations:
+          summary: "Vortex eviction mode regret is elevated"
+          description: "Eviction mode {{ $labels.mode }} has exceeded 10% regret rate with more than 10 tracked evictions."
+
+      - alert: VortexMemoryPagingDriftHigh
+        expr: vortex_hmc_paging_incremental_assignment_new_page_rate > 0.50
+          and vortex_hmc_paging_incremental_assignment_count > 20
+        for: 20m
+        labels:
+          health_code: paging_drift_high
+          severity: warning
+        annotations:
+          summary: "Vortex paging drift is elevated"
+          description: "More than half of recent incremental assignments are creating new pages, suggesting page drift or overly strict admission."

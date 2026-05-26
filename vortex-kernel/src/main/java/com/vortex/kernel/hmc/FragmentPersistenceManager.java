@@ -1,6 +1,8 @@
 package com.vortex.kernel.hmc;
 
+import com.vortex.common.health.MemoryHealthCodes;
 import com.vortex.common.model.MemoryFragment;
+import com.vortex.kernel.health.MemoryDurabilityLogSupport;
 import com.vortex.storage.api.L2WarmStore;
 import com.vortex.storage.api.L3ColdStore;
 import lombok.extern.slf4j.Slf4j;
@@ -11,13 +13,19 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
 public class FragmentPersistenceManager {
+
+    private static final int DEFAULT_MAX_CONCURRENT_PERSISTENCE = 16;
 
     private final L2WarmStore l2;
     private final L3ColdStore l3;
@@ -36,7 +44,7 @@ public class FragmentPersistenceManager {
             MemorySloTracker sloTracker,
             @Value("${vortex.kernel.persistence.replay-on-startup:true}") boolean replayOnStartup) {
         this(l2, l3, deadLetterQueue, processedTaskStore, sloTracker, replayOnStartup,
-                Executors.newVirtualThreadPerTaskExecutor());
+                newBoundedExecutor(DEFAULT_MAX_CONCURRENT_PERSISTENCE));
     }
 
     FragmentPersistenceManager(
@@ -78,35 +86,148 @@ public class FragmentPersistenceManager {
         if (pending == 0) {
             return 0;
         }
-        FileBackedDeadLetterQueue.ReplayReport report = deadLetterQueue.replay(this::persistTask);
-        int remaining = deadLetterQueue.size();
-        sloTracker.recordRecoveryResult(remaining == 0 && report.discardedCount() == 0);
-        log.info("Persistence DLQ replayed={} retried={} discarded={} remaining={} pendingBefore={}",
-                report.recoveredCount(), report.retriedCount(), report.discardedCount(), remaining, pending);
-        return report.recoveredCount();
+        try {
+            FileBackedDeadLetterQueue.ReplayReport report = deadLetterQueue.replay(this::persistTask);
+            int remaining = deadLetterQueue.size();
+            for (int i = 0; i < report.discardedCount(); i++) {
+                sloTracker.recordPersistenceResult(false);
+            }
+            Map<String, Object> attributes = Map.of(
+                    "pendingBefore", pending,
+                    "replayed", report.recoveredCount(),
+                    "retried", report.retriedCount(),
+                    "discarded", report.discardedCount(),
+                    "remaining", remaining);
+            if (report.discardedCount() > 0) {
+                MemoryDurabilityLogSupport.logCritical(
+                        log,
+                        MemoryHealthCodes.MEMORY_PERSISTENCE_SUCCESS_RATE_LOW,
+                        MemoryDurabilityLogSupport.CHAIN_MEMORY_PERSISTENCE,
+                        MemoryDurabilityLogSupport.PHASE_DLQ_REPLAY,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "DLQ_REPLAY_EXHAUSTED",
+                        "Persistence DLQ replay discarded one or more tasks after retry exhaustion.",
+                        null,
+                        attributes);
+            } else if (remaining > 0) {
+                MemoryDurabilityLogSupport.logWarning(
+                        log,
+                        MemoryHealthCodes.MEMORY_PERSISTENCE_SUCCESS_RATE_LOW,
+                        MemoryDurabilityLogSupport.CHAIN_MEMORY_PERSISTENCE,
+                        MemoryDurabilityLogSupport.PHASE_DLQ_REPLAY,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "DLQ_REPLAY_PENDING",
+                        "Persistence DLQ replay left tasks pending for later retry.",
+                        null,
+                        attributes);
+            } else {
+                MemoryDurabilityLogSupport.logRecovered(
+                        log,
+                        MemoryHealthCodes.MEMORY_PERSISTENCE_SUCCESS_RATE_LOW,
+                        MemoryDurabilityLogSupport.CHAIN_MEMORY_PERSISTENCE,
+                        MemoryDurabilityLogSupport.PHASE_COMPLETE,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "Persistence DLQ replay drained the backlog.",
+                        attributes);
+            }
+            return report.recoveredCount();
+        } catch (RuntimeException e) {
+            MemoryDurabilityLogSupport.logCritical(
+                    log,
+                    MemoryHealthCodes.MEMORY_PERSISTENCE_SUCCESS_RATE_LOW,
+                    MemoryDurabilityLogSupport.CHAIN_MEMORY_PERSISTENCE,
+                    MemoryDurabilityLogSupport.PHASE_DLQ_REPLAY,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    "DLQ_REPLAY_FAILED",
+                    "Persistence DLQ replay failed before backlog reconciliation completed.",
+                    e,
+                    Map.of("pendingBefore", pending));
+            throw e;
+        }
     }
 
     void persistOrEnqueue(FragmentPersistenceTask task) {
         try {
             persistTask(task);
-        } catch (Exception ex) {
-            boolean queued = deadLetterQueue.enqueueForRetry(task, ex);
-            if (queued) {
-                log.error("Fragment persistence failed; queued for replay idempotencyKey={} fragmentId={} reason={} attempts={}: {}",
-                        task.getIdempotencyKey(),
+        } catch (Exception persistFailure) {
+            String failedPhase = persistencePhase(task);
+            try {
+                boolean queued = deadLetterQueue.enqueueForRetry(task, persistFailure);
+                if (queued) {
+                    MemoryDurabilityLogSupport.logWarning(
+                            log,
+                            MemoryHealthCodes.MEMORY_PERSISTENCE_SUCCESS_RATE_LOW,
+                            MemoryDurabilityLogSupport.CHAIN_MEMORY_PERSISTENCE,
+                            failedPhase,
+                            null,
+                            null,
+                            task.getFragment().getId(),
+                            task.getIdempotencyKey(),
+                            null,
+                            failureReasonForPhase(failedPhase),
+                            "Fragment persistence failed and was deferred to the DLQ for retry.",
+                            persistFailure,
+                            Map.of(
+                                    "attempts", task.getAttemptCount(),
+                                    "reason", task.getReason(),
+                                    "deferredPhase", MemoryDurabilityLogSupport.PHASE_DLQ_ENQUEUE));
+                    return;
+                }
+                sloTracker.recordPersistenceResult(false);
+                MemoryDurabilityLogSupport.logCritical(
+                        log,
+                        MemoryHealthCodes.MEMORY_PERSISTENCE_SUCCESS_RATE_LOW,
+                        MemoryDurabilityLogSupport.CHAIN_MEMORY_PERSISTENCE,
+                        MemoryDurabilityLogSupport.PHASE_DLQ_DROP,
+                        null,
+                        null,
                         task.getFragment().getId(),
-                        task.getReason(),
-                        task.getAttemptCount(),
-                        ex.getMessage());
-                return;
+                        task.getIdempotencyKey(),
+                        null,
+                        "DLQ_MAX_ATTEMPTS_EXHAUSTED",
+                        "Fragment persistence was dropped after exhausting the DLQ retry budget.",
+                        persistFailure,
+                        Map.of(
+                                "attempts", task.getAttemptCount(),
+                                "reason", task.getReason(),
+                                "failedPhase", failedPhase));
+            } catch (Exception enqueueFailure) {
+                sloTracker.recordPersistenceResult(false);
+                MemoryDurabilityLogSupport.logCritical(
+                        log,
+                        MemoryHealthCodes.MEMORY_PERSISTENCE_SUCCESS_RATE_LOW,
+                        MemoryDurabilityLogSupport.CHAIN_MEMORY_PERSISTENCE,
+                        MemoryDurabilityLogSupport.PHASE_DLQ_ENQUEUE,
+                        null,
+                        null,
+                        task.getFragment().getId(),
+                        task.getIdempotencyKey(),
+                        null,
+                        "DLQ_ENQUEUE_FAILED",
+                        "Fragment persistence failed and the DLQ fallback could not accept the retry task.",
+                        enqueueFailure,
+                        Map.of(
+                                "attempts", task.getAttemptCount(),
+                                "reason", task.getReason(),
+                                "failedPhase", failedPhase,
+                                "initialFailure", persistFailure.getMessage() == null ? "n/a" : persistFailure.getMessage()));
             }
-            sloTracker.recordRecoveryResult(false);
-            log.error("Fragment persistence failed permanently; dropping task idempotencyKey={} fragmentId={} reason={} attempts={}: {}",
-                    task.getIdempotencyKey(),
-                    task.getFragment().getId(),
-                    task.getReason(),
-                    task.getAttemptCount(),
-                    ex.getMessage());
         }
     }
 
@@ -126,7 +247,7 @@ public class FragmentPersistenceManager {
             task.setL3Archived(true);
         }
         processedTaskStore.markProcessed(task.getIdempotencyKey());
-        sloTracker.recordRecoveryResult(true);
+        sloTracker.recordPersistenceResult(true);
         log.debug("Fragment persisted idempotencyKey={} fragmentId={} reason={} attempts={}",
                 task.getIdempotencyKey(), fragment.getId(), task.getReason(), task.getAttemptCount());
     }
@@ -146,5 +267,34 @@ public class FragmentPersistenceManager {
                 .l2Persisted(false)
                 .l3Archived(false)
                 .build();
+    }
+
+    private String persistencePhase(FragmentPersistenceTask task) {
+        if (!task.isL2Persisted() && task.getFragment().getEmbedding() != null) {
+            return MemoryDurabilityLogSupport.PHASE_L2_UPSERT;
+        }
+        return MemoryDurabilityLogSupport.PHASE_L3_ARCHIVE;
+    }
+
+    private String failureReasonForPhase(String phase) {
+        if (MemoryDurabilityLogSupport.PHASE_L2_UPSERT.equals(phase)) {
+            return "L2_UPSERT_FAILED";
+        }
+        if (MemoryDurabilityLogSupport.PHASE_L3_ARCHIVE.equals(phase)) {
+            return "L3_ARCHIVE_FAILED";
+        }
+        return "PERSISTENCE_FAILED";
+    }
+
+    private static Executor newBoundedExecutor(int maxConcurrentPersistence) {
+        int concurrency = Math.max(1, maxConcurrentPersistence);
+        return new ThreadPoolExecutor(
+                concurrency,
+                concurrency,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(concurrency * 4),
+                Executors.defaultThreadFactory(),
+                new ThreadPoolExecutor.CallerRunsPolicy());
     }
 }

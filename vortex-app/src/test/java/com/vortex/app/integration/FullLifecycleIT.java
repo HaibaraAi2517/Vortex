@@ -54,10 +54,7 @@ import static org.awaitility.Awaitility.await;
 @SpringBootTest(
         classes = {VortexApplication.class, FullLifecycleIT.TestEmbeddingConfig.class},
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {
-                "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
-                        + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration"
-        })
+        properties = {})
 @Import(IsolatedIntegrationTestSupport.Config.class)
 @ContextConfiguration(initializers = IsolatedIntegrationTestSupport.Initializer.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
@@ -500,11 +497,11 @@ public class FullLifecycleIT {
     }
 
     private void invalidateTaskCache(String taskId) {
-        snapshotService.evictFromCacheForTest(taskId);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(snapshotService, "evictFromCacheForTest", taskId);
     }
 
     private void clearAdaptiveRecallSessions() {
-        adaptiveWeightLearner.clearPendingSessionsForTest();
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(adaptiveWeightLearner, "clearPendingSessionsForTest");
     }
 
     @TestConfiguration

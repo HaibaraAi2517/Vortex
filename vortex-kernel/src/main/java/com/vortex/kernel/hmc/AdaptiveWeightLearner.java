@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -139,6 +140,7 @@ public class AdaptiveWeightLearner {
 
         synchronized (state) {
             state.totalRecalls++;
+            state.lastFeedback = FeedbackMetricState.from(signals);
             updateBandit(state, session, signals);
             boolean promoted = false;
             if (state.deployment == null || state.deployment.state != DeploymentStatus.SHADOW_PROMOTED) {
@@ -164,6 +166,37 @@ public class AdaptiveWeightLearner {
         }
     }
 
+    LearningMetricsSnapshot metricsSnapshot(MemoryScenario scenario) {
+        MemoryScenario resolvedScenario = scenario == null ? MemoryScenario.CHAT : scenario;
+        ScenarioState state = scenarioState(resolvedScenario);
+        ShadowEvaluationTracker.ShadowEvaluationSnapshot shadow =
+                shadowEvaluationTracker.snapshot(resolvedScenario.name().toLowerCase());
+        synchronized (state) {
+            FeedbackMetricState feedback = state.lastFeedback == null ? FeedbackMetricState.empty() : state.lastFeedback;
+            return new LearningMetricsSnapshot(
+                    copyProfile(state.active, state.active.getProfileName()),
+                    copyProfile(state.shadow, state.shadow.getProfileName()),
+                    shadow,
+                    state.currentExploration,
+                    state.totalRecalls,
+                    Math.toIntExact(recallSessions.estimatedSize()),
+                    feedback.answerReward(),
+                    feedback.regretPenalty(),
+                    feedback.activeGrounding(),
+                    feedback.shadowGrounding(),
+                    feedback.baselineGrounding(),
+                    feedback.activeSelectionPrecision(),
+                    feedback.shadowSelectionPrecision(),
+                    feedback.baselineSelectionPrecision(),
+                    feedback.activeSelectionCoverage(),
+                    feedback.shadowSelectionCoverage(),
+                    feedback.baselineSelectionCoverage(),
+                    feedback.activeReward(),
+                    feedback.shadowReward(),
+                    feedback.baselineReward());
+        }
+    }
+
     double[] armProbabilitiesForTest(MemoryScenario scenario) {
         ScenarioState state = scenarioState(scenario);
         synchronized (state) {
@@ -180,7 +213,7 @@ public class AdaptiveWeightLearner {
     }
 
     /** Test-only: clears pending recall sessions for deterministic test isolation. */
-    public void clearPendingSessionsForTest() {
+    void clearPendingSessionsForTest() {
         recallSessions.invalidateAll();
     }
 
@@ -199,8 +232,8 @@ public class AdaptiveWeightLearner {
         } else {
             state.stableRoundsWithoutImprovement++;
         }
-        int bestIndex = bestArmIndex(state);
         double[] probabilities = distribution(state);
+        int bestIndex = bestArmIndex(probabilities);
         state.active = toProfile(state.scenario, armCatalog.get(bestIndex), bestIndex, probabilities[bestIndex], false);
         state.activeArmIndex = bestIndex;
         state.active.setUpdateCount(state.active.getUpdateCount() + 1);
@@ -298,8 +331,8 @@ public class AdaptiveWeightLearner {
 
     private void selectNextShadow(ScenarioState state) {
         double[] distribution = distribution(state);
-        int bestArmIndex = bestArmIndex(state);
-        int shadowCandidate = secondBestArmIndex(state, bestArmIndex);
+        int bestArmIndex = bestArmIndex(distribution);
+        int shadowCandidate = secondBestArmIndex(distribution, bestArmIndex);
         if (shadowCandidate == bestArmIndex) {
             shadowCandidate = diversifiedArmIndex(state, distribution, bestArmIndex);
         }
@@ -344,7 +377,10 @@ public class AdaptiveWeightLearner {
     }
 
     private int bestArmIndex(ScenarioState state) {
-        double[] distribution = distribution(state);
+        return bestArmIndex(distribution(state));
+    }
+
+    private int bestArmIndex(double[] distribution) {
         int bestIndex = 0;
         double bestProbability = Double.NEGATIVE_INFINITY;
         for (int i = 0; i < distribution.length; i++) {
@@ -357,7 +393,10 @@ public class AdaptiveWeightLearner {
     }
 
     private int secondBestArmIndex(ScenarioState state, int bestArmIndex) {
-        double[] distribution = distribution(state);
+        return secondBestArmIndex(distribution(state), bestArmIndex);
+    }
+
+    private int secondBestArmIndex(double[] distribution, int bestArmIndex) {
         int secondBest = bestArmIndex;
         double secondProbability = Double.NEGATIVE_INFINITY;
         for (int i = 0; i < distribution.length; i++) {
@@ -377,6 +416,7 @@ public class AdaptiveWeightLearner {
             Set<String> usedFragmentIds,
             boolean answerAccepted,
             double regretRate) {
+        int returnedCount = session.getReturnedFragmentIds() == null ? 0 : session.getReturnedFragmentIds().size();
         double activeGrounding = ratio(session.getRankedFragmentIds(), usedFragmentIds);
         double shadowGrounding = ratio(session.getShadowRankedFragmentIds(), usedFragmentIds);
         double baselineGrounding = ratio(session.getBaselineRankedFragmentIds(), usedFragmentIds);
@@ -390,13 +430,55 @@ public class AdaptiveWeightLearner {
         double activeEvictionReward = evictionReward(session.getActiveEvictionRankedFragmentIds(), usedFragmentIds);
         double shadowEvictionReward = evictionReward(session.getShadowEvictionRankedFragmentIds(), usedFragmentIds);
         double baselineEvictionReward = evictionReward(session.getBaselineEvictionRankedFragmentIds(), usedFragmentIds);
+        double activeSelectionPrecision = selectionPrecision(session.getRankedFragmentIds(), usedFragmentIds, returnedCount);
+        double shadowSelectionPrecision = selectionPrecision(session.getShadowRankedFragmentIds(), usedFragmentIds, returnedCount);
+        double baselineSelectionPrecision = selectionPrecision(session.getBaselineRankedFragmentIds(), usedFragmentIds, returnedCount);
+        double activeSelectionCoverage = selectionCoverage(session.getRankedFragmentIds(), usedFragmentIds, returnedCount);
+        double shadowSelectionCoverage = selectionCoverage(session.getShadowRankedFragmentIds(), usedFragmentIds, returnedCount);
+        double baselineSelectionCoverage = selectionCoverage(session.getBaselineRankedFragmentIds(), usedFragmentIds, returnedCount);
         double answerReward = answerAccepted ? 1.0 : 0.0;
         double regretPenalty = 1.0 - clamp01(regretRate);
 
-        double activeReward = reward(answerReward, regretPenalty, activeRecallReward, activeEvictionReward, activeGrounding);
-        double shadowReward = reward(answerReward, regretPenalty, shadowRecallReward, shadowEvictionReward, shadowGrounding);
-        double baselineReward = reward(answerReward, regretPenalty, baselineRecallReward, baselineEvictionReward, baselineGrounding);
-        return new FeedbackSignals(answerAccepted, activeGrounding, shadowGrounding, baselineGrounding, activeReward, shadowReward, baselineReward);
+        double activeReward = reward(
+                answerReward,
+                regretPenalty,
+                activeRecallReward,
+                activeEvictionReward,
+                activeGrounding,
+                activeSelectionPrecision,
+                activeSelectionCoverage);
+        double shadowReward = reward(
+                answerReward,
+                regretPenalty,
+                shadowRecallReward,
+                shadowEvictionReward,
+                shadowGrounding,
+                shadowSelectionPrecision,
+                shadowSelectionCoverage);
+        double baselineReward = reward(
+                answerReward,
+                regretPenalty,
+                baselineRecallReward,
+                baselineEvictionReward,
+                baselineGrounding,
+                baselineSelectionPrecision,
+                baselineSelectionCoverage);
+        return new FeedbackSignals(
+                answerAccepted,
+                answerReward,
+                regretPenalty,
+                activeGrounding,
+                shadowGrounding,
+                baselineGrounding,
+                activeSelectionPrecision,
+                shadowSelectionPrecision,
+                baselineSelectionPrecision,
+                activeSelectionCoverage,
+                shadowSelectionCoverage,
+                baselineSelectionCoverage,
+                activeReward,
+                shadowReward,
+                baselineReward);
     }
 
     private double reward(
@@ -404,13 +486,49 @@ public class AdaptiveWeightLearner {
             double regretPenalty,
             double recallReward,
             double evictionReward,
-            double grounding) {
-        double composite = (answerReward * 0.25)
-                + (regretPenalty * 0.20)
-                + (recallReward * 0.35)
+            double grounding,
+            double selectionPrecision,
+            double selectionCoverage) {
+        double composite = (answerReward * 0.15)
+                + (regretPenalty * 0.15)
+                + (recallReward * 0.25)
                 + (evictionReward * 0.10)
-                + (grounding * 0.10);
+                + (grounding * 0.10)
+                + (selectionPrecision * 0.15)
+                + (selectionCoverage * 0.10);
         return clamp(composite, MIN_BANDIT_REWARD, MAX_BANDIT_REWARD);
+    }
+
+    private double selectionPrecision(List<String> ranking, Set<String> usedFragmentIds, int returnedCount) {
+        if (ranking == null || ranking.isEmpty() || usedFragmentIds == null || usedFragmentIds.isEmpty() || returnedCount <= 0) {
+            return 0.0;
+        }
+        int limit = Math.min(returnedCount, ranking.size());
+        int hits = 0;
+        for (int i = 0; i < limit; i++) {
+            if (usedFragmentIds.contains(ranking.get(i))) {
+                hits++;
+            }
+        }
+        return hits / (double) limit;
+    }
+
+    private double selectionCoverage(List<String> ranking, Set<String> usedFragmentIds, int returnedCount) {
+        if (ranking == null || ranking.isEmpty() || usedFragmentIds == null || usedFragmentIds.isEmpty() || returnedCount <= 0) {
+            return 0.0;
+        }
+        int limit = Math.min(returnedCount, ranking.size());
+        Set<String> window = new HashSet<>(limit);
+        for (int i = 0; i < limit; i++) {
+            window.add(ranking.get(i));
+        }
+        int hits = 0;
+        for (String usedFragmentId : usedFragmentIds) {
+            if (window.contains(usedFragmentId)) {
+                hits++;
+            }
+        }
+        return hits / (double) usedFragmentIds.size();
     }
 
     private double rankingReward(List<String> ranking, Set<String> usedFragmentIds) {
@@ -606,6 +724,29 @@ public class AdaptiveWeightLearner {
             DeploymentState deployment) {
     }
 
+    record LearningMetricsSnapshot(
+            AdaptiveWeightProfile active,
+            AdaptiveWeightProfile shadow,
+            ShadowEvaluationTracker.ShadowEvaluationSnapshot shadowEvaluation,
+            double exploration,
+            int totalRecalls,
+            int pendingRecallSessions,
+            double answerReward,
+            double regretPenalty,
+            double activeGrounding,
+            double shadowGrounding,
+            double baselineGrounding,
+            double activeSelectionPrecision,
+            double shadowSelectionPrecision,
+            double baselineSelectionPrecision,
+            double activeSelectionCoverage,
+            double shadowSelectionCoverage,
+            double baselineSelectionCoverage,
+            double activeReward,
+            double shadowReward,
+            double baselineReward) {
+    }
+
     @lombok.Builder
     public record DeploymentState(
             DeploymentStatus state,
@@ -623,6 +764,7 @@ public class AdaptiveWeightLearner {
     }
 
     private static final class ScenarioState {
+        // INVARIANT: all field accesses must hold monitor(this).
         private final MemoryScenario scenario;
         private final double[] armWeights;
         private AdaptiveWeightProfile active;
@@ -637,6 +779,7 @@ public class AdaptiveWeightLearner {
         private double bestObservedReward;
         private int stableRoundsWithoutImprovement;
         private int totalRecalls;
+        private FeedbackMetricState lastFeedback = FeedbackMetricState.empty();
 
         private ScenarioState(MemoryScenario scenario, int armCount, int seedArmIndex) {
             this.scenario = scenario;
@@ -671,11 +814,57 @@ public class AdaptiveWeightLearner {
 
     private record FeedbackSignals(
             boolean answerAccepted,
+            double answerReward,
+            double regretPenalty,
             double activeGrounding,
             double shadowGrounding,
             double baselineGrounding,
+            double activeSelectionPrecision,
+            double shadowSelectionPrecision,
+            double baselineSelectionPrecision,
+            double activeSelectionCoverage,
+            double shadowSelectionCoverage,
+            double baselineSelectionCoverage,
             double activeReward,
             double shadowReward,
             double baselineReward) {
+    }
+
+    private record FeedbackMetricState(
+            double answerReward,
+            double regretPenalty,
+            double activeGrounding,
+            double shadowGrounding,
+            double baselineGrounding,
+            double activeSelectionPrecision,
+            double shadowSelectionPrecision,
+            double baselineSelectionPrecision,
+            double activeSelectionCoverage,
+            double shadowSelectionCoverage,
+            double baselineSelectionCoverage,
+            double activeReward,
+            double shadowReward,
+            double baselineReward) {
+        private static FeedbackMetricState empty() {
+            return new FeedbackMetricState(0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        }
+
+        private static FeedbackMetricState from(FeedbackSignals signals) {
+            return new FeedbackMetricState(
+                    signals.answerReward(),
+                    signals.regretPenalty(),
+                    signals.activeGrounding(),
+                    signals.shadowGrounding(),
+                    signals.baselineGrounding(),
+                    signals.activeSelectionPrecision(),
+                    signals.shadowSelectionPrecision(),
+                    signals.baselineSelectionPrecision(),
+                    signals.activeSelectionCoverage(),
+                    signals.shadowSelectionCoverage(),
+                    signals.baselineSelectionCoverage(),
+                    signals.activeReward(),
+                    signals.shadowReward(),
+                    signals.baselineReward());
+        }
     }
 }

@@ -3,6 +3,7 @@ package com.vortex.kernel.snapshot;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.vortex.common.model.*;
 import com.vortex.common.serialization.KryoSerializer;
+import com.vortex.kernel.hmc.MemorySloTracker;
 import com.vortex.storage.api.L3ColdStore;
 import io.micrometer.core.instrument.search.Search;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -45,6 +46,7 @@ class SnapshotServiceTest {
     private BranchManager branchManager;
     private BranchMergeConflictDetector conflictDetector;
     private CheckpointRecoveryMetrics checkpointRecoveryMetrics;
+    private MemorySloTracker memorySloTracker;
     private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
@@ -270,6 +272,25 @@ class SnapshotServiceTest {
     }
 
     @Test
+    void recover_afterRestart_keepsWalSequenceMonotonicForNewMutations() {
+        TaskState task = service.createTask("wal monotonic after restart", "ns");
+        DagNode baseNode = service.appendNode(task.getTaskId(), "THOUGHT", "before checkpoint");
+        String checkpointId = service.checkpoint(task.getTaskId());
+
+        service = newService(fakeL3);
+        TaskState recoveredOnce = service.recover(task.getTaskId(), checkpointId);
+        assertThat(recoveredOnce.getGraph().getNode(baseNode.getNodeId())).isPresent();
+
+        DagNode postRestartNode = service.appendNode(task.getTaskId(), "ACTION", "after restart before next checkpoint");
+
+        service = newService(fakeL3);
+        TaskState recoveredTwice = service.recover(task.getTaskId(), checkpointId);
+
+        assertThat(recoveredTwice.getGraph().getNode(baseNode.getNodeId())).isPresent();
+        assertThat(recoveredTwice.getGraph().getNode(postRestartNode.getNodeId())).isPresent();
+    }
+
+    @Test
     void recover_fromDeltaCheckpoint_restoresStateFromBaseAndDelta() {
         service = newService(fakeL3, 10, 20);
 
@@ -322,6 +343,22 @@ class SnapshotServiceTest {
         assertThat(recovered.getLatestCheckpointId()).isEqualTo(checkpointId);
         assertThat(counterValue("vortex.checkpoint.recovery.total", "outcome", "success", "mode", "FULL"))
                 .isEqualTo(1.0);
+    }
+
+    @Test
+    void recover_updatesMemorySloTrackerForSuccessAndFailure() {
+        TaskState task = service.createTask("recovery slo", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "base");
+        String checkpointId = service.checkpoint(task.getTaskId());
+
+        TaskState recovered = service.recover(task.getTaskId(), checkpointId);
+        assertThat(recovered.getLatestCheckpointId()).isEqualTo(checkpointId);
+        assertThat(memorySloTracker.snapshot().recoverySuccessRate()).isEqualTo(1.0);
+
+        assertThatThrownBy(() -> service.recover(task.getTaskId(), "missing-checkpoint"))
+                .isInstanceOf(CheckpointRecoveryException.class);
+
+        assertThat(memorySloTracker.snapshot().recoverySuccessRate()).isEqualTo(0.5);
     }
 
     @Test
@@ -528,6 +565,47 @@ class SnapshotServiceTest {
     }
 
     @Test
+    void listActiveTasks_paginatesInReverseCreationOrder() {
+        TaskState oldest = service.createTask("task A", "ns");
+        TaskState newest = service.createTask("task B", "ns");
+        oldest.setCreatedAt(Instant.parse("2026-05-25T00:00:00Z"));
+        newest.setCreatedAt(Instant.parse("2026-05-25T00:00:10Z"));
+
+        TaskLifecycleManager.TaskPage page = service.listActiveTasks(0, 1);
+
+        assertThat(page.items()).extracting(TaskState::getTaskId).containsExactly(newest.getTaskId());
+        assertThat(page.total()).isEqualTo(2);
+        assertThat(page.hasNext()).isTrue();
+    }
+
+    @Test
+    void listActiveTasks_includesCheckpointedTasksEvictedFromCache() {
+        TaskState task = service.createTask("checkpointed task", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "persist me");
+        service.checkpoint(task.getTaskId());
+
+        service.evictFromCacheForTest(task.getTaskId());
+
+        TaskLifecycleManager.TaskPage page = service.listActiveTasks(0, 10);
+
+        assertThat(page.items()).extracting(TaskState::getTaskId).contains(task.getTaskId());
+    }
+
+    @Test
+    void failTask_isIdempotentForRecoveredFailedTask() {
+        TaskState task = service.createTask("failure retry", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "first");
+        service.failTask(task.getTaskId());
+
+        long seqBefore = walWriter.currentSequenceNumber(task.getTaskId());
+        int walEntriesBefore = walReader.readAll(task.getTaskId()).size();
+
+        service.failTask(task.getTaskId());
+
+        assertWalUnchanged(task.getTaskId(), seqBefore, walEntriesBefore);
+    }
+
+    @Test
     void createBranch_createsAndListsBranch() {
         TaskState task = service.createTask("branch test", "ns");
         DagNode n1 = service.appendNode(task.getTaskId(), "THOUGHT", "fork point");
@@ -590,14 +668,36 @@ class SnapshotServiceTest {
     }
 
     @Test
+    void exportDag_withBranchId_filtersToSelectedBranch() {
+        TaskState task = service.createTask("branch export", "ns");
+        DagNode root = service.appendNode(task.getTaskId(), "THOUGHT", "root");
+
+        TaskBranch branchA = service.createBranch(task.getTaskId(), "alpha", root.getNodeId());
+        DagNode alphaNode = service.appendNodeWithTarget(
+                task.getTaskId(), "ACTION", "alpha-step", branchA.getForkNodeId(), DagEdge.EdgeType.CONTROL_DEP);
+
+        TaskBranch branchB = service.createBranch(task.getTaskId(), "beta", root.getNodeId());
+        DagNode betaNode = service.appendNodeWithTarget(
+                task.getTaskId(), "ACTION", "beta-step", branchB.getForkNodeId(), DagEdge.EdgeType.CONTROL_DEP);
+
+        String alphaDot = service.exportDag(task.getTaskId(), branchA.getBranchId());
+
+        assertThat(alphaDot).contains(root.getNodeId(), branchA.getForkNodeId(), alphaNode.getNodeId());
+        assertThat(alphaDot).doesNotContain(branchB.getForkNodeId(), betaNode.getNodeId());
+    }
+
+    @Test
     void onTaskEvicted_createsEmergencyCheckpointWithoutReentrantLookup() throws Exception {
         TaskState task = service.createTask("eviction test", "ns");
         service.appendNode(task.getTaskId(), "THOUGHT", "pending checkpoint");
 
-        Method onTaskEvicted = SnapshotService.class.getDeclaredMethod(
+        java.lang.reflect.Field tlmField = SnapshotService.class.getDeclaredField("taskLifecycleManager");
+        tlmField.setAccessible(true);
+        TaskLifecycleManager tlm = (TaskLifecycleManager) tlmField.get(service);
+        Method onTaskEvicted = TaskLifecycleManager.class.getDeclaredMethod(
                 "onTaskEvicted", String.class, TaskState.class, RemovalCause.class);
         onTaskEvicted.setAccessible(true);
-        onTaskEvicted.invoke(service, task.getTaskId(), task, RemovalCause.SIZE);
+        onTaskEvicted.invoke(tlm, task.getTaskId(), task, RemovalCause.SIZE);
 
         assertThat(task.getLatestCheckpointId()).isNotNull();
         assertThat(service.listCheckpoints(task.getTaskId()))
@@ -615,10 +715,13 @@ class SnapshotServiceTest {
 
         int checkpointsBefore = service.listCheckpoints(task.getTaskId()).size();
 
-        Method onTaskEvicted = SnapshotService.class.getDeclaredMethod(
+        java.lang.reflect.Field tlmField = SnapshotService.class.getDeclaredField("taskLifecycleManager");
+        tlmField.setAccessible(true);
+        TaskLifecycleManager tlm = (TaskLifecycleManager) tlmField.get(service);
+        Method onTaskEvicted = TaskLifecycleManager.class.getDeclaredMethod(
                 "onTaskEvicted", String.class, TaskState.class, RemovalCause.class);
         onTaskEvicted.setAccessible(true);
-        onTaskEvicted.invoke(service, task.getTaskId(), task, RemovalCause.SIZE);
+        onTaskEvicted.invoke(tlm, task.getTaskId(), task, RemovalCause.SIZE);
 
         assertThat(service.listCheckpoints(task.getTaskId()).size()).isGreaterThan(checkpointsBefore);
     }
@@ -893,19 +996,34 @@ class SnapshotServiceTest {
         walTruncator = new ActionLogTruncator(walWriter, walReader, walDir);
         dirtySetTracker = new DirtySetTracker();
         checkpointManager = new IncrementalCheckpointManager(store, dirtySetTracker, maxDeltasBeforeFull);
+        CheckpointLifecycleManager lifecycleManager = new CheckpointLifecycleManager(store, maxPerTask, maxAgeDays, 48);
         scheduler = new CheckpointScheduler(50, 60000, false);
         conflictDetector = new BranchMergeConflictDetector();
         branchManager = new BranchManager(10, conflictDetector);
         dotExporter = new DotGraphExporter();
         meterRegistry = new SimpleMeterRegistry();
         checkpointRecoveryMetrics = new CheckpointRecoveryMetrics(meterRegistry);
+        memorySloTracker = new MemorySloTracker(meterRegistry);
+        memorySloTracker.bind();
 
         ApplicationEventPublisher eventPublisher = event -> {};
+
+        // Create components with circular dependency resolution
+        TaskLifecycleManager taskLifecycleMgr = new TaskLifecycleManager(
+                store, checkpointManager, lifecycleManager, walWriter, walReader, walTruncator,
+                scheduler, dirtySetTracker, memorySloTracker, null, null);
+        DagMutationService dagMutationSvc = new DagMutationService(
+                walWriter, dirtySetTracker, scheduler, eventPublisher, branchManager, taskLifecycleMgr);
+        RecoveryEngine recoveryEng = new RecoveryEngine(
+                walReader, walWriter, checkpointManager, checkpointRecoveryMetrics, memorySloTracker,
+                branchManager, scheduler, taskLifecycleMgr);
+
         SnapshotService snapshotService = new SnapshotService(
-                store, walWriter, walReader, walTruncator,
-                checkpointManager, new CheckpointLifecycleManager(store, maxPerTask, maxAgeDays, 48),
-                scheduler, dirtySetTracker, branchManager, dotExporter, eventPublisher, checkpointRecoveryMetrics);
-        snapshotService.rebuildCheckpointIndex();
+                taskLifecycleMgr, dagMutationSvc, recoveryEng,
+                branchManager, dotExporter, walWriter, walTruncator,
+                checkpointManager, lifecycleManager, scheduler, checkpointRecoveryMetrics, memorySloTracker);
+        taskLifecycleMgr.setSnapshotService(snapshotService);
+        taskLifecycleMgr.setRecoveryEngine(recoveryEng);
         return snapshotService;
     }
 

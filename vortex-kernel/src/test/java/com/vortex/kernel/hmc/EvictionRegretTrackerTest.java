@@ -48,6 +48,44 @@ class EvictionRegretTrackerTest {
         assertThat(tracker.snapshot().regretCount()).isZero();
     }
 
+    @Test
+    void regretCreatesProtectionAndTracksModeBreakdown() {
+        AtomicLong now = new AtomicLong(1_000L);
+        EvictionRegretTracker tracker = new EvictionRegretTracker(500L, now::get);
+        MemoryFragment fragment = fragment("f-4", "ns");
+
+        tracker.recordEviction(fragment, "capacity-self-reclaim");
+        tracker.recordRecall(fragment, "L2");
+
+        assertThat(tracker.protectionScore(fragment)).isGreaterThan(0.0);
+        assertThat(tracker.snapshot().modeBreakdown())
+                .containsKey("capacity-self-reclaim");
+        assertThat(tracker.snapshot().modeBreakdown().get("capacity-self-reclaim").regretCount())
+                .isEqualTo(1);
+    }
+
+    @Test
+    void longRunningRegretTrackingDoesNotAccumulateExpiredWindowState() {
+        AtomicLong now = new AtomicLong(1_000L);
+        EvictionRegretTracker tracker = new EvictionRegretTracker(200L, now::get);
+
+        for (int i = 0; i < 500; i++) {
+            MemoryFragment fragment = fragment("bulk-" + i, "ns");
+            tracker.recordEviction(fragment, "semantic");
+            if (i % 100 == 0) {
+                tracker.recordRecall(fragment, "L2");
+            }
+        }
+
+        now.addAndGet(2_000L);
+        EvictionRegretTracker.RegretSnapshot snapshot = tracker.snapshot();
+
+        assertThat(snapshot.pendingWindowSize()).isZero();
+        assertThat(snapshot.protectedGroupCount()).isZero();
+        assertThat(snapshot.evictionCount()).isEqualTo(500);
+        assertThat(snapshot.regretCount()).isEqualTo(5);
+    }
+
     private static MemoryFragment fragment(String id, String namespace) {
         return MemoryFragment.builder()
                 .id(id)

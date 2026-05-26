@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
+import java.util.regex.Pattern;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
@@ -31,6 +32,8 @@ import java.util.function.Supplier;
 @Slf4j
 @Component
 public class ActionLogWriter {
+
+    private static final Pattern SAFE_TASK_ID = Pattern.compile("[A-Za-z0-9_-]{1,128}");
 
     private final Path walDir;
     private final ObjectMapper objectMapper;
@@ -61,34 +64,31 @@ public class ActionLogWriter {
      * Append with explicit timestamp.
      */
     public ActionLogEntry append(String taskId, ActionLogEntry.OperationType operation, String payload, Instant timestamp) {
+        walFileFor(walDir, taskId);
         AtomicLong counter = sequenceCounters.computeIfAbsent(taskId, k -> new AtomicLong(0));
-        long seqNo = counter.incrementAndGet();
-
-        ActionLogEntry entry = ActionLogEntry.builder()
-                .sequenceNumber(seqNo)
-                .operation(operation)
-                .payload(payload)
-                .timestamp(timestamp)
-                .build();
-
         ReentrantLock lock = getTaskLock(taskId);
         lock.lock();
         try {
+            long seqNo = counter.incrementAndGet();
+            ActionLogEntry entry = ActionLogEntry.builder()
+                    .sequenceNumber(seqNo)
+                    .operation(operation)
+                    .payload(payload)
+                    .timestamp(timestamp)
+                    .build();
             String jsonLine = objectMapper.writeValueAsString(entry) + "\n";
             byte[] bytes = jsonLine.getBytes(StandardCharsets.UTF_8);
             FileChannel channel = getOrCreateChannel(taskId);
             channel.write(java.nio.ByteBuffer.wrap(bytes));
             channel.force(true); // durable fsync
-        } catch (IOException e) {
-            counter.decrementAndGet();
-            log.error("WAL write failed for task={} seqNo={}: {}", taskId, seqNo, e.getMessage());
+            log.debug("WAL append taskId={} seqNo={} operation={}", taskId, seqNo, operation);
+            return entry;
+        } catch (IOException | UncheckedIOException e) {
+            SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-write", taskId, null, e);
             throw new IllegalStateException("WAL write failed for task " + taskId, e);
         } finally {
             lock.unlock();
         }
-
-        log.debug("WAL append taskId={} seqNo={} operation={}", taskId, seqNo, operation);
-        return entry;
     }
 
     /**
@@ -97,6 +97,26 @@ public class ActionLogWriter {
     public long currentSequenceNumber(String taskId) {
         AtomicLong counter = sequenceCounters.get(taskId);
         return counter != null ? counter.get() : 0;
+    }
+
+    /**
+     * Ensure the next sequence number generated for taskId is strictly greater
+     * than or equal to the provided value.
+     */
+    public void ensureSequenceAtLeast(String taskId, long sequenceNumberFloor) {
+        if (sequenceNumberFloor <= 0) {
+            return;
+        }
+
+        ReentrantLock lock = getTaskLock(taskId);
+        lock.lock();
+        try {
+            sequenceCounters
+                    .computeIfAbsent(taskId, ignored -> new AtomicLong(0))
+                    .updateAndGet(current -> Math.max(current, sequenceNumberFloor));
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -112,7 +132,7 @@ public class ActionLogWriter {
                     channel.force(true);
                 }
             } catch (IOException e) {
-                log.error("WAL flush failed for task={}: {}", taskId, e.getMessage());
+                SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-flush", taskId, null, e);
             } finally {
                 lock.unlock();
             }
@@ -135,12 +155,12 @@ public class ActionLogWriter {
                 try {
                     channel.force(true);
                 } catch (IOException e) {
-                    log.warn("WAL force failed during rotate for task={}: {}", taskId, e.getMessage());
+                    SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-rotate-force", taskId, null, e);
                 } finally {
                     try {
                         channel.close();
                     } catch (IOException e) {
-                        log.warn("WAL channel close failed during rotate for task={}: {}", taskId, e.getMessage());
+                        SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-rotate-close", taskId, null, e);
                     }
                 }
             }
@@ -162,12 +182,12 @@ public class ActionLogWriter {
                     try {
                         channel.force(true);
                     } catch (IOException e) {
-                        log.warn("WAL force failed for task={}, proceeding to close: {}", taskId, e.getMessage());
+                        SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-close-force", taskId, null, e);
                     } finally {
                         try {
                             channel.close();
                         } catch (IOException e) {
-                            log.error("WAL channel close failed for task={}: {}", taskId, e.getMessage());
+                            SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-close-channel", taskId, null, e);
                         }
                     }
                 }
@@ -183,7 +203,7 @@ public class ActionLogWriter {
      * Get the WAL file path for a task.
      */
     public Path getWalFile(String taskId) {
-        return walDir.resolve(taskId + ".wal");
+        return walFileFor(walDir, taskId);
     }
 
     public <T> T withTaskLock(String taskId, Supplier<T> action) {
@@ -200,6 +220,18 @@ public class ActionLogWriter {
 
     private ReentrantLock getTaskLock(String taskId) {
         return taskLocks.computeIfAbsent(taskId, k -> new ReentrantLock());
+    }
+
+    static Path walFileFor(Path walDir, String taskId) {
+        if (taskId == null || !SAFE_TASK_ID.matcher(taskId).matches()) {
+            throw new IllegalArgumentException("Unsafe taskId: " + taskId);
+        }
+        Path normalizedWalDir = walDir.toAbsolutePath().normalize();
+        Path resolved = normalizedWalDir.resolve(taskId + ".wal").normalize();
+        if (!resolved.startsWith(normalizedWalDir)) {
+            throw new IllegalArgumentException("Unsafe taskId path: " + taskId);
+        }
+        return resolved;
     }
 
     private FileChannel getOrCreateChannel(String taskId) throws IOException {

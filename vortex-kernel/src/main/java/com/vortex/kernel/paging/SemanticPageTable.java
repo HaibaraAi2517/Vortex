@@ -19,6 +19,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -38,23 +39,30 @@ public class SemanticPageTable {
     private final ConcurrentMap<String, SemanticPage> pages = new ConcurrentHashMap<>();
     private final L3ColdStore l3;
     private final String pageTableKey;
+    private final double maxIncrementalAssignmentDistance;
     private final KryoSerializer kryoSerializer = new KryoSerializer();
+    private final Object snapshotLock = new Object();
     private final AtomicLong lastPersistEpoch = new AtomicLong(0);
     private final AtomicLong nextPageSequence = new AtomicLong(1);
+    private final AtomicLong incrementalAssignmentCount = new AtomicLong();
+    private final AtomicLong incrementalReuseCount = new AtomicLong();
+    private final AtomicLong incrementalNewPageCount = new AtomicLong();
     private static final long PERSIST_INTERVAL_MS = Duration.ofSeconds(30).toMillis();
 
     private static final int PAGE_SIZE = SemanticPage.PAGE_SIZE;
 
     public SemanticPageTable(L3ColdStore l3) {
-        this(l3, DEFAULT_PAGE_TABLE_KEY);
+        this(l3, DEFAULT_PAGE_TABLE_KEY, 0.30);
     }
 
     @Autowired
     public SemanticPageTable(
             L3ColdStore l3,
-            @Value("${vortex.kernel.paging.page-table-key:" + DEFAULT_PAGE_TABLE_KEY + "}") String pageTableKey) {
+            @Value("${vortex.kernel.paging.page-table-key:" + DEFAULT_PAGE_TABLE_KEY + "}") String pageTableKey,
+            @Value("${vortex.kernel.paging.incremental.max-distance:0.30}") double maxIncrementalAssignmentDistance) {
         this.l3 = l3;
         this.pageTableKey = pageTableKey;
+        this.maxIncrementalAssignmentDistance = Math.max(0.0, maxIncrementalAssignmentDistance);
     }
 
     @PostConstruct
@@ -67,27 +75,49 @@ public class SemanticPageTable {
             PageTableSnapshot snapshot = kryoSerializer.deserialize(data, PageTableSnapshot.class);
             Map<String, SemanticPage> snapshotPages =
                     snapshot.getPages() != null ? snapshot.getPages() : Map.of();
-            Map<String, String> snapshotFragmentToPage =
-                    snapshot.getFragmentToPage() != null ? snapshot.getFragmentToPage() : Map.of();
-            Map<String, Set<String>> snapshotDagNodeToPages =
-                    snapshot.getDagNodeToPages() != null ? snapshot.getDagNodeToPages() : Map.of();
-            pages.clear();
-            snapshotPages.forEach((pageId, page) -> {
-                page.setState(PageState.EVICTED);
-                pages.put(pageId, page);
-            });
-            fragmentToPage.clear();
-            fragmentToPage.putAll(snapshotFragmentToPage);
-            dagNodeToPages.clear();
-            snapshotDagNodeToPages.forEach((nodeId, pageIds) ->
-                    dagNodeToPages.put(nodeId, ConcurrentHashMap.newKeySet(Math.max(1, pageIds.size()))));
-            snapshotDagNodeToPages.forEach((nodeId, pageIds) ->
-                    dagNodeToPages.get(nodeId).addAll(pageIds));
-            nextPageSequence.set(snapshot.getNextPageSequence() > 0
-                    ? snapshot.getNextPageSequence()
-                    : deriveNextPageSequence(snapshotPages.keySet()));
+            Map<String, String> snapshotFragmentToPage = new HashMap<>();
+            if (snapshot.getFragmentToPage() != null) {
+                snapshot.getFragmentToPage().forEach((fragmentId, pageId) -> {
+                    if (snapshotPages.containsKey(pageId)) {
+                        snapshotFragmentToPage.put(fragmentId, pageId);
+                    }
+                });
+            }
+            Map<String, Set<String>> snapshotDagNodeToPages = new HashMap<>();
+            if (snapshot.getDagNodeToPages() != null) {
+                snapshot.getDagNodeToPages().forEach((nodeId, pageIds) -> {
+                    Set<String> filteredPageIds = new HashSet<>();
+                    if (pageIds != null) {
+                        for (String pageId : pageIds) {
+                            if (snapshotPages.containsKey(pageId)) {
+                                filteredPageIds.add(pageId);
+                            }
+                        }
+                    }
+                    if (!filteredPageIds.isEmpty()) {
+                        snapshotDagNodeToPages.put(nodeId, filteredPageIds);
+                    }
+                });
+            }
+            synchronized (snapshotLock) {
+                pages.clear();
+                snapshotPages.forEach((pageId, page) -> {
+                    page.setState(PageState.EVICTED);
+                    pages.put(pageId, page);
+                });
+                fragmentToPage.clear();
+                fragmentToPage.putAll(snapshotFragmentToPage);
+                dagNodeToPages.clear();
+                snapshotDagNodeToPages.forEach((nodeId, pageIds) ->
+                        dagNodeToPages.put(nodeId, ConcurrentHashMap.newKeySet(Math.max(1, pageIds.size()))));
+                snapshotDagNodeToPages.forEach((nodeId, pageIds) ->
+                        dagNodeToPages.get(nodeId).addAll(pageIds));
+                nextPageSequence.set(snapshot.getNextPageSequence() > 0
+                        ? snapshot.getNextPageSequence()
+                        : deriveNextPageSequence(snapshotPages.keySet()));
+            }
             log.info("Loaded persisted page table: {} pages, {} fragment mappings",
-                    pages.size(), fragmentToPage.size());
+                    snapshotPages.size(), snapshotFragmentToPage.size());
         } catch (Exception e) {
             log.warn("Page table load failed, will rebuild on demand: {}", e.getMessage());
         }
@@ -127,20 +157,24 @@ public class SemanticPageTable {
 
     /** Register a fragment → page mapping. */
     public void registerFragment(String fragmentId, String pageId) {
-        fragmentToPage.put(fragmentId, pageId);
-        SemanticPage page = pages.get(pageId);
-        if (page != null) {
-            page.addFragment(fragmentId);
+        synchronized (snapshotLock) {
+            fragmentToPage.put(fragmentId, pageId);
+            SemanticPage page = pages.get(pageId);
+            if (page != null) {
+                page.addFragment(fragmentId);
+            }
         }
         persistIfNeeded();
     }
 
     /** Associate a DAG node with a page. */
     public void associateDagNode(String nodeId, String pageId) {
-        dagNodeToPages.computeIfAbsent(nodeId, k -> ConcurrentHashMap.newKeySet()).add(pageId);
-        SemanticPage page = pages.get(pageId);
-        if (page != null) {
-            page.associateDagNode(nodeId);
+        synchronized (snapshotLock) {
+            dagNodeToPages.computeIfAbsent(nodeId, k -> ConcurrentHashMap.newKeySet()).add(pageId);
+            SemanticPage page = pages.get(pageId);
+            if (page != null) {
+                page.associateDagNode(nodeId);
+            }
         }
         persistIfNeeded();
     }
@@ -179,9 +213,11 @@ public class SemanticPageTable {
 
     /** Insert a fully built page into the table. */
     public void putPage(SemanticPage page) {
-        pages.put(page.getPageId(), page);
-        for (String fragmentId : page.getFragmentIds()) {
-            fragmentToPage.put(fragmentId, page.getPageId());
+        synchronized (snapshotLock) {
+            pages.put(page.getPageId(), page);
+            for (String fragmentId : page.getFragmentIds()) {
+                fragmentToPage.put(fragmentId, page.getPageId());
+            }
         }
         persistIfNeeded();
     }
@@ -261,25 +297,27 @@ public class SemanticPageTable {
 
         // Build SemanticPages from clusters
         List<SemanticPage> result = new ArrayList<>();
-        for (int ci = 0; ci < k; ci++) {
-            List<MemoryFragment> cluster = clusters.get(ci);
-            if (cluster.isEmpty()) continue;
+        synchronized (snapshotLock) {
+            for (int ci = 0; ci < k; ci++) {
+                List<MemoryFragment> cluster = clusters.get(ci);
+                if (cluster.isEmpty()) continue;
 
-            float[] centroid = l2Normalize(computeMean(cluster, dim));
-            String pageId = allocatePageId();
+                float[] centroid = l2Normalize(computeMean(cluster, dim));
+                String pageId = allocatePageId();
 
-            SemanticPage page = SemanticPage.builder()
-                    .pageId(pageId)
-                    .centroid(centroid)
-                    .state(PageState.BUILDING)
-                    .build();
+                SemanticPage page = SemanticPage.builder()
+                        .pageId(pageId)
+                        .centroid(centroid)
+                        .state(PageState.BUILDING)
+                        .build();
 
-            for (MemoryFragment fragment : cluster) {
-                page.addFragment(fragment.getId());
-                fragmentToPage.put(fragment.getId(), pageId);
+                for (MemoryFragment fragment : cluster) {
+                    page.addFragment(fragment.getId());
+                    fragmentToPage.put(fragment.getId(), pageId);
+                }
+                pages.put(pageId, page);
+                result.add(page);
             }
-            pages.put(pageId, page);
-            result.add(page);
         }
 
         persistIfNeeded();
@@ -289,15 +327,34 @@ public class SemanticPageTable {
 
     private List<SemanticPage> assignFragmentsIncrementally(List<MemoryFragment> fragments) {
         Map<String, SemanticPage> touchedPages = new LinkedHashMap<>();
-        for (MemoryFragment fragment : fragments) {
-            SemanticPage targetPage = findNearestPageWithCapacity(fragment)
-                    .orElseGet(() -> createEmptyPage(fragment.getEmbedding()));
-            addFragmentToPage(targetPage, fragment);
-            touchedPages.put(targetPage.getPageId(), targetPage);
+        synchronized (snapshotLock) {
+            for (MemoryFragment fragment : fragments) {
+                Optional<SemanticPage> nearest = findNearestPageWithCapacity(fragment);
+                SemanticPage targetPage;
+                if (nearest.isPresent()) {
+                    targetPage = nearest.get();
+                    incrementalReuseCount.incrementAndGet();
+                } else {
+                    targetPage = createEmptyPage(fragment.getEmbedding());
+                    incrementalNewPageCount.incrementAndGet();
+                }
+                incrementalAssignmentCount.incrementAndGet();
+                addFragmentToPage(targetPage, fragment);
+                touchedPages.put(targetPage.getPageId(), targetPage);
+            }
         }
         persistIfNeeded();
         log.info("Incrementally assigned {} fragments across {} pages", fragments.size(), touchedPages.size());
         return new ArrayList<>(touchedPages.values());
+    }
+
+    public AssignmentStats assignmentStats() {
+        long assignments = incrementalAssignmentCount.get();
+        long reused = incrementalReuseCount.get();
+        long newPages = incrementalNewPageCount.get();
+        double reuseRatio = assignments == 0 ? 0.0 : reused / (double) assignments;
+        double newPageRatio = assignments == 0 ? 0.0 : newPages / (double) assignments;
+        return new AssignmentStats(assignments, reused, newPages, reuseRatio, newPageRatio);
     }
 
     private void persistIfNeeded() {
@@ -311,15 +368,21 @@ public class SemanticPageTable {
         }
         CompletableFuture.runAsync(() -> {
             try {
-                Map<String, Set<String>> dagSnapshot = new HashMap<>();
-                dagNodeToPages.forEach((nodeId, pageIds) -> dagSnapshot.put(nodeId, new HashSet<>(pageIds)));
-                PageTableSnapshot snapshot = new PageTableSnapshot(
-                        new HashMap<>(pages),
-                        new HashMap<>(fragmentToPage),
-                        dagSnapshot,
-                        nextPageSequence.get());
+                PageTableSnapshot snapshot;
+                synchronized (snapshotLock) {
+                    Map<String, Set<String>> dagSnapshot = new HashMap<>();
+                    dagNodeToPages.forEach((nodeId, pageIds) -> dagSnapshot.put(nodeId, new HashSet<>(pageIds)));
+                    Map<String, SemanticPage> pageSnapshot = new HashMap<>();
+                    pages.forEach((pageId, page) -> pageSnapshot.put(pageId, copyPage(page)));
+                    snapshot = new PageTableSnapshot(
+                            pageSnapshot,
+                            new HashMap<>(fragmentToPage),
+                            dagSnapshot,
+                            nextPageSequence.get());
+                }
                 l3.putBytes(pageTableKey, kryoSerializer.serialize(snapshot));
-                log.debug("Page table persisted: pages={} fragments={}", pages.size(), fragmentToPage.size());
+                log.debug("Page table persisted: pages={} fragments={}",
+                        snapshot.getPages().size(), snapshot.getFragmentToPage().size());
             } catch (Exception e) {
                 log.error("Page table persist failed: {}", e.getMessage(), e);
             }
@@ -344,7 +407,10 @@ public class SemanticPageTable {
         return pages.values().stream()
                 .filter(page -> page.getFragmentIds().size() < PAGE_SIZE)
                 .filter(page -> page.getCentroid() != null && page.getCentroid().length == embedding.length)
-                .min(Comparator.comparingDouble(page -> cosineDistance(embedding, page.getCentroid())));
+                .map(page -> new PageDistance(page, cosineDistance(embedding, page.getCentroid())))
+                .filter(candidate -> candidate.distance() <= maxIncrementalAssignmentDistance)
+                .min(Comparator.comparingDouble(PageDistance::distance))
+                .map(PageDistance::page);
     }
 
     private SemanticPage createEmptyPage(float[] seedEmbedding) {
@@ -402,13 +468,25 @@ public class SemanticPageTable {
         }
     }
 
+    private SemanticPage copyPage(SemanticPage page) {
+        return SemanticPage.builder()
+                .pageId(page.getPageId())
+                .centroid(page.getCentroid() == null ? null : Arrays.copyOf(page.getCentroid(), page.getCentroid().length))
+                .fragmentIds(new HashSet<>(page.getFragmentIds()))
+                .dagNodeIds(new HashSet<>(page.getDagNodeIds()))
+                .accessCount(page.getAccessCount())
+                .lastAccessTime(page.getLastAccessTime())
+                .state(page.getState())
+                .coAccessStats(new HashMap<>(page.getCoAccessStats()))
+                .build();
+    }
+
     // ---- K-Means helpers ----
 
     private float[][] initializeCentroids(List<MemoryFragment> fragments, int k, int dim) {
         float[][] centroids = new float[k][dim];
         // K-Means++ style: pick first centroid randomly, then farthest-first
-        Random rng = new Random(42);
-        int first = rng.nextInt(fragments.size());
+        int first = ThreadLocalRandom.current().nextInt(fragments.size());
         System.arraycopy(fragments.get(first).getEmbedding(), 0, centroids[0], 0, dim);
 
         for (int ci = 1; ci < k; ci++) {
@@ -471,5 +549,16 @@ public class SemanticPageTable {
         float[] out = new float[v.length];
         for (int i = 0; i < v.length; i++) out[i] = (float) (v[i] / norm);
         return out;
+    }
+
+    private record PageDistance(SemanticPage page, double distance) {
+    }
+
+    public record AssignmentStats(
+            long incrementalAssignments,
+            long incrementalReuseAssignments,
+            long incrementalNewPageAssignments,
+            double incrementalReuseRatio,
+            double incrementalNewPageRatio) {
     }
 }

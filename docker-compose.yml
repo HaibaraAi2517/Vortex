@@ -1,18 +1,4 @@
 services:
-  redis:
-    image: redis:7.2-alpine
-    container_name: vortex-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    command: redis-server --save 60 1 --loglevel warning
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   etcd:
     image: quay.io/coreos/etcd:v3.5.5
     container_name: vortex-etcd
@@ -76,7 +62,6 @@ services:
       retries: 3
 
 volumes:
-  redis-data:
   etcd-data:
   milvus-data:
   minio-data:

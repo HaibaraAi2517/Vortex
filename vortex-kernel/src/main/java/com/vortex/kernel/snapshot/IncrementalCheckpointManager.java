@@ -460,11 +460,6 @@ public class IncrementalCheckpointManager {
     }
 
     private boolean isDuplicateEdge(TaskState state, DagEdge edge) {
-        synchronized (state.getGraph().getEdges()) {
-            return state.getGraph().getEdges().stream().anyMatch(existing ->
-                    existing.getSourceNodeId().equals(edge.getSourceNodeId())
-                            && existing.getTargetNodeId().equals(edge.getTargetNodeId())
-                            && existing.getDependencyType() == edge.getDependencyType());
-        }
+        return state.getGraph().containsEquivalentEdge(edge);
     }
 }

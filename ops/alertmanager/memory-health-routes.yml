@@ -1,0 +1,23 @@
+route:
+  receiver: default-notify
+  routes:
+    - matchers:
+        - health_code="checkpoint_recovery_success_rate_low"
+      receiver: vortex-memory-durability-critical
+      group_by:
+        - alertname
+        - health_code
+      continue: false
+    - matchers:
+        - health_code="memory_persistence_success_rate_low"
+      receiver: vortex-memory-durability-critical
+      group_by:
+        - alertname
+        - health_code
+      continue: false
+
+receivers:
+  - name: default-notify
+  - name: vortex-memory-durability-critical
+
+templates: []

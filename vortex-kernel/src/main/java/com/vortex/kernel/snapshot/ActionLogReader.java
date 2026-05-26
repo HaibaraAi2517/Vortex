@@ -52,7 +52,7 @@ public class ActionLogReader {
      * @return ordered list of entries
      */
     public List<ActionLogEntry> readFrom(String taskId, long fromSequenceNumber) {
-        Path file = walDir.resolve(taskId + ".wal");
+        Path file = ActionLogWriter.walFileFor(walDir, taskId);
         if (!Files.exists(file)) {
             log.debug("WAL file not found for task={}", taskId);
             return Collections.emptyList();
@@ -99,7 +99,7 @@ public class ActionLogReader {
      * Find a specific WAL entry by its UUID (for idempotent replay checks).
      */
     public Optional<ActionLogEntry> findEntry(String taskId, String entryId) {
-        Path file = walDir.resolve(taskId + ".wal");
+        Path file = ActionLogWriter.walFileFor(walDir, taskId);
         if (!Files.exists(file)) return Optional.empty();
 
         try (BufferedReader reader = Files.newBufferedReader(file)) {
@@ -139,7 +139,7 @@ public class ActionLogReader {
      * Check if a WAL file exists for the given task.
      */
     public boolean exists(String taskId) {
-        return Files.exists(walDir.resolve(taskId + ".wal"));
+        return Files.exists(ActionLogWriter.walFileFor(walDir, taskId));
     }
 
     /**
@@ -147,9 +147,9 @@ public class ActionLogReader {
      */
     public void delete(String taskId) {
         try {
-            Files.deleteIfExists(walDir.resolve(taskId + ".wal"));
+            Files.deleteIfExists(ActionLogWriter.walFileFor(walDir, taskId));
         } catch (IOException e) {
-            log.warn("Failed to delete WAL file for task={}: {}", taskId, e.getMessage());
+            SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-delete", taskId, null, e);
         }
     }
 }

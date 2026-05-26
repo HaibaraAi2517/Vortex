@@ -4,10 +4,6 @@ server:
 spring:
   application:
     name: vortex
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
 
 management:
   endpoints:
@@ -48,9 +44,11 @@ vortex:
       min-eviction-log-coverage: ${VORTEX_SLO_MIN_EVICTION_LOG_COVERAGE:1.0}
       max-eviction-regret-rate: ${VORTEX_SLO_MAX_EVICTION_REGRET_RATE:0.05}
       max-namespace-isolation-violations: ${VORTEX_SLO_MAX_NAMESPACE_ISOLATION_VIOLATIONS:0}
-      min-recovery-success-rate: ${VORTEX_SLO_MIN_RECOVERY_SUCCESS_RATE:1.0}
+      min-checkpoint-recovery-success-rate: ${VORTEX_SLO_MIN_CHECKPOINT_RECOVERY_SUCCESS_RATE:${VORTEX_SLO_MIN_RECOVERY_SUCCESS_RATE:1.0}}
+      min-persistence-success-rate: ${VORTEX_SLO_MIN_PERSISTENCE_SUCCESS_RATE:1.0}
       max-store-latency-p99-ms: ${VORTEX_SLO_MAX_STORE_LATENCY_P99_MS:10.0}
       max-recall-latency-p99-ms: ${VORTEX_SLO_MAX_RECALL_LATENCY_P99_MS:10.0}
+      min-learning-samples-for-health: ${VORTEX_SLO_MIN_LEARNING_SAMPLES_FOR_HEALTH:1}
       min-shadow-relative-lift: ${VORTEX_SLO_MIN_SHADOW_RELATIVE_LIFT:-1.0}
       min-baseline-relative-lift: ${VORTEX_SLO_MIN_BASELINE_RELATIVE_LIFT:0.20}
       min-baseline-sustained-ratio: ${VORTEX_SLO_MIN_BASELINE_SUSTAINED_RATIO:0.90}

@@ -27,6 +27,7 @@ public class RecallSessionRecord {
     private List<String> rankedFragmentIds;
     private List<String> shadowRankedFragmentIds;
     private List<String> baselineRankedFragmentIds;
+    private List<String> returnedFragmentIds;
     private List<String> activeEvictionRankedFragmentIds;
     private List<String> shadowEvictionRankedFragmentIds;
     private List<String> baselineEvictionRankedFragmentIds;

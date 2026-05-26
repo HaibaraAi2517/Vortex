@@ -101,6 +101,15 @@ public class DagGraph {
         }
     }
 
+    public boolean containsEquivalentEdge(DagEdge edge) {
+        synchronized (edges) {
+            return edges.stream().anyMatch(existing ->
+                    existing.getSourceNodeId().equals(edge.getSourceNodeId())
+                            && existing.getTargetNodeId().equals(edge.getTargetNodeId())
+                            && existing.getDependencyType() == edge.getDependencyType());
+        }
+    }
+
     public List<DagEdge> getOutgoingEdges(String nodeId) {
         rebuildAdjacency();
         List<String> targets = adjacencyList.getOrDefault(nodeId, Collections.emptyList());

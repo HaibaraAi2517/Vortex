@@ -158,10 +158,29 @@ class ActionLogTest {
     }
 
     @Test
+    void ensureSequenceAtLeast_alignsCounterForSubsequentAppends() {
+        writer.ensureSequenceAtLeast("task-floor", 10);
+
+        ActionLogEntry next = writer.append("task-floor", ActionLogEntry.OperationType.APPEND_NODE, "{}");
+        assertThat(next.getSequenceNumber()).isEqualTo(11);
+
+        writer.ensureSequenceAtLeast("task-floor", 5);
+        ActionLogEntry later = writer.append("task-floor", ActionLogEntry.OperationType.APPEND_NODE, "{}");
+        assertThat(later.getSequenceNumber()).isEqualTo(12);
+    }
+
+    @Test
     void exists_returnsTrueAfterWrite() {
         writer.append("task-ex", ActionLogEntry.OperationType.APPEND_NODE, "{}");
         writer.flush("task-ex");
         assertThat(reader.exists("task-ex")).isTrue();
         assertThat(reader.exists("nonexistent")).isFalse();
+    }
+
+    @Test
+    void append_rejectsUnsafeTaskId() {
+        assertThatThrownBy(() -> writer.append("../escape", ActionLogEntry.OperationType.APPEND_NODE, "{}"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsafe taskId");
     }
 }

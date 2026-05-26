@@ -36,9 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         classes = {VortexApplication.class, CheckpointRetentionIT.TestEmbeddingConfig.class},
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
-                "spring.main.allow-bean-definition-overriding=true",
-                "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
-                        + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration"
+                "spring.main.allow-bean-definition-overriding=true"
         })
 @Import(IsolatedIntegrationTestSupport.Config.class)
 @ContextConfiguration(initializers = IsolatedIntegrationTestSupport.Initializer.class)
@@ -123,7 +121,7 @@ class CheckpointRetentionIT {
                 .extracting(CheckpointMetadata::getCheckpointId)
                 .doesNotContain(firstCheckpointId, secondCheckpointId, thirdCheckpointId);
 
-        snapshotService.evictFromCacheForTest(taskId);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(snapshotService, "evictFromCacheForTest", taskId);
 
         ResponseEntity<TaskState> recoverResponse = restTemplate.postForEntity(
                 "/api/v1/tasks/" + taskId + "/recover",
@@ -163,7 +161,7 @@ class CheckpointRetentionIT {
         String deltaCheckpointId = checkpoint(taskId);
 
         minioColdStore.deleteCheckpoint(taskId + "/" + fullCheckpointId);
-        snapshotService.evictFromCacheForTest(taskId);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(snapshotService, "evictFromCacheForTest", taskId);
 
         ResponseEntity<Map> recoverResponse = restTemplate.postForEntity(
                 "/api/v1/tasks/" + taskId + "/recover",
@@ -190,7 +188,7 @@ class CheckpointRetentionIT {
 
         minioColdStore.putBytes("checkpoints/" + taskId + "/" + deltaCheckpointId + ".kryo",
                 new byte[]{1, 2, 3, 4, 5});
-        snapshotService.evictFromCacheForTest(taskId);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(snapshotService, "evictFromCacheForTest", taskId);
 
         ResponseEntity<Map> recoverResponse = restTemplate.postForEntity(
                 "/api/v1/tasks/" + taskId + "/recover",

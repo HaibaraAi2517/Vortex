@@ -53,7 +53,7 @@ public class ActionLogTruncator {
      */
     public void truncate(String taskId, long truncationPoint) {
         writer.withTaskLock(taskId, () -> {
-            Path walFile = walDir.resolve(taskId + ".wal");
+            Path walFile = ActionLogWriter.walFileFor(walDir, taskId);
             if (!Files.exists(walFile)) {
                 log.debug("No WAL file to truncate for task={}", taskId);
                 return null;
@@ -90,11 +90,13 @@ public class ActionLogTruncator {
                         taskId, entries.size() - retained.size(), retained.size(), truncationPoint);
 
             } catch (IOException e) {
-                log.error("WAL truncation failed for task={}: {}", taskId, e.getMessage());
+                SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-truncate", taskId, null, e);
                 // Clean up temp file if it exists
                 try {
                     Files.deleteIfExists(walDir.resolve(taskId + ".wal.tmp"));
-                } catch (IOException ignored) {}
+                } catch (IOException cleanupError) {
+                    SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-truncate-temp-cleanup", taskId, null, cleanupError);
+                }
             }
             return null;
         });

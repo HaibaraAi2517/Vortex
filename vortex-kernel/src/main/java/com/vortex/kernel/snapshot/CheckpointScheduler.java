@@ -50,7 +50,9 @@ public class CheckpointScheduler {
      * Register a task for automatic checkpointing.
      */
     public void registerTask(String taskId, SnapshotService service) {
-        taskServices.put(taskId, service);
+        if (service != null) {
+            taskServices.put(taskId, service);
+        }
         actionCounters.put(taskId, new AtomicLong(0));
         lastCheckpointTimes.put(taskId, System.currentTimeMillis());
     }
@@ -113,7 +115,7 @@ public class CheckpointScheduler {
                     service.checkpoint(taskId);
                     log.debug("Auto-checkpoint triggered for task={}", taskId);
                 } catch (Exception e) {
-                    log.error("Auto-checkpoint failed for task={}: {}", taskId, e.getMessage());
+                    SnapshotHealthLogSupport.logCheckpointFailure(log, "auto-checkpoint", taskId, null, e);
                 }
             } else if (service != null) {
                 log.debug("Auto-checkpoint skipped for unloaded task={}", taskId);
@@ -139,7 +141,7 @@ public class CheckpointScheduler {
                 entry.getValue().checkpoint(entry.getKey());
                 log.info("Shutdown checkpoint created for task={}", entry.getKey());
             } catch (Exception e) {
-                log.error("Shutdown checkpoint failed for task={}: {}", entry.getKey(), e.getMessage());
+                SnapshotHealthLogSupport.logCheckpointFailure(log, "shutdown-checkpoint", entry.getKey(), null, e);
             }
         }
     }

@@ -19,6 +19,7 @@ import com.vortex.storage.l1.CaffeineHotStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -54,10 +55,9 @@ import static org.awaitility.Awaitility.await;
         classes = {VortexApplication.class, DockerComposeIT.TestEmbeddingConfig.class},
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
-                "spring.main.allow-bean-definition-overriding=true",
-                "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
-                        + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration"
+                "spring.main.allow-bean-definition-overriding=true"
         })
+@AutoConfigureObservability
 @Import(IsolatedIntegrationTestSupport.Config.class)
 @ContextConfiguration(initializers = IsolatedIntegrationTestSupport.Initializer.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
@@ -106,13 +106,13 @@ public class DockerComposeIT {
     void setUp() {
         clearIntegrationNamespaces();
         namespace = TEST_NAMESPACE_PREFIX + UUID.randomUUID();
-        adaptiveWeightLearner.clearPendingSessionsForTest();
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(adaptiveWeightLearner, "clearPendingSessionsForTest");
     }
 
     @AfterEach
     void tearDown() {
         clearIntegrationNamespaces();
-        adaptiveWeightLearner.clearPendingSessionsForTest();
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(adaptiveWeightLearner, "clearPendingSessionsForTest");
     }
 
     @Test
@@ -165,8 +165,69 @@ public class DockerComposeIT {
                 assertThat(l1HotStore.peek(coldFragment.getId())).isPresent());
 
         ResponseEntity<Map> health = restTemplate.getForEntity("/api/v1/memory/health", Map.class);
-        assertThat(health.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(health.getStatusCode()).isIn(HttpStatus.OK, HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(health.getBody()).isNotNull();
+        assertThat(health.getBody()).containsEntry("dictionaryVersion", "memory-health-v2");
         assertThat(((Number) health.getBody().get("l1TokensUsed")).longValue()).isLessThanOrEqualTo(24L);
+    }
+
+    @Test
+    void observabilityEndpointsExposeAlignedHealthCatalogAndPrometheusMetadata() {
+        ResponseEntity<Map> healthResponse = restTemplate.getForEntity("/api/v1/memory/health", Map.class);
+        assertThat(healthResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(healthResponse.getBody()).isNotNull();
+        assertThat(healthResponse.getBody()).containsEntry("dictionaryVersion", "memory-health-v2");
+        assertThat(healthResponse.getBody()).containsKeys("summary", "statusReason", "details");
+
+        Map<String, Object> healthDetails = (Map<String, Object>) healthResponse.getBody().get("details");
+        assertThat(healthDetails).isNotNull();
+        assertThat(healthDetails).containsKeys(
+                "checkpointRecoverySuccessRate",
+                "persistenceSuccessRate",
+                "recoverySuccessRate",
+                "learningEvaluationActive",
+                "learningSampleCount",
+                "summary",
+                "dictionaryVersion");
+        assertThat(healthDetails).containsEntry("learningEvaluationActive", false);
+        assertThat(((Number) healthDetails.get("learningSampleCount")).longValue()).isZero();
+
+        ResponseEntity<Map> catalogResponse = restTemplate.getForEntity("/api/v1/memory/health/catalog", Map.class);
+        assertThat(catalogResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(catalogResponse.getBody()).isNotNull();
+        assertThat(catalogResponse.getBody()).containsEntry("dictionaryVersion", "memory-health-v2");
+        assertThat(catalogResponse.getBody()).containsEntry("migrationGuide", "ops/runbooks/memory-health-migration.md");
+
+        List<Map<String, Object>> compatibility = (List<Map<String, Object>>) catalogResponse.getBody().get("compatibility");
+        assertThat(compatibility).isNotNull();
+        assertThat(compatibility)
+                .extracting(item -> item.get("deprecatedKey"), item -> item.get("replacementKey"))
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple("recovery_success_rate_low", "checkpoint_recovery_success_rate_low"),
+                        org.assertj.core.groups.Tuple.tuple("recoverySuccessRate", "checkpointRecoverySuccessRate"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "vortex_hmc_slo_recovery_success_rate",
+                                "vortex_hmc_slo_checkpoint_recovery_success_rate"));
+
+        List<Map<String, Object>> signals = (List<Map<String, Object>>) catalogResponse.getBody().get("signals");
+        assertThat(signals).isNotNull();
+        assertThat(signals)
+                .extracting(item -> item.get("code"))
+                .contains("checkpoint_recovery_success_rate_low", "memory_persistence_success_rate_low");
+
+        ResponseEntity<Map> actuatorResponse = restTemplate.getForEntity("/actuator", Map.class);
+        assertThat(actuatorResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(actuatorResponse.getBody()).isNotNull();
+        Map<String, Object> actuatorLinks = (Map<String, Object>) actuatorResponse.getBody().get("_links");
+        assertThat(actuatorLinks).isNotNull();
+        assertThat(actuatorLinks).containsKeys("prometheus", "metrics", "health");
+
+        ResponseEntity<String> prometheusResponse = restTemplate.getForEntity("/actuator/prometheus", String.class);
+        assertThat(prometheusResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(prometheusResponse.getBody()).contains(
+                "vortex_hmc_slo_checkpoint_recovery_success_rate",
+                "vortex_hmc_slo_persistence_success_rate",
+                "vortex_hmc_slo_recovery_success_rate");
     }
 
     @Test
@@ -193,7 +254,7 @@ public class DockerComposeIT {
         String checkpointId = (String) checkpointResponse.getBody().get("checkpointId");
         assertThat(checkpointId).isNotBlank();
 
-        snapshotService.evictFromCacheForTest(taskId);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(snapshotService, "evictFromCacheForTest", taskId);
 
         ResponseEntity<Map> recoverResponse = restTemplate.postForEntity(
                 "/api/v1/tasks/" + taskId + "/recover",
@@ -238,7 +299,7 @@ public class DockerComposeIT {
         assertThat(afterCheckpointNode.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(afterCheckpointNode.getBody()).isNotNull();
 
-        snapshotService.evictFromCacheForTest(taskId);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(snapshotService, "evictFromCacheForTest", taskId);
 
         ResponseEntity<Map> firstRecover = restTemplate.postForEntity(
                 "/api/v1/tasks/" + taskId + "/recover",
@@ -247,7 +308,7 @@ public class DockerComposeIT {
         assertThat(firstRecover.getBody()).containsEntry("taskId", taskId);
         assertDagContains(taskId, "before-checkpoint", "after-checkpoint");
 
-        snapshotService.evictFromCacheForTest(taskId);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(snapshotService, "evictFromCacheForTest", taskId);
 
         ResponseEntity<Map> secondRecover = restTemplate.postForEntity(
                 "/api/v1/tasks/" + taskId + "/recover",
@@ -446,7 +507,7 @@ public class DockerComposeIT {
                 Map.of("type", "ACTION", "content", "after-checkpoint"),
                 Map.class);
 
-        snapshotService.evictFromCacheForTest(taskId);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(snapshotService, "evictFromCacheForTest", taskId);
 
         ResponseEntity<Map> recoverResponse = restTemplate.postForEntity(
                 "/api/v1/tasks/" + taskId + "/recover",
@@ -495,7 +556,7 @@ public class DockerComposeIT {
     }
 
     private void recoverAndAssertDag(String taskId, String checkpointId, String[] expectedContents, String[] unexpectedContents) {
-        snapshotService.evictFromCacheForTest(taskId);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(snapshotService, "evictFromCacheForTest", taskId);
 
         ResponseEntity<Map> recoverResponse = restTemplate.postForEntity(
                 "/api/v1/tasks/" + taskId + "/recover",

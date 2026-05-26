@@ -65,6 +65,7 @@ mvn spring-boot:run -pl vortex-app
 ```
 
 应用默认监听 `http://localhost:8080`。
+启动后可直接访问 `http://localhost:8080/swagger-ui.html` 查看 OpenAPI 文档。
 
 ## 运行测试
 
@@ -120,15 +121,38 @@ curl -X POST http://localhost:8080/api/v1/tasks/{taskId}/recover \
   -H "Content-Type: application/json" \
   -d '{"checkpointId": "<checkpoint-id>"}'
 
-# 导出 DAG（Graphviz DOT 格式）
-curl http://localhost:8080/api/v1/tasks/{taskId}/dag
+# 分页列出任务
+curl "http://localhost:8080/api/v1/tasks?page=0&size=20"
+
+# 更新任务上下文
+curl -X PUT http://localhost:8080/api/v1/tasks/{taskId}/context \
+  -H "Content-Type: application/json" \
+  -d '{"key":"mode","value":"strict"}'
+
+# 切换 branch
+curl -X POST http://localhost:8080/api/v1/tasks/{taskId}/branch/switch \
+  -H "Content-Type: application/json" \
+  -d '{"branchId":"<branch-id>"}'
+
+# 标记任务失败
+curl -X POST http://localhost:8080/api/v1/tasks/{taskId}/fail
+
+# 导出 DAG（Graphviz DOT 格式，可按 branch 过滤）
+curl "http://localhost:8080/api/v1/tasks/{taskId}/dag?branchId=<branch-id>"
 ```
 
 ### 观测端点
 
 ```bash
-curl http://localhost:8080/api/v1/memory/health    # L1 token 用量
+curl http://localhost:8080/api/v1/memory/health    # 真实内存健康探针（UP=200, 非UP=503，含 summary/details）
+curl http://localhost:8080/api/v1/memory/health/catalog # 故障字典 / alert / runbook 映射
 curl http://localhost:8080/api/v1/memory/slo       # SLO 指标快照
+curl http://localhost:8080/api/v1/memory/slo/report # SLO + 诊断摘要（预取/遗憾/分页/学习，含 typed diagnosticSignals）
 curl http://localhost:8080/api/v1/memory/learning  # 自适应权重状态
 curl http://localhost:8080/actuator/metrics        # Micrometer 指标
 ```
+
+`/api/v1/memory/health` 的 `summary.code` 与 Prometheus 告警规则中的 `health_code` 标签保持一致，可直接做跨系统关联。
+`/api/v1/memory/health/catalog` 会返回每个 `code` 的严重级别、领域、告警名和 runbook 路径，同时附带 `migrationGuide` 和 `compatibility` 元数据；应用日志中的 `memory_health_*` 事件也使用同一套 code。
+`/api/v1/memory/slo/report` 与 `/api/v1/memory/health.details` 中的 `diagnosticSignals` 会直接输出 `code/severity/source/message/attributes`，便于日志、告警和接口统一消费。
+checkpoint/WAL 恢复链路和 memory persistence 链路会输出统一的 `memory_durability_degraded` / `memory_durability_recovered` 日志，并带上 `healthCode`、`chain`、`phase`、`failureReason` 字段；迁移细节见 `ops/runbooks/memory-health-migration.md`。

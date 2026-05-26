@@ -5,12 +5,18 @@ import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
 import com.vortex.common.model.MemoryFragment;
+import com.vortex.app.health.MemoryHealthSignalCatalog;
+import com.vortex.app.health.MemorySloHealthIndicator;
 import com.vortex.kernel.hmc.HierarchicalMemoryController;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.Status;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -20,6 +26,7 @@ import java.util.Map;
 public class MemoryController {
 
     private final HierarchicalMemoryController hmc;
+    private final MemorySloHealthIndicator memorySloHealthIndicator;
 
     /**
      * Store raw text into the memory hierarchy.
@@ -98,11 +105,21 @@ public class MemoryController {
      */
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> health() {
-        return ResponseEntity.ok(Map.of(
-                "status", "UP",
-                "l1TokensUsed", hmc.getL1().currentTokenCount(),
-                "l1TokensMax", hmc.getL1().maxTokenCapacity()
-        ));
+        Health health = memorySloHealthIndicator.health();
+        Object summary = health.getDetails().get("summary");
+        Object statusReason = null;
+        if (summary instanceof List<?> summaryList && !summaryList.isEmpty()) {
+            statusReason = summaryList.getFirst();
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("status", health.getStatus().getCode());
+        payload.put("dictionaryVersion", health.getDetails().get("dictionaryVersion"));
+        payload.put("summary", summary);
+        payload.put("statusReason", statusReason);
+        payload.put("l1TokensUsed", hmc.getL1().currentTokenCount());
+        payload.put("l1TokensMax", hmc.getL1().maxTokenCapacity());
+        payload.put("details", health.getDetails());
+        return ResponseEntity.status(httpStatusFor(health.getStatus())).body(payload);
     }
 
     @GetMapping("/learning")
@@ -113,6 +130,20 @@ public class MemoryController {
     @GetMapping("/slo")
     public ResponseEntity<Object> slo() {
         return ResponseEntity.ok(hmc.sloSnapshot());
+    }
+
+    @GetMapping("/slo/report")
+    public ResponseEntity<Object> sloReport() {
+        return ResponseEntity.ok(hmc.diagnosticsSnapshot());
+    }
+
+    @GetMapping("/health/catalog")
+    public ResponseEntity<Map<String, Object>> healthCatalog() {
+        return ResponseEntity.ok(Map.of(
+                "dictionaryVersion", MemoryHealthSignalCatalog.DICTIONARY_VERSION,
+                "migrationGuide", MemoryHealthSignalCatalog.MIGRATION_GUIDE_PATH,
+                "compatibility", MemoryHealthSignalCatalog.compatibilityNotes(),
+                "signals", MemoryHealthSignalCatalog.catalog()));
     }
 
     public record StoreRequest(
@@ -128,4 +159,10 @@ public class MemoryController {
 
     public record FragmentRefRequest(
             String fragmentId) {}
+
+    private HttpStatus httpStatusFor(Status status) {
+        return Status.UP.equals(status) || MemorySloHealthIndicator.DEGRADED.equals(status)
+                ? HttpStatus.OK
+                : HttpStatus.SERVICE_UNAVAILABLE;
+    }
 }
