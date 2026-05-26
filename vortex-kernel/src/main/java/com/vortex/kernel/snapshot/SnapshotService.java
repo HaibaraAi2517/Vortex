@@ -96,6 +96,10 @@ public class SnapshotService {
         taskLifecycleManager.failTask(taskId);
     }
 
+    public boolean deleteTask(String taskId) {
+        return taskLifecycleManager.deleteTask(taskId);
+    }
+
     boolean isTaskLoadedForCheckpoint(String taskId) {
         return taskLifecycleManager.isTaskLoadedForCheckpoint(taskId);
     }
@@ -122,6 +126,10 @@ public class SnapshotService {
         return dagMutationService.completeNode(taskId, nodeId, result);
     }
 
+    public void deleteNode(String taskId, String nodeId) {
+        dagMutationService.deleteNode(taskId, nodeId);
+    }
+
     public void updateContext(String taskId, String key, String value) {
         dagMutationService.updateContext(taskId, key, value);
     }
@@ -135,6 +143,10 @@ public class SnapshotService {
      */
     public String checkpoint(String taskId) {
         TaskState state = taskLifecycleManager.requireTask(taskId);
+        return checkpoint(taskId, state);
+    }
+
+    String checkpointLoadedTask(String taskId, TaskState state) {
         return checkpoint(taskId, state);
     }
 
@@ -265,6 +277,9 @@ public class SnapshotService {
     }
 
     public List<CheckpointMetadata> listCheckpoints(String taskId) {
+        if (taskLifecycleManager.isDeleteCommitted(taskId)) {
+            return List.of();
+        }
         return checkpointManager.listCheckpoints(taskId);
     }
 

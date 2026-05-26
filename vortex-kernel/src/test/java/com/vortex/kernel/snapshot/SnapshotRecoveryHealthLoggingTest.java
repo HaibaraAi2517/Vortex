@@ -45,7 +45,7 @@ class SnapshotRecoveryHealthLoggingTest {
         CheckpointLifecycleManager lifecycleManager = new CheckpointLifecycleManager(store, 20, 7, 48);
         TaskLifecycleManager taskLifecycleMgr = new TaskLifecycleManager(
                 store, checkpointManager, lifecycleManager, walWriter, walReader, walTruncator,
-                scheduler, dirtySetTracker, memorySloTracker, null, null);
+                scheduler, dirtySetTracker, memorySloTracker, new TaskFinalizationMetrics(meterRegistry), null, null);
         DagMutationService dagMutationSvc = new DagMutationService(
                 walWriter, dirtySetTracker, scheduler, eventPublisher, branchManager, taskLifecycleMgr);
         RecoveryEngine recoveryEng = new RecoveryEngine(

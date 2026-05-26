@@ -50,6 +50,9 @@ public class CheckpointDelta {
     /** Task status captured by this checkpoint. */
     private TaskState.TaskStatus status;
 
+    /** Finalization status captured by this checkpoint. */
+    private TaskState.TaskFinalizationStatus finalizationStatus;
+
     public boolean isEmpty() {
         return changedNodes.isEmpty()
                 && newEdges.isEmpty()

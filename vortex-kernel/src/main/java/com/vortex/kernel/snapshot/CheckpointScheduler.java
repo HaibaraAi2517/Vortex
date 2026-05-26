@@ -50,11 +50,23 @@ public class CheckpointScheduler {
      * Register a task for automatic checkpointing.
      */
     public void registerTask(String taskId, SnapshotService service) {
+        registerTask(taskId, service, null);
+    }
+
+    /**
+     * Register a task for automatic checkpointing with an explicit checkpoint-time baseline.
+     * A null baseline preserves any existing scheduler baseline, otherwise it falls back to now.
+     */
+    public void registerTask(String taskId, SnapshotService service, Long lastCheckpointTimeMillis) {
         if (service != null) {
             taskServices.put(taskId, service);
         }
         actionCounters.put(taskId, new AtomicLong(0));
-        lastCheckpointTimes.put(taskId, System.currentTimeMillis());
+        if (lastCheckpointTimeMillis != null) {
+            lastCheckpointTimes.put(taskId, lastCheckpointTimeMillis);
+        } else {
+            lastCheckpointTimes.putIfAbsent(taskId, System.currentTimeMillis());
+        }
     }
 
     /**

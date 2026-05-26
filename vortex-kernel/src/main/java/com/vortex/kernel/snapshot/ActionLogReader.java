@@ -136,6 +136,17 @@ public class ActionLogReader {
     }
 
     /**
+     * Read the last complete WAL entry for a task.
+     */
+    public Optional<ActionLogEntry> lastEntry(String taskId) {
+        List<ActionLogEntry> entries = readAll(taskId);
+        if (entries.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(entries.get(entries.size() - 1));
+    }
+
+    /**
      * Check if a WAL file exists for the given task.
      */
     public boolean exists(String taskId) {
@@ -150,6 +161,15 @@ public class ActionLogReader {
             Files.deleteIfExists(ActionLogWriter.walFileFor(walDir, taskId));
         } catch (IOException e) {
             SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-delete", taskId, null, e);
+        }
+    }
+
+    public void deleteStrict(String taskId) {
+        try {
+            Files.deleteIfExists(ActionLogWriter.walFileFor(walDir, taskId));
+        } catch (IOException e) {
+            SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-delete", taskId, null, e);
+            throw new IllegalStateException("WAL delete failed for task " + taskId, e);
         }
     }
 }

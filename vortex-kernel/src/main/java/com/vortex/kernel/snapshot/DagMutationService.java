@@ -12,9 +12,11 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -191,6 +193,26 @@ public class DagMutationService {
     }
 
     /**
+     * Delete a node by ID and remove its incident edges.
+     */
+    public void deleteNode(String taskId, String nodeId) {
+        TaskState state = requireTask(taskId);
+        requireNode(state, nodeId);
+
+        String payload = jsonPayload("nodeId", nodeId);
+        ActionLogEntry entry = walWriter.append(taskId,
+                ActionLogEntry.OperationType.DELETE_NODE, payload);
+
+        state.getGraph().removeNode(nodeId);
+        if (Objects.equals(state.getCurrentNodeId(), nodeId)) {
+            state.setCurrentNodeId(resolveCurrentNodeId(state));
+        }
+        state.setWalSequenceNumber(entry.getSequenceNumber());
+        dirtySetTracker.markNodeDeleted(taskId, nodeId);
+        scheduler.recordAction(taskId);
+    }
+
+    /**
      * Update a context key-value pair.
      */
     public void updateContext(String taskId, String key, String value) {
@@ -243,6 +265,16 @@ public class DagMutationService {
                 .metadata(BranchManager.branchMetadata(blankToNull(branchId)))
                 .executedAt(executedAt)
                 .build();
+    }
+
+    private String resolveCurrentNodeId(TaskState state) {
+        return state.getGraph().getSinkNodes().stream()
+                .max(Comparator.comparing(
+                                DagNode::getExecutedAt,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(DagNode::getNodeId))
+                .map(DagNode::getNodeId)
+                .orElse(null);
     }
 
     /**

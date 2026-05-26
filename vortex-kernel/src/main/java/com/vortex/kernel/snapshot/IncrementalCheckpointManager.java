@@ -147,11 +147,12 @@ public class IncrementalCheckpointManager {
                 changedNodes,
                 newEdges,
                 contextDiff,
-                Collections.emptySet(),
+                Set.copyOf(dirty.deletedNodeIds()),
                 state.getCurrentNodeId(),
                 state.getCurrentBranchId(),
                 new ArrayList<>(state.getBranches()),
-                state.getStatus());
+                state.getStatus(),
+                state.getFinalizationStatus());
 
         byte[] compressed = kryoSerializer.serializeCompressed(delta);
         String l3Key = checkpointDataKey(state.getTaskId(), checkpointId);
@@ -227,6 +228,9 @@ public class IncrementalCheckpointManager {
         state.setCurrentBranchId(delta.getCurrentBranchId());
         state.setBranches(new ArrayList<>(delta.getBranches()));
         state.setStatus(delta.getStatus());
+        state.setFinalizationStatus(delta.getFinalizationStatus() != null
+                ? delta.getFinalizationStatus()
+                : TaskState.TaskFinalizationStatus.NONE);
         state.setWalSequenceNumber(delta.getSequenceNumber());
 
         return state;
@@ -373,7 +377,7 @@ public class IncrementalCheckpointManager {
                             taskId,
                             checkpointId,
                             "Full checkpoint not found in L3: taskId=" + taskId + " checkpointId=" + checkpointId));
-            return new CheckpointRecoveryResult(state, CheckpointRecoveryMode.FULL, 0);
+            return new CheckpointRecoveryResult(state, CheckpointRecoveryMode.FULL, 0, target);
         }
 
         LinkedList<CheckpointMetadata> deltaChain = new LinkedList<>();
@@ -415,7 +419,11 @@ public class IncrementalCheckpointManager {
                             deltaMeta.getCheckpointId(),
                             "Delta checkpoint not found in L3: taskId=" + taskId + " checkpointId=" + deltaMeta.getCheckpointId())));
         }
-        return new CheckpointRecoveryResult(assemble(baseState, deltas), CheckpointRecoveryMode.DELTA_CHAIN, deltaChain.size());
+        return new CheckpointRecoveryResult(
+                assemble(baseState, deltas),
+                CheckpointRecoveryMode.DELTA_CHAIN,
+                deltaChain.size(),
+                target);
     }
 
     private String checkpointDataKey(String taskId, String checkpointId) {

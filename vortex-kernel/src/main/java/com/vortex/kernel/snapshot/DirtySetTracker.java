@@ -26,6 +26,7 @@ public class DirtySetTracker {
     private final ConcurrentHashMap<String, Set<String>> dirtyNodeIds = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Set<String>> dirtyEdgeIds = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Set<String>> dirtyContextKeys = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Set<String>> deletedNodeIds = new ConcurrentHashMap<>();
 
     // ---- Mark dirty ----
 
@@ -39,6 +40,14 @@ public class DirtySetTracker {
 
     public void markContextDirty(String taskId, String key) {
         dirtyContextKeys.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).add(key);
+    }
+
+    public void markNodeDeleted(String taskId, String nodeId) {
+        deletedNodeIds.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).add(nodeId);
+        Set<String> dirtyNodes = dirtyNodeIds.get(taskId);
+        if (dirtyNodes != null) {
+            dirtyNodes.remove(nodeId);
+        }
     }
 
     /**
@@ -57,11 +66,13 @@ public class DirtySetTracker {
         Set<String> nodeIds = dirtyNodeIds.remove(taskId);
         Set<String> edgeIds = dirtyEdgeIds.remove(taskId);
         Set<String> contextKeys = dirtyContextKeys.remove(taskId);
+        Set<String> deletedNodes = deletedNodeIds.remove(taskId);
 
         return new DirtySnapshot(
                 nodeIds != null ? nodeIds : Collections.emptySet(),
                 edgeIds != null ? edgeIds : Collections.emptySet(),
-                contextKeys != null ? contextKeys : Collections.emptySet()
+                contextKeys != null ? contextKeys : Collections.emptySet(),
+                deletedNodes != null ? deletedNodes : Collections.emptySet()
         );
     }
 
@@ -81,6 +92,9 @@ public class DirtySetTracker {
         if (!snapshot.contextKeys().isEmpty()) {
             dirtyContextKeys.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).addAll(snapshot.contextKeys());
         }
+        if (!snapshot.deletedNodeIds().isEmpty()) {
+            deletedNodeIds.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).addAll(snapshot.deletedNodeIds());
+        }
     }
 
     /**
@@ -90,9 +104,11 @@ public class DirtySetTracker {
         Set<String> nodes = dirtyNodeIds.get(taskId);
         Set<String> edges = dirtyEdgeIds.get(taskId);
         Set<String> context = dirtyContextKeys.get(taskId);
+        Set<String> deleted = deletedNodeIds.get(taskId);
         return (nodes != null && !nodes.isEmpty())
                 || (edges != null && !edges.isEmpty())
-                || (context != null && !context.isEmpty());
+                || (context != null && !context.isEmpty())
+                || (deleted != null && !deleted.isEmpty());
     }
 
     public boolean hasDirty(String taskId) {
@@ -106,6 +122,7 @@ public class DirtySetTracker {
         dirtyNodeIds.remove(taskId);
         dirtyEdgeIds.remove(taskId);
         dirtyContextKeys.remove(taskId);
+        deletedNodeIds.remove(taskId);
     }
 
     /**
@@ -114,14 +131,18 @@ public class DirtySetTracker {
     public record DirtySnapshot(
             Set<String> nodeIds,
             Set<String> edgeIds,
-            Set<String> contextKeys
+            Set<String> contextKeys,
+            Set<String> deletedNodeIds
     ) {
         public boolean isEmpty() {
-            return nodeIds.isEmpty() && edgeIds.isEmpty() && contextKeys.isEmpty();
+            return nodeIds.isEmpty()
+                    && edgeIds.isEmpty()
+                    && contextKeys.isEmpty()
+                    && deletedNodeIds.isEmpty();
         }
 
         public int totalChanges() {
-            return nodeIds.size() + edgeIds.size() + contextKeys.size();
+            return nodeIds.size() + edgeIds.size() + contextKeys.size() + deletedNodeIds.size();
         }
     }
 }

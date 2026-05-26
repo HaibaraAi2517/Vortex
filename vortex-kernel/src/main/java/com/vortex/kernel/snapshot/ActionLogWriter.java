@@ -174,28 +174,43 @@ public class ActionLogWriter {
      */
     public void close(String taskId) {
         ReentrantLock lock = taskLocks.get(taskId);
-        if (lock != null) {
-            lock.lock();
-            try {
-                FileChannel channel = openChannels.remove(taskId);
-                if (channel != null && channel.isOpen()) {
-                    try {
-                        channel.force(true);
-                    } catch (IOException e) {
-                        SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-close-force", taskId, null, e);
-                    } finally {
-                        try {
-                            channel.close();
-                        } catch (IOException e) {
-                            SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-close-channel", taskId, null, e);
-                        }
-                    }
-                }
-            } finally {
-                lock.unlock();
-                taskLocks.remove(taskId);
-            }
+        if (lock == null) {
+            sequenceCounters.remove(taskId);
+            return;
         }
+
+        boolean cleanupComplete = false;
+        IOException closeFailure = null;
+        lock.lock();
+        try {
+            FileChannel channel = openChannels.get(taskId);
+            if (channel == null || !channel.isOpen()) {
+                openChannels.remove(taskId);
+                cleanupComplete = true;
+            } else {
+                try {
+                    channel.force(true);
+                } catch (IOException e) {
+                    SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-close-force", taskId, null, e);
+                }
+                try {
+                    channel.close();
+                    openChannels.remove(taskId, channel);
+                    cleanupComplete = true;
+                } catch (IOException e) {
+                    closeFailure = e;
+                    SnapshotHealthLogSupport.logRecoveryPrerequisiteFailure(log, "wal-close-channel", taskId, null, e);
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
+
+        if (!cleanupComplete) {
+            throw new IllegalStateException("WAL close failed for task " + taskId, closeFailure);
+        }
+
+        taskLocks.remove(taskId, lock);
         sequenceCounters.remove(taskId);
     }
 

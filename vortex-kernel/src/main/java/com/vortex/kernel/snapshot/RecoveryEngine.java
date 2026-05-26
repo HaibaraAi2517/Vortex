@@ -12,11 +12,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -74,7 +76,7 @@ public class RecoveryEngine {
      */
     public TaskState recover(String taskId, String checkpointId) {
         TaskState recovered = doRecover(taskId, checkpointId);
-        taskLifecycleManager.putTask(taskId, recovered);
+        taskLifecycleManager.attachRecoveredTask(recovered);
         return recovered;
     }
 
@@ -88,6 +90,10 @@ public class RecoveryEngine {
      * @return the recovered task state (not yet cached)
      */
     TaskState doRecover(String taskId, String checkpointId) {
+        if (taskLifecycleManager.isDeleteCommitted(taskId)) {
+            throw new IllegalArgumentException("Task deleted: " + taskId);
+        }
+
         String resolvedId = checkpointId;
         if (resolvedId == null) {
             TaskState current = taskLifecycleManager.getCachedTask(taskId).orElse(null);
@@ -121,8 +127,16 @@ public class RecoveryEngine {
         }
 
         TaskState recovered = recovery.state();
-        recovered.setStatus(TaskState.TaskStatus.RECOVERING);
+        if (!isTerminalStatus(recovered.getStatus())) {
+            recovered.setStatus(TaskState.TaskStatus.RECOVERING);
+            recovered.setFinalizationStatus(TaskState.TaskFinalizationStatus.NONE);
+        } else if (recovered.getFinalizationStatus() == null) {
+            recovered.setFinalizationStatus(TaskState.TaskFinalizationStatus.FINALIZED);
+        }
         recovered.setLatestCheckpointId(resolvedId);
+        if (recovery.checkpointMetadata() != null) {
+            recovered.setLastCheckpointAt(recovery.checkpointMetadata().getCreatedAt());
+        }
         taskLifecycleManager.putLatestCheckpointId(taskId, resolvedId);
         checkpointManager.reloadTask(taskId);
 
@@ -175,10 +189,12 @@ public class RecoveryEngine {
         if (recovered.getStatus() == TaskState.TaskStatus.RECOVERING) {
             recovered.setStatus(TaskState.TaskStatus.RUNNING);
         }
-        if (isTerminalStatus(recovered.getStatus())) {
-            scheduler.unregisterTask(taskId);
-        } else {
-            scheduler.registerTask(taskId, null); // null service — registration for tracking only
+        if (recovered.getFinalizationStatus() == null) {
+            recovered.setFinalizationStatus(isTerminalStatus(recovered.getStatus())
+                    ? TaskState.TaskFinalizationStatus.FINALIZED
+                    : TaskState.TaskFinalizationStatus.NONE);
+        }
+        if (!isTerminalStatus(recovered.getStatus())) {
             walWriter.ensureSequenceAtLeast(taskId, recovered.getWalSequenceNumber());
         }
         checkpointRecoveryMetrics.recordSuccess(recovery.mode());
@@ -276,6 +292,19 @@ public class RecoveryEngine {
                     }
                 }
             }
+            case DELETE_NODE -> {
+                Map<String, String> p = parseReplayPayload(state, entry);
+                String nodeId = p.get("nodeId");
+                state.getGraph().removeNode(nodeId);
+                if (Objects.equals(state.getCurrentNodeId(), nodeId)) {
+                    state.setCurrentNodeId(resolveCurrentNodeId(state));
+                }
+            }
+            case DELETE_TASK -> throw new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                    state.getTaskId(),
+                    state.getLatestCheckpointId(),
+                    "Deleted task must not be recovered taskId=" + state.getTaskId());
             case UPDATE_CONTEXT -> {
                 Map<String, String> p = parseReplayPayload(state, entry);
                 String val = p.get("value");
@@ -288,6 +317,10 @@ public class RecoveryEngine {
             case SET_STATUS -> {
                 Map<String, String> p = parseReplayPayload(state, entry);
                 state.setStatus(TaskState.TaskStatus.valueOf(p.get("status")));
+                String finalizationStatus = p.get("finalizationStatus");
+                state.setFinalizationStatus(finalizationStatus == null || finalizationStatus.isBlank()
+                        ? inferFinalizationStatusForRecoveredTerminalState(state.getStatus())
+                        : TaskState.TaskFinalizationStatus.valueOf(finalizationStatus));
             }
             case CREATE_BRANCH -> {
                 Map<String, String> p = parseReplayPayload(state, entry);
@@ -389,6 +422,22 @@ public class RecoveryEngine {
 
     private boolean isTerminalStatus(TaskState.TaskStatus status) {
         return status == TaskState.TaskStatus.COMPLETED || status == TaskState.TaskStatus.FAILED;
+    }
+
+    private TaskState.TaskFinalizationStatus inferFinalizationStatusForRecoveredTerminalState(TaskState.TaskStatus status) {
+        return isTerminalStatus(status)
+                ? TaskState.TaskFinalizationStatus.PENDING_FINALIZATION
+                : TaskState.TaskFinalizationStatus.NONE;
+    }
+
+    private String resolveCurrentNodeId(TaskState state) {
+        return state.getGraph().getSinkNodes().stream()
+                .max(Comparator.comparing(
+                                DagNode::getExecutedAt,
+                                Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(DagNode::getNodeId))
+                .map(DagNode::getNodeId)
+                .orElse(null);
     }
 
     // ========================================================================
