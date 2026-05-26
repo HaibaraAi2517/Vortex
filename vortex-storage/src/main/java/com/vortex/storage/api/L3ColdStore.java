@@ -22,6 +22,11 @@ public interface L3ColdStore {
     /** Retrieve a fragment from cold storage. */
     Optional<MemoryFragment> retrieveFragment(String id);
 
+    /** Delete a fragment from cold storage when supported. */
+    default void deleteFragment(String id) {
+        throw new UnsupportedOperationException("Fragment deletion not supported");
+    }
+
     // ---- Task snapshot / checkpoint ----
 
     /**

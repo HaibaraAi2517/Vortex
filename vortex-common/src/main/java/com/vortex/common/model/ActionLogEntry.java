@@ -46,10 +46,12 @@ public class ActionLogEntry {
         APPEND_NODE,
         COMPLETE_NODE,
         ADD_EDGE,
+        DELETE_NODE,
         UPDATE_CONTEXT,
         SET_STATUS,
         CREATE_BRANCH,
         MERGE_BRANCH,
-        SWITCH_BRANCH
+        SWITCH_BRANCH,
+        DELETE_TASK
     }
 }

@@ -99,6 +99,18 @@ public class MinioColdStore implements L3ColdStore {
         return getJson(fragmentKey(id), MemoryFragment.class);
     }
 
+    @Override
+    public void deleteFragment(String id) {
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(bucket)
+                    .object(applyKeyPrefix(fragmentKey(id)))
+                    .build());
+        } catch (Exception e) {
+            log.debug("No fragment to delete for {}", id);
+        }
+    }
+
     // ---- Checkpoint (Kryo binary with Jackson fallback) ----
 
     @Override

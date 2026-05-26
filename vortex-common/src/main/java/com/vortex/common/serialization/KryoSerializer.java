@@ -80,6 +80,7 @@ public class KryoSerializer {
         kryo.register(TaskBranch.BranchStatus.class, 34);
         kryo.register(CheckpointMetadata.CheckpointType.class, 35);
         kryo.register(ActionLogEntry.OperationType.class, 36);
+        kryo.register(TaskState.TaskFinalizationStatus.class, 37);
     }
 
     /**

@@ -199,6 +199,27 @@ public class HierarchicalMemoryController {
         return pinManager.pinFragment(fragmentId, ttlMillis);
     }
 
+    public Optional<MemoryFragment> getFragment(String fragmentId) {
+        return findFragment(fragmentId);
+    }
+
+    public boolean deleteFragment(String fragmentId) {
+        if (fragmentId == null || fragmentId.isBlank()) {
+            return false;
+        }
+        Optional<MemoryFragment> existing = findFragment(fragmentId);
+        if (existing.isEmpty()) {
+            return false;
+        }
+        MemoryFragment fragment = existing.get();
+        l1.remove(fragmentId);
+        pinManager.removePinIndex(fragment);
+        evictionCoordinator.removeFromTierIndexes(fragment);
+        l2.delete(fragmentId);
+        l3.deleteFragment(fragmentId);
+        return true;
+    }
+
     /** Delegate to {@link FragmentPinManager#unpinFragment}. */
     public Optional<MemoryFragment> unpinFragment(String fragmentId) {
         return pinManager.unpinFragment(fragmentId);

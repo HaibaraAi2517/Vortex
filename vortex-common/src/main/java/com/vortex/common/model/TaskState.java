@@ -73,8 +73,18 @@ public class TaskState {
     /** ID of the latest checkpoint object in L3. */
     private String latestCheckpointId;
 
+    /** Finalization lifecycle for terminal durability handling. */
+    @Builder.Default
+    private TaskFinalizationStatus finalizationStatus = TaskFinalizationStatus.NONE;
+
     public enum TaskStatus {
         RUNNING, PAUSED, COMPLETED, FAILED, RECOVERING
+    }
+
+    public enum TaskFinalizationStatus {
+        NONE,
+        PENDING_FINALIZATION,
+        FINALIZED
     }
 
     // ---- Backward compatibility delegates (deprecated, kept for old API consumers) ----
