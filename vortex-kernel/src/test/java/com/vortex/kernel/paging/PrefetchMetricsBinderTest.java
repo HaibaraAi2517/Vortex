@@ -67,7 +67,7 @@ class PrefetchMetricsBinderTest {
 
     static final class ImmediatePageFaultHandler extends PageFaultHandler {
         private ImmediatePageFaultHandler(SemanticPageTable pageTable) {
-            super(pageTable, null, null, null, new NoopEmbeddingService(), emptyProvider());
+            super(pageTable, null, null, null, new NoopEmbeddingService(), emptyEmbeddingProvider(), emptyProvider());
         }
 
         @Override
@@ -86,6 +86,30 @@ class PrefetchMetricsBinderTest {
         public int dimension() {
             return 1;
         }
+    }
+
+    private static ObjectProvider<EmbeddingService> emptyEmbeddingProvider() {
+        return new ObjectProvider<>() {
+            @Override
+            public EmbeddingService getObject(Object... args) {
+                return null;
+            }
+
+            @Override
+            public EmbeddingService getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public EmbeddingService getIfUnique() {
+                return null;
+            }
+
+            @Override
+            public EmbeddingService getObject() {
+                return null;
+            }
+        };
     }
 
     static final class NoopColdStore implements L3ColdStore {

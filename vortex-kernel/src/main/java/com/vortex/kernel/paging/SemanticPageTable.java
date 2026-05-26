@@ -40,6 +40,7 @@ public class SemanticPageTable {
     private final L3ColdStore l3;
     private final String pageTableKey;
     private final double maxIncrementalAssignmentDistance;
+    private final int pageSize;
     private final KryoSerializer kryoSerializer = new KryoSerializer();
     private final Object snapshotLock = new Object();
     private final AtomicLong lastPersistEpoch = new AtomicLong(0);
@@ -49,20 +50,20 @@ public class SemanticPageTable {
     private final AtomicLong incrementalNewPageCount = new AtomicLong();
     private static final long PERSIST_INTERVAL_MS = Duration.ofSeconds(30).toMillis();
 
-    private static final int PAGE_SIZE = SemanticPage.PAGE_SIZE;
-
     public SemanticPageTable(L3ColdStore l3) {
-        this(l3, DEFAULT_PAGE_TABLE_KEY, 0.30);
+        this(l3, DEFAULT_PAGE_TABLE_KEY, 0.30, 10);
     }
 
     @Autowired
     public SemanticPageTable(
             L3ColdStore l3,
             @Value("${vortex.kernel.paging.page-table-key:" + DEFAULT_PAGE_TABLE_KEY + "}") String pageTableKey,
-            @Value("${vortex.kernel.paging.incremental.max-distance:0.30}") double maxIncrementalAssignmentDistance) {
+            @Value("${vortex.kernel.paging.incremental.max-distance:0.30}") double maxIncrementalAssignmentDistance,
+            @Value("${vortex.kernel.paging.page-size:10}") int pageSize) {
         this.l3 = l3;
         this.pageTableKey = pageTableKey;
         this.maxIncrementalAssignmentDistance = Math.max(0.0, maxIncrementalAssignmentDistance);
+        this.pageSize = Math.max(1, pageSize);
     }
 
     @PostConstruct
@@ -257,7 +258,7 @@ public class SemanticPageTable {
     }
 
     private List<SemanticPage> clusterNewPages(List<MemoryFragment> fragments) {
-        int k = Math.max(2, Math.min(fragments.size() / PAGE_SIZE, fragments.size()));
+        int k = Math.max(1, Math.min((int) Math.ceil(fragments.size() / (double) pageSize), fragments.size()));
         int dim = fragments.get(0).getEmbedding().length;
 
         // K-Means clustering
@@ -357,6 +358,10 @@ public class SemanticPageTable {
         return new AssignmentStats(assignments, reused, newPages, reuseRatio, newPageRatio);
     }
 
+    public int pageSize() {
+        return pageSize;
+    }
+
     private void persistIfNeeded() {
         long now = System.currentTimeMillis();
         long previous = lastPersistEpoch.get();
@@ -405,7 +410,7 @@ public class SemanticPageTable {
             return Optional.empty();
         }
         return pages.values().stream()
-                .filter(page -> page.getFragmentIds().size() < PAGE_SIZE)
+                .filter(page -> page.getFragmentIds().size() < pageSize)
                 .filter(page -> page.getCentroid() != null && page.getCentroid().length == embedding.length)
                 .map(page -> new PageDistance(page, cosineDistance(embedding, page.getCentroid())))
                 .filter(candidate -> candidate.distance() <= maxIncrementalAssignmentDistance)

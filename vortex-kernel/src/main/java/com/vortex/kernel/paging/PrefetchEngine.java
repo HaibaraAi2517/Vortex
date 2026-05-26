@@ -4,6 +4,7 @@ import com.vortex.common.model.DagEdge;
 import com.vortex.common.model.DagGraph;
 import com.vortex.common.model.PageState;
 import com.vortex.common.model.SemanticPage;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -49,6 +50,7 @@ public class PrefetchEngine {
     private final int branchMaxPagesPerBranch;
     private final long consumptionWindowMs;
     private final int minStrategySamples;
+    private volatile Thread workerThread;
 
     @Autowired
     public PrefetchEngine(
@@ -92,7 +94,7 @@ public class PrefetchEngine {
         this.minStrategySamples = Math.max(1, minStrategySamples);
 
         if (startWorker) {
-            Thread.ofVirtual()
+            workerThread = Thread.ofVirtual()
                     .name("prefetch-worker")
                     .start(this::prefetchWorkerLoop);
         }
@@ -320,6 +322,24 @@ public class PrefetchEngine {
             } catch (Exception e) {
                 log.warn("Prefetch worker error: {}", e.getMessage());
             }
+        }
+    }
+
+    @PreDestroy
+    void shutdown() {
+        Thread worker = workerThread;
+        if (worker != null) {
+            worker.interrupt();
+            workerThread = null;
+        }
+        virtualThreadExecutor.shutdown();
+        try {
+            if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                virtualThreadExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            virtualThreadExecutor.shutdownNow();
         }
     }
 

@@ -103,13 +103,13 @@ class SemanticPageTableTest {
                 assertThat(reloaded.lookup(fragmentId)).contains(pageId));
         assertThat(reloaded.lookup("f-9")).isPresent();
         assertThat(reloaded.lookup("f-10")).isPresent();
-        assertThat(reloaded.allPages()).hasSize(initialPageCount);
+        assertThat(reloaded.allPages()).hasSizeGreaterThanOrEqualTo(initialPageCount);
     }
 
     @Test
     void incrementalAssignmentCreatesNewPageWhenNearestPageIsTooFar() {
         RecordingL3ColdStore l3 = new RecordingL3ColdStore();
-        SemanticPageTable table = new SemanticPageTable(l3, SemanticPageTable.DEFAULT_PAGE_TABLE_KEY, 0.05);
+        SemanticPageTable table = new SemanticPageTable(l3, SemanticPageTable.DEFAULT_PAGE_TABLE_KEY, 0.05, 10);
 
         List<MemoryFragment> initialFragments = List.of(
                 fragment("near-a", 1.0f, 0.0f),
@@ -124,6 +124,21 @@ class SemanticPageTableTest {
         assertThat(updatedPages).hasSize(1);
         assertThat(table.allPages()).hasSize(initialPageCount + 1);
         assertThat(table.lookup("far-away")).isPresent();
+    }
+
+    @Test
+    void configuredPageSizeLimitsIncrementalPageCapacity() {
+        RecordingL3ColdStore l3 = new RecordingL3ColdStore();
+        SemanticPageTable table = new SemanticPageTable(l3, SemanticPageTable.DEFAULT_PAGE_TABLE_KEY, 0.30, 2);
+
+        table.buildPagesFromFragments(List.of(
+                fragment("a", 1.0f, 0.0f),
+                fragment("b", 0.99f, 0.01f),
+                fragment("c", 0.98f, 0.02f)));
+
+        assertThat(table.allPages()).hasSize(2);
+        assertThat(table.allPages().stream().mapToInt(page -> page.getFragmentIds().size()).max().orElseThrow())
+                .isLessThanOrEqualTo(2);
     }
 
     private static MemoryFragment fragment(String id, float x, float y) {

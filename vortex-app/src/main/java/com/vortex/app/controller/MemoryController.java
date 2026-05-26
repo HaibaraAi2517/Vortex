@@ -9,6 +9,9 @@ import com.vortex.app.health.MemoryHealthSignalCatalog;
 import com.vortex.app.health.MemorySloHealthIndicator;
 import com.vortex.kernel.hmc.HierarchicalMemoryController;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.Status;
@@ -39,7 +42,7 @@ public class MemoryController {
      * }
      */
     @PostMapping("/store")
-    public ResponseEntity<Map<String, Object>> store(@RequestBody StoreRequest req) {
+    public ResponseEntity<Map<String, Object>> store(@Valid @RequestBody StoreRequest req) {
         List<String> ids = hmc.store(req.content(), req.namespace(), req.tags(), req.reasoningChainId(), req.pinTtlMillis());
         return ResponseEntity.ok(Map.of(
                 "fragmentIds", ids,
@@ -56,6 +59,21 @@ public class MemoryController {
     public ResponseEntity<Map<String, String>> storeFragment(@RequestBody MemoryFragment fragment) {
         hmc.storeFragment(fragment);
         return ResponseEntity.ok(Map.of("id", fragment.getId()));
+    }
+
+    @GetMapping("/fragment/{fragmentId}")
+    public ResponseEntity<MemoryFragment> getFragment(@PathVariable("fragmentId") String fragmentId) {
+        return hmc.getFragment(fragmentId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/fragment/{fragmentId}")
+    public ResponseEntity<Map<String, String>> deleteFragment(@PathVariable("fragmentId") String fragmentId) {
+        if (!hmc.deleteFragment(fragmentId)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(Map.of("fragmentId", fragmentId, "status", "DELETED"));
     }
 
     /**
@@ -147,11 +165,11 @@ public class MemoryController {
     }
 
     public record StoreRequest(
-            String content,
-            String namespace,
+            @NotBlank @Size(max = 20_000) String content,
+            @NotBlank @Size(max = 128) String namespace,
             List<String> tags,
-            String reasoningChainId,
-            Long pinTtlMillis) {}
+            @Size(max = 128) String reasoningChainId,
+            @Positive Long pinTtlMillis) {}
 
     public record PinRequest(
             String fragmentId,

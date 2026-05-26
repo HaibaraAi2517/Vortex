@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -291,6 +292,95 @@ class SnapshotServiceTest {
     }
 
     @Test
+    void recover_rejoinsAutomaticCheckpointing() {
+        service = newService(fakeL3, 10, 20, 7, true, 1, 60000);
+
+        TaskState task = service.createTask("recovery scheduler test", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "before checkpoint");
+        String checkpointId = service.checkpoint(task.getTaskId());
+        int checkpointsBefore = service.listCheckpoints(task.getTaskId()).size();
+
+        service.evictFromCacheForTest(task.getTaskId());
+        TaskState recovered = service.recover(task.getTaskId(), checkpointId);
+        assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.RUNNING);
+
+        DagNode postRecoverNode = service.appendNode(task.getTaskId(), "ACTION", "after recover");
+        scheduler.scheduledScan();
+
+        assertThat(service.listCheckpoints(task.getTaskId()).size()).isEqualTo(checkpointsBefore + 1);
+        assertThat(service.getTask(task.getTaskId()).orElseThrow().getGraph().getNode(postRecoverNode.getNodeId()))
+                .isPresent();
+    }
+
+    @Test
+    void recover_timeTriggerInheritsCheckpointBaselineForExplicitAndLazyRecovery() throws Exception {
+        service = newService(fakeL3, 10, 20, 7, true, 100, 25);
+
+        TaskState explicitTask = service.createTask("explicit time baseline", "ns");
+        service.appendNode(explicitTask.getTaskId(), "THOUGHT", "before explicit recover");
+        String explicitCheckpointId = service.checkpoint(explicitTask.getTaskId());
+        int explicitCheckpointsBefore = service.listCheckpoints(explicitTask.getTaskId()).size();
+
+        Thread.sleep(50L);
+        service.evictFromCacheForTest(explicitTask.getTaskId());
+        service.recover(explicitTask.getTaskId(), explicitCheckpointId);
+        scheduler.scheduledScan();
+
+        assertThat(service.listCheckpoints(explicitTask.getTaskId()).size())
+                .isEqualTo(explicitCheckpointsBefore + 1);
+
+        TaskState lazyTask = service.createTask("lazy time baseline", "ns");
+        service.appendNode(lazyTask.getTaskId(), "THOUGHT", "before lazy recover");
+        service.checkpoint(lazyTask.getTaskId());
+        int lazyCheckpointsBefore = service.listCheckpoints(lazyTask.getTaskId()).size();
+
+        Thread.sleep(50L);
+        service.evictFromCacheForTest(lazyTask.getTaskId());
+        assertThat(service.getTask(lazyTask.getTaskId())).isPresent();
+        scheduler.scheduledScan();
+
+        assertThat(service.listCheckpoints(lazyTask.getTaskId()).size())
+                .isEqualTo(lazyCheckpointsBefore + 1);
+    }
+
+    @Test
+    void recover_terminalTaskDoesNotRejoinScheduler() throws Exception {
+        service = newService(fakeL3, 10, 20, 7, true, 1, 25);
+
+        TaskState task = service.createTask("terminal recovery scheduler guard", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "terminal");
+        service.completeTask(task.getTaskId());
+        int checkpointsBefore = service.listCheckpoints(task.getTaskId()).size();
+
+        service = newService(fakeL3, 10, 20, 7, true, 1, 25);
+        TaskState recovered = service.recover(task.getTaskId(), null);
+        assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.COMPLETED);
+        assertThat(recovered.getFinalizationStatus()).isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+
+        Thread.sleep(50L);
+        scheduler.scheduledScan();
+
+        assertThat(service.listCheckpoints(task.getTaskId()).size()).isEqualTo(checkpointsBefore);
+        assertThat(isTaskRegisteredWithScheduler(task.getTaskId())).isFalse();
+    }
+
+    @Test
+    void recoverReplacingLoadedRunningTask_doesNotTriggerEmergencyCheckpoint() {
+        service = newService(fakeL3);
+
+        TaskState task = service.createTask("replace recovered task", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "before checkpoint");
+        String checkpointId = service.checkpoint(task.getTaskId());
+        int checkpointsBefore = service.listCheckpoints(task.getTaskId()).size();
+
+        service.appendNode(task.getTaskId(), "ACTION", "after checkpoint before recover");
+        TaskState recovered = service.recover(task.getTaskId(), checkpointId);
+
+        assertThat(recovered.getGraph().nodeCount()).isEqualTo(2);
+        assertThat(service.listCheckpoints(task.getTaskId()).size()).isEqualTo(checkpointsBefore);
+    }
+
+    @Test
     void recover_fromDeltaCheckpoint_restoresStateFromBaseAndDelta() {
         service = newService(fakeL3, 10, 20);
 
@@ -495,7 +585,8 @@ class SnapshotServiceTest {
                 null,
                 null,
                 java.util.List.of(),
-                TaskState.TaskStatus.RUNNING);
+                TaskState.TaskStatus.RUNNING,
+                TaskState.TaskFinalizationStatus.NONE);
         CheckpointMetadata delta = CheckpointMetadata.builder()
                 .checkpointId("delta-old")
                 .taskId(task.getTaskId())
@@ -530,7 +621,250 @@ class SnapshotServiceTest {
         service.completeTask(task.getTaskId());
 
         assertThat(task.getStatus()).isEqualTo(TaskState.TaskStatus.COMPLETED);
+        assertThat(task.getFinalizationStatus()).isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+        assertThat(service.getTask(task.getTaskId())).get()
+                .satisfies(recovered -> {
+                    assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.COMPLETED);
+                    assertThat(recovered.getFinalizationStatus())
+                            .isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+                });
+        assertThat(service.listActiveTasks(0, 10).items())
+                .extracting(TaskState::getTaskId)
+                .doesNotContain(task.getTaskId());
+    }
+
+    @Test
+    void failTask_persistsRecoverableFailedState() {
+        TaskState task = service.createTask("failure test", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "fail me");
+        service.failTask(task.getTaskId());
+
+        assertThat(task.getStatus()).isEqualTo(TaskState.TaskStatus.FAILED);
+        assertThat(task.getFinalizationStatus()).isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+        assertThat(service.getTask(task.getTaskId())).get()
+                .satisfies(recovered -> {
+                    assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.FAILED);
+                    assertThat(recovered.getFinalizationStatus())
+                            .isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+                });
+        assertThat(service.listActiveTasks(0, 10).items())
+                .extracting(TaskState::getTaskId)
+                .doesNotContain(task.getTaskId());
+    }
+
+    @Test
+    void completeTask_finalCheckpointFailureWithoutPriorCheckpoint_remainsRecoverableAndRetryable() {
+        FailingCheckpointStore failingStore = new FailingCheckpointStore(new FakeL3ColdStore());
+        service = newService(failingStore);
+
+        TaskState task = service.createTask("completion retry", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "complete me");
+        failingStore.failOnCheckpointWriteNumber(2);
+
+        assertThatThrownBy(() -> service.completeTask(task.getTaskId()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("simulated checkpoint");
+
+        assertThat(task.getStatus()).isEqualTo(TaskState.TaskStatus.COMPLETED);
+        assertThat(task.getFinalizationStatus()).isEqualTo(TaskState.TaskFinalizationStatus.PENDING_FINALIZATION);
+        assertThat(service.listCheckpoints(task.getTaskId())).hasSize(1);
+        assertThat(walReader.readAll(task.getTaskId()))
+                .extracting(ActionLogEntry::getOperation)
+                .containsExactly(ActionLogEntry.OperationType.SET_STATUS);
+        assertThat(service.getTask(task.getTaskId())).get()
+                .extracting(TaskState::getFinalizationStatus)
+                .isEqualTo(TaskState.TaskFinalizationStatus.PENDING_FINALIZATION);
+        assertThat(service.listActiveTasks(0, 10).items())
+                .extracting(TaskState::getTaskId)
+                .doesNotContain(task.getTaskId());
+        assertThat(isTaskRegisteredWithScheduler(task.getTaskId())).isFalse();
+
+        TaskState recovered = service.recover(task.getTaskId(), null);
+        assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.COMPLETED);
+        assertThat(recovered.getFinalizationStatus()).isEqualTo(TaskState.TaskFinalizationStatus.PENDING_FINALIZATION);
+        assertThat(isTaskRegisteredWithScheduler(task.getTaskId())).isFalse();
+
+        service.completeTask(task.getTaskId());
+
+        assertThat(service.listCheckpoints(task.getTaskId())).hasSize(2);
+        assertThat(walReader.readAll(task.getTaskId())).isEmpty();
+        assertThat(service.getTask(task.getTaskId())).get()
+                .satisfies(finalized -> {
+                    assertThat(finalized.getStatus()).isEqualTo(TaskState.TaskStatus.COMPLETED);
+                    assertThat(finalized.getFinalizationStatus())
+                            .isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+                });
+    }
+
+    @Test
+    void failTask_finalCheckpointFailureWithoutPriorCheckpoint_remainsRecoverableAndRetryable() {
+        FailingCheckpointStore failingStore = new FailingCheckpointStore(new FakeL3ColdStore());
+        service = newService(failingStore);
+
+        TaskState task = service.createTask("failure retry", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "fail me");
+        failingStore.failOnCheckpointWriteNumber(2);
+
+        assertThatThrownBy(() -> service.failTask(task.getTaskId()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("simulated checkpoint");
+
+        assertThat(task.getStatus()).isEqualTo(TaskState.TaskStatus.FAILED);
+        assertThat(task.getFinalizationStatus()).isEqualTo(TaskState.TaskFinalizationStatus.PENDING_FINALIZATION);
+        assertThat(service.listCheckpoints(task.getTaskId())).hasSize(1);
+        assertThat(walReader.readAll(task.getTaskId()))
+                .extracting(ActionLogEntry::getOperation)
+                .containsExactly(ActionLogEntry.OperationType.SET_STATUS);
+        assertThat(service.getTask(task.getTaskId())).get()
+                .extracting(TaskState::getFinalizationStatus)
+                .isEqualTo(TaskState.TaskFinalizationStatus.PENDING_FINALIZATION);
+        assertThat(service.listActiveTasks(0, 10).items())
+                .extracting(TaskState::getTaskId)
+                .doesNotContain(task.getTaskId());
+        assertThat(isTaskRegisteredWithScheduler(task.getTaskId())).isFalse();
+
+        TaskState recovered = service.recover(task.getTaskId(), null);
+        assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.FAILED);
+        assertThat(recovered.getFinalizationStatus()).isEqualTo(TaskState.TaskFinalizationStatus.PENDING_FINALIZATION);
+        assertThat(isTaskRegisteredWithScheduler(task.getTaskId())).isFalse();
+
+        service.failTask(task.getTaskId());
+
+        assertThat(service.listCheckpoints(task.getTaskId())).hasSize(2);
+        assertThat(walReader.readAll(task.getTaskId())).isEmpty();
+        assertThat(service.getTask(task.getTaskId())).get()
+                .satisfies(finalized -> {
+                    assertThat(finalized.getStatus()).isEqualTo(TaskState.TaskStatus.FAILED);
+                    assertThat(finalized.getFinalizationStatus())
+                            .isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+                });
+    }
+
+    @Test
+    void completeTask_cleanupFailureAfterFinalCheckpoint_staysFinalizedAndRetryable() {
+        FailingActionLogWriter failingWalWriter = new FailingActionLogWriter(tempDir.resolve("wal").toString());
+        service = newService(fakeL3, failingWalWriter);
+
+        TaskState task = service.createTask("completion cleanup retry", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "complete me");
+        failingWalWriter.failNextClose();
+
+        assertThatThrownBy(() -> service.completeTask(task.getTaskId()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("WAL close failed");
+
+        assertThat(task.getStatus()).isEqualTo(TaskState.TaskStatus.COMPLETED);
+        assertThat(task.getFinalizationStatus()).isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+        assertThat(service.getTask(task.getTaskId())).get()
+                .satisfies(recovered -> {
+                    assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.COMPLETED);
+                    assertThat(recovered.getFinalizationStatus())
+                            .isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+                });
+        int checkpointsAfterFailure = service.listCheckpoints(task.getTaskId()).size();
+        assertThat(service.listActiveTasks(0, 10).items())
+                .extracting(TaskState::getTaskId)
+                .doesNotContain(task.getTaskId());
+        assertThat(isTaskRegisteredWithScheduler(task.getTaskId())).isFalse();
+        assertThat(walReader.exists(task.getTaskId())).isTrue();
+
+        service.completeTask(task.getTaskId());
+
+        assertThat(service.listCheckpoints(task.getTaskId())).hasSize(checkpointsAfterFailure);
+        assertThat(walReader.exists(task.getTaskId())).isFalse();
+        assertThat(service.getTask(task.getTaskId())).get()
+                .extracting(TaskState::getFinalizationStatus)
+                .isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+    }
+
+    @Test
+    void failTask_cleanupFailureAfterFinalCheckpoint_staysFinalizedAndRetryable() {
+        FailingActionLogWriter failingWalWriter = new FailingActionLogWriter(tempDir.resolve("wal").toString());
+        service = newService(fakeL3, failingWalWriter);
+
+        TaskState task = service.createTask("failure cleanup retry", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "fail me");
+        failingWalWriter.failNextClose();
+
+        assertThatThrownBy(() -> service.failTask(task.getTaskId()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("WAL close failed");
+
+        assertThat(task.getStatus()).isEqualTo(TaskState.TaskStatus.FAILED);
+        assertThat(task.getFinalizationStatus()).isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+        assertThat(service.getTask(task.getTaskId())).get()
+                .satisfies(recovered -> {
+                    assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.FAILED);
+                    assertThat(recovered.getFinalizationStatus())
+                            .isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+                });
+        int checkpointsAfterFailure = service.listCheckpoints(task.getTaskId()).size();
+        assertThat(service.listActiveTasks(0, 10).items())
+                .extracting(TaskState::getTaskId)
+                .doesNotContain(task.getTaskId());
+        assertThat(isTaskRegisteredWithScheduler(task.getTaskId())).isFalse();
+        assertThat(walReader.exists(task.getTaskId())).isTrue();
+
+        service.failTask(task.getTaskId());
+
+        assertThat(service.listCheckpoints(task.getTaskId())).hasSize(checkpointsAfterFailure);
+        assertThat(walReader.exists(task.getTaskId())).isFalse();
+        assertThat(service.getTask(task.getTaskId())).get()
+                .extracting(TaskState::getFinalizationStatus)
+                .isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
+    }
+
+    @Test
+    void deleteTask_removesDurableStateAndHidesTaskFromRecoveryAndListings() {
+        TaskState task = service.createTask("delete test", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "persist then delete");
+        service.checkpoint(task.getTaskId());
+
+        assertThat(service.deleteTask(task.getTaskId())).isTrue();
+
         assertThat(service.getTask(task.getTaskId())).isEmpty();
+        assertThat(service.listCheckpoints(task.getTaskId())).isEmpty();
+        assertThat(service.listActiveTasks(0, 10).items())
+                .extracting(TaskState::getTaskId)
+                .doesNotContain(task.getTaskId());
+        assertThat(walReader.exists(task.getTaskId())).isFalse();
+        assertThatThrownBy(() -> service.recover(task.getTaskId(), null))
+                .isInstanceOf(CheckpointRecoveryException.class)
+                .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
+                        .isEqualTo(CheckpointRecoveryFailureReason.NO_CHECKPOINT_AVAILABLE));
+    }
+
+    @Test
+    void deleteTask_cleanupFailureAfterDeleteIntent_staysDeletedAndRetryableAcrossRestart() {
+        FailingActionLogWriter failingWalWriter = new FailingActionLogWriter(tempDir.resolve("wal").toString());
+        service = newService(fakeL3, failingWalWriter);
+
+        TaskState task = service.createTask("delete cleanup retry", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "delete me");
+        service.checkpoint(task.getTaskId());
+        failingWalWriter.failNextClose();
+
+        assertThatThrownBy(() -> service.deleteTask(task.getTaskId()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("WAL close failed");
+
+        assertThat(service.getTask(task.getTaskId())).isEmpty();
+        assertThat(service.listCheckpoints(task.getTaskId())).isEmpty();
+        assertThat(service.listActiveTasks(0, 10).items())
+                .extracting(TaskState::getTaskId)
+                .doesNotContain(task.getTaskId());
+        assertThat(walReader.exists(task.getTaskId())).isTrue();
+
+        service = newService(fakeL3);
+
+        assertThat(service.getTask(task.getTaskId())).isEmpty();
+        assertThat(service.listCheckpoints(task.getTaskId())).isEmpty();
+        assertThatThrownBy(() -> service.recover(task.getTaskId(), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Task deleted");
+
+        assertThat(service.deleteTask(task.getTaskId())).isTrue();
+        assertThat(walReader.exists(task.getTaskId())).isFalse();
     }
 
     @Test
@@ -694,6 +1028,8 @@ class SnapshotServiceTest {
         java.lang.reflect.Field tlmField = SnapshotService.class.getDeclaredField("taskLifecycleManager");
         tlmField.setAccessible(true);
         TaskLifecycleManager tlm = (TaskLifecycleManager) tlmField.get(service);
+        service.evictFromCacheForTest(task.getTaskId());
+        assertThat(tlm.getCachedTask(task.getTaskId())).isEmpty();
         Method onTaskEvicted = TaskLifecycleManager.class.getDeclaredMethod(
                 "onTaskEvicted", String.class, TaskState.class, RemovalCause.class);
         onTaskEvicted.setAccessible(true);
@@ -718,6 +1054,8 @@ class SnapshotServiceTest {
         java.lang.reflect.Field tlmField = SnapshotService.class.getDeclaredField("taskLifecycleManager");
         tlmField.setAccessible(true);
         TaskLifecycleManager tlm = (TaskLifecycleManager) tlmField.get(service);
+        service.evictFromCacheForTest(task.getTaskId());
+        assertThat(tlm.getCachedTask(task.getTaskId())).isEmpty();
         Method onTaskEvicted = TaskLifecycleManager.class.getDeclaredMethod(
                 "onTaskEvicted", String.class, TaskState.class, RemovalCause.class);
         onTaskEvicted.setAccessible(true);
@@ -839,7 +1177,8 @@ class SnapshotServiceTest {
                 orphan.getNodeId(),
                 null,
                 java.util.List.of(),
-                TaskState.TaskStatus.RUNNING);
+                TaskState.TaskStatus.RUNNING,
+                TaskState.TaskFinalizationStatus.NONE);
         fakeL3.putBytes(
                 "checkpoints/" + task.getTaskId() + "/broken-delta.kryo",
                 new KryoSerializer().serializeCompressed(brokenDelta));
@@ -870,10 +1209,6 @@ class SnapshotServiceTest {
                 .isInstanceOf(CheckpointRecoveryException.class)
                 .satisfies(ex -> assertThat(((CheckpointRecoveryException) ex).getReason())
                         .isEqualTo(CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED));
-
-        assertThat(counterValue("vortex.checkpoint.recovery.total",
-                "outcome", "failure", "mode", "NONE", "reason", "WAL_STATE_APPLY_FAILED"))
-                .isEqualTo(1.0);
     }
 
     @Test
@@ -988,16 +1323,44 @@ class SnapshotServiceTest {
         return newService(store, maxDeltasBeforeFull, maxPerTask, 7);
     }
 
+    private SnapshotService newService(FakeL3ColdStore store, ActionLogWriter customWalWriter) {
+        return newService(store, 10, 20, 7, false, 50, 60000, customWalWriter);
+    }
+
     private SnapshotService newService(
             FakeL3ColdStore store, int maxDeltasBeforeFull, int maxPerTask, int maxAgeDays) {
+        return newService(store, maxDeltasBeforeFull, maxPerTask, maxAgeDays, false, 50, 60000);
+    }
+
+    private SnapshotService newService(
+            FakeL3ColdStore store,
+            int maxDeltasBeforeFull,
+            int maxPerTask,
+            int maxAgeDays,
+            boolean schedulerEnabled,
+            int maxActionsBetween,
+            long maxMillisBetween) {
+        return newService(store, maxDeltasBeforeFull, maxPerTask, maxAgeDays,
+                schedulerEnabled, maxActionsBetween, maxMillisBetween, null);
+    }
+
+    private SnapshotService newService(
+            FakeL3ColdStore store,
+            int maxDeltasBeforeFull,
+            int maxPerTask,
+            int maxAgeDays,
+            boolean schedulerEnabled,
+            int maxActionsBetween,
+            long maxMillisBetween,
+            ActionLogWriter customWalWriter) {
         String walDir = tempDir.resolve("wal").toString();
-        walWriter = new ActionLogWriter(walDir);
+        walWriter = customWalWriter != null ? customWalWriter : new ActionLogWriter(walDir);
         walReader = new ActionLogReader(walDir);
         walTruncator = new ActionLogTruncator(walWriter, walReader, walDir);
         dirtySetTracker = new DirtySetTracker();
         checkpointManager = new IncrementalCheckpointManager(store, dirtySetTracker, maxDeltasBeforeFull);
         CheckpointLifecycleManager lifecycleManager = new CheckpointLifecycleManager(store, maxPerTask, maxAgeDays, 48);
-        scheduler = new CheckpointScheduler(50, 60000, false);
+        scheduler = new CheckpointScheduler(maxActionsBetween, maxMillisBetween, schedulerEnabled);
         conflictDetector = new BranchMergeConflictDetector();
         branchManager = new BranchManager(10, conflictDetector);
         dotExporter = new DotGraphExporter();
@@ -1011,7 +1374,7 @@ class SnapshotServiceTest {
         // Create components with circular dependency resolution
         TaskLifecycleManager taskLifecycleMgr = new TaskLifecycleManager(
                 store, checkpointManager, lifecycleManager, walWriter, walReader, walTruncator,
-                scheduler, dirtySetTracker, memorySloTracker, null, null);
+                scheduler, dirtySetTracker, memorySloTracker, new TaskFinalizationMetrics(meterRegistry), null, null);
         DagMutationService dagMutationSvc = new DagMutationService(
                 walWriter, dirtySetTracker, scheduler, eventPublisher, branchManager, taskLifecycleMgr);
         RecoveryEngine recoveryEng = new RecoveryEngine(
@@ -1042,6 +1405,19 @@ class SnapshotServiceTest {
     private void assertWalUnchanged(String taskId, long seqBefore, int walEntriesBefore) {
         assertThat(walWriter.currentSequenceNumber(taskId)).isEqualTo(seqBefore);
         assertThat(walReader.readAll(taskId)).hasSize(walEntriesBefore);
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean isTaskRegisteredWithScheduler(String taskId) {
+        try {
+            java.lang.reflect.Field servicesField = CheckpointScheduler.class.getDeclaredField("taskServices");
+            servicesField.setAccessible(true);
+            Map<String, SnapshotService> services =
+                    (Map<String, SnapshotService>) servicesField.get(scheduler);
+            return services.containsKey(taskId);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Failed to inspect scheduler registration", e);
+        }
     }
 
     // ---- Fake L3 implementation for testing ----
@@ -1154,7 +1530,8 @@ class SnapshotServiceTest {
 
     static class FailingCheckpointStore extends FakeL3ColdStore {
         private final FakeL3ColdStore delegate;
-        private volatile boolean failNextCheckpointWrite;
+        private volatile int checkpointWriteCount;
+        private volatile Integer failOnCheckpointWriteNumber;
         private volatile boolean failMetadataReads;
         private volatile boolean failCheckpointLoads;
 
@@ -1163,11 +1540,15 @@ class SnapshotServiceTest {
         }
 
         void failNextCheckpointWrite() {
-            this.failNextCheckpointWrite = true;
+            this.failOnCheckpointWriteNumber = checkpointWriteCount + 1;
+        }
+
+        void failOnCheckpointWriteNumber(int writeNumber) {
+            this.failOnCheckpointWriteNumber = writeNumber;
         }
 
         void stopFailing() {
-            this.failNextCheckpointWrite = false;
+            this.failOnCheckpointWriteNumber = null;
         }
 
         void failMetadataReads() {
@@ -1180,8 +1561,8 @@ class SnapshotServiceTest {
 
         @Override
         public CheckpointMetadata saveCheckpointWithMetadata(TaskState state, CheckpointMetadata meta) {
-            if (failNextCheckpointWrite) {
-                failNextCheckpointWrite = false;
+            checkpointWriteCount++;
+            if (shouldFailCheckpointWrite()) {
                 throw new IllegalStateException("simulated checkpoint write failure");
             }
             return delegate.saveCheckpointWithMetadata(state, meta);
@@ -1189,11 +1570,19 @@ class SnapshotServiceTest {
 
         @Override
         public CheckpointMetadata saveCheckpointBytesWithMetadata(byte[] data, CheckpointMetadata meta) {
-            if (failNextCheckpointWrite) {
-                failNextCheckpointWrite = false;
+            checkpointWriteCount++;
+            if (shouldFailCheckpointWrite()) {
                 throw new IllegalStateException("simulated checkpoint byte write failure");
             }
             return delegate.saveCheckpointBytesWithMetadata(data, meta);
+        }
+
+        private boolean shouldFailCheckpointWrite() {
+            if (failOnCheckpointWriteNumber != null && checkpointWriteCount == failOnCheckpointWriteNumber) {
+                failOnCheckpointWriteNumber = null;
+                return true;
+            }
+            return false;
         }
 
         @Override
@@ -1240,6 +1629,27 @@ class SnapshotServiceTest {
         @Override
         public java.util.Set<String> listTaskIdsWithCheckpoints() {
             return delegate.listTaskIdsWithCheckpoints();
+        }
+    }
+
+    static class FailingActionLogWriter extends ActionLogWriter {
+        private volatile boolean failNextClose;
+
+        FailingActionLogWriter(String walDirPath) {
+            super(walDirPath);
+        }
+
+        void failNextClose() {
+            this.failNextClose = true;
+        }
+
+        @Override
+        public void close(String taskId) {
+            if (failNextClose) {
+                failNextClose = false;
+                throw new IllegalStateException("WAL close failed for task " + taskId);
+            }
+            super.close(taskId);
         }
     }
 }

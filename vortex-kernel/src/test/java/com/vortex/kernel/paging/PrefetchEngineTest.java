@@ -17,7 +17,7 @@ class PrefetchEngineTest {
         SemanticPageTable pageTable = new SemanticPageTable(new NoopColdStore());
         PrefetchEngine engine = new PrefetchEngine(
                 pageTable,
-                new PageFaultHandler(pageTable, null, null, null, new NoopEmbeddingService(), emptyProvider()),
+                new PageFaultHandler(pageTable, null, null, null, new NoopEmbeddingService(), emptyEmbeddingProvider(), emptyProvider()),
                 2,
                 3,
                 3,
@@ -41,7 +41,7 @@ class PrefetchEngineTest {
         SemanticPageTable pageTable = new SemanticPageTable(new NoopColdStore());
         PrefetchEngine engine = new PrefetchEngine(
                 pageTable,
-                new PageFaultHandler(pageTable, null, null, null, new NoopEmbeddingService(), emptyProvider()),
+                new PageFaultHandler(pageTable, null, null, null, new NoopEmbeddingService(), emptyEmbeddingProvider(), emptyProvider()),
                 2,
                 3,
                 3,
@@ -192,6 +192,30 @@ class PrefetchEngineTest {
         };
     }
 
+    private static ObjectProvider<EmbeddingService> emptyEmbeddingProvider() {
+        return new ObjectProvider<>() {
+            @Override
+            public EmbeddingService getObject(Object... args) {
+                return null;
+            }
+
+            @Override
+            public EmbeddingService getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public EmbeddingService getIfUnique() {
+                return null;
+            }
+
+            @Override
+            public EmbeddingService getObject() {
+                return null;
+            }
+        };
+    }
+
     private static final class NoopEmbeddingService implements EmbeddingService {
         @Override
         public float[] embed(String text) {
@@ -240,7 +264,7 @@ class PrefetchEngineTest {
 
     private static final class ImmediatePageFaultHandler extends PageFaultHandler {
         private ImmediatePageFaultHandler(SemanticPageTable pageTable) {
-            super(pageTable, null, null, null, new NoopEmbeddingService(), emptyProvider());
+            super(pageTable, null, null, null, new NoopEmbeddingService(), emptyEmbeddingProvider(), emptyProvider());
         }
 
         @Override

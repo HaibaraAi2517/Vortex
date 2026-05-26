@@ -241,6 +241,38 @@ public class MilvusWarmStore implements L2WarmStore {
     }
 
     @Override
+    public List<MemoryFragment> listByNamespace(String namespace, int limit) {
+        int boundedLimit = Math.max(1, limit);
+        R<QueryResults> result = client.query(QueryParam.newBuilder()
+                .withCollectionName(collectionName)
+                .withExpr(FIELD_NS + " == \"" + nullToEmpty(namespace) + "\"")
+                .withOutFields(List.of(FIELD_ID, FIELD_NS, FIELD_CONTENT, FIELD_IMPORTANCE, FIELD_TOKEN_COUNT))
+                .withLimit((long) boundedLimit)
+                .build());
+        if (result.getStatus() != 0 || result.getData() == null) {
+            log.warn("Milvus namespace listing failed namespace={}: {}", namespace, result.getMessage());
+            return List.of();
+        }
+        QueryResultsWrapper wrapper = new QueryResultsWrapper(result.getData());
+        List<?> ids = wrapper.getFieldWrapper(FIELD_ID).getFieldData();
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<MemoryFragment> fragments = new ArrayList<>(ids.size());
+        for (int i = 0; i < ids.size(); i++) {
+            fragments.add(MemoryFragment.builder()
+                    .id((String) ids.get(i))
+                    .namespace((String) wrapper.getFieldWrapper(FIELD_NS).getFieldData().get(i))
+                    .content((String) wrapper.getFieldWrapper(FIELD_CONTENT).getFieldData().get(i))
+                    .importance(((Number) wrapper.getFieldWrapper(FIELD_IMPORTANCE).getFieldData().get(i)).doubleValue())
+                    .tokenCount(((Number) wrapper.getFieldWrapper(FIELD_TOKEN_COUNT).getFieldData().get(i)).intValue())
+                    .lastAccessTime(System.currentTimeMillis())
+                    .build());
+        }
+        return fragments;
+    }
+
+    @Override
     public void delete(String id) {
         client.delete(io.milvus.param.dml.DeleteParam.newBuilder()
                 .withCollectionName(collectionName)

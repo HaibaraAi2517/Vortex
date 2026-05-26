@@ -13,7 +13,11 @@ class SemanticPageTableMetricsBinderTest {
     @Test
     void bindRegistersIncrementalAssignmentMetrics() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        SemanticPageTable pageTable = new SemanticPageTable(new PrefetchMetricsBinderTest.NoopColdStore(), SemanticPageTable.DEFAULT_PAGE_TABLE_KEY, 0.05);
+        SemanticPageTable pageTable = new SemanticPageTable(
+                new PrefetchMetricsBinderTest.NoopColdStore(),
+                SemanticPageTable.DEFAULT_PAGE_TABLE_KEY,
+                0.05,
+                10);
         pageTable.buildPagesFromFragments(List.of(
                 fragment("a", 1.0f, 0.0f),
                 fragment("b", 0.99f, 0.01f),

@@ -1,6 +1,7 @@
 package com.vortex.app.controller;
 
 import com.vortex.app.health.MemorySloHealthIndicator;
+import com.vortex.common.model.MemoryFragment;
 import com.vortex.kernel.hmc.HierarchicalMemoryController;
 import com.vortex.storage.api.L1HotStore;
 import org.junit.jupiter.api.Test;
@@ -12,9 +13,14 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -97,5 +103,59 @@ class MemoryControllerTest {
                 .andExpect(jsonPath("$.compatibility[0].replacementKey").value("checkpoint_recovery_success_rate_low"))
                 .andExpect(jsonPath("$.signals[0].code").value("namespace_isolation_violation"))
                 .andExpect(jsonPath("$.signals[0].runbook").value("ops/runbooks/memory-health-signals.md#namespace_isolation_violation"));
+    }
+
+    @Test
+    void getFragmentReturnsFragmentWhenPresent() throws Exception {
+        MemoryFragment fragment = MemoryFragment.builder()
+                .id("frag-1")
+                .namespace("ns")
+                .content("payload")
+                .tokenCount(3)
+                .build();
+        when(hmc.getFragment("frag-1")).thenReturn(Optional.of(fragment));
+
+        mockMvc.perform(get("/api/v1/memory/fragment/frag-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("frag-1"))
+                .andExpect(jsonPath("$.namespace").value("ns"))
+                .andExpect(jsonPath("$.content").value("payload"));
+    }
+
+    @Test
+    void deleteFragmentReturnsDeletedStatusWhenPresent() throws Exception {
+        when(hmc.deleteFragment("frag-1")).thenReturn(true);
+
+        mockMvc.perform(delete("/api/v1/memory/fragment/frag-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fragmentId").value("frag-1"))
+                .andExpect(jsonPath("$.status").value("DELETED"));
+    }
+
+    @Test
+    void storeRejectsNullContentAsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/v1/memory/store")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":null,"namespace":"ns"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.fieldErrors.content").exists());
+    }
+
+    @Test
+    void storeAcceptsValidRequest() throws Exception {
+        when(hmc.store(anyString(), anyString(), any(), any(), any()))
+                .thenReturn(List.of("frag-1", "frag-2"));
+
+        mockMvc.perform(post("/api/v1/memory/store")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"hello","namespace":"ns","pinTtlMillis":1000}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(2))
+                .andExpect(jsonPath("$.fragmentIds[0]").value("frag-1"));
     }
 }

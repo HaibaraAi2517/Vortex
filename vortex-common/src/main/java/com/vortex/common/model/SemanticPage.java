@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
- * A semantic page groups up to 10 semantically related MemoryFragments.
+ * A semantic page groups semantically related MemoryFragments.
  *
  * Analogy: Linux memory page — the unit of transfer between L1/L2/L3.
  * Each page has a centroid (mean embedding of its fragments) used for
@@ -31,7 +31,7 @@ public class SemanticPage {
     /** Mean of all fragment embeddings in this page (512-dim, L2-normalized). */
     private float[] centroid;
 
-    /** Fragment IDs belonging to this page (max {@code PAGE_SIZE} = 10). */
+    /** Fragment IDs belonging to this page. */
     @Builder.Default
     private Set<String> fragmentIds = new CopyOnWriteArraySet<>();
 
@@ -57,9 +57,6 @@ public class SemanticPage {
      */
     @Builder.Default
     private Map<String, Integer> coAccessStats = new ConcurrentHashMap<>();
-
-    /** Maximum fragments per page. */
-    public static final int PAGE_SIZE = 10;
 
     // ---- Static helpers ----
 

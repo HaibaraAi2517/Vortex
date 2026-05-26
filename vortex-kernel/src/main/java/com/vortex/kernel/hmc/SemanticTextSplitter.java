@@ -50,6 +50,9 @@ public class SemanticTextSplitter {
             List<String> tags,
             String reasoningChainId,
             Long pinTtlMillis) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
         List<MemoryFragment> result = new ArrayList<>();
         String[] paragraphs = PARAGRAPH_BOUNDARY.split(text.strip());
         for (String para : paragraphs) {

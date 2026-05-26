@@ -20,6 +20,14 @@ public interface L2WarmStore {
     /** Retrieve by exact id. */
     Optional<MemoryFragment> get(String id);
 
+    /**
+     * List fragments for a namespace, capped by {@code limit}.
+     * Intended for bootstrapping or maintenance flows rather than hot-path recall.
+     */
+    default List<MemoryFragment> listByNamespace(String namespace, int limit) {
+        return List.of();
+    }
+
     /** Delete a fragment. */
     void delete(String id);
 

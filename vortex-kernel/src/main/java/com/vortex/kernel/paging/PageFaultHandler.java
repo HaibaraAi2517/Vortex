@@ -5,17 +5,20 @@ import com.vortex.common.model.PageState;
 import com.vortex.common.model.SemanticPage;
 import com.vortex.kernel.embedding.EmbeddingService;
 import com.vortex.kernel.hmc.HierarchicalMemoryController;
+import jakarta.annotation.PreDestroy;
 import com.vortex.storage.api.L1HotStore;
 import com.vortex.storage.api.L2WarmStore;
 import com.vortex.storage.api.L3ColdStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -33,7 +36,8 @@ public class PageFaultHandler {
     private final L1HotStore l1;
     private final L2WarmStore l2;
     private final L3ColdStore l3;
-    private final EmbeddingService embeddingService;
+    private final EmbeddingService l1EmbeddingService;
+    private final EmbeddingService l2EmbeddingService;
     private final ObjectProvider<HierarchicalMemoryController> hmcProvider;
     private final ExecutorService virtualThreadExecutor;
 
@@ -42,13 +46,15 @@ public class PageFaultHandler {
             L1HotStore l1,
             L2WarmStore l2,
             L3ColdStore l3,
-            EmbeddingService embeddingService,
+            @Qualifier("bgeSmallEmbeddingService") EmbeddingService l1EmbeddingService,
+            @Qualifier("cloudEmbeddingService") ObjectProvider<EmbeddingService> cloudEmbeddingProvider,
             ObjectProvider<HierarchicalMemoryController> hmcProvider) {
         this.pageTable = pageTable;
         this.l1 = l1;
         this.l2 = l2;
         this.l3 = l3;
-        this.embeddingService = embeddingService;
+        this.l1EmbeddingService = l1EmbeddingService;
+        this.l2EmbeddingService = cloudEmbeddingProvider.getIfAvailable();
         this.hmcProvider = hmcProvider;
         this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     }
@@ -130,7 +136,7 @@ public class PageFaultHandler {
             Optional<MemoryFragment> found = l2.get(fragmentId);
             found.ifPresent(fragment -> {
                 if (fragment.getEmbedding() == null) {
-                    fragment.setEmbedding(embedFragment(fragment.getContent()));
+                    fragment.setEmbedding(embedL1(fragment.getContent()));
                 }
                 results.add(fragment);
             });
@@ -145,7 +151,7 @@ public class PageFaultHandler {
         Optional<MemoryFragment> fragment = l3.retrieveFragment(fragmentId);
         fragment.ifPresent(f -> {
             if (f.getEmbedding() == null) {
-                f.setEmbedding(embedFragment(f.getContent()));
+                f.setEmbedding(embedL1(f.getContent()));
             }
         });
         return fragment;
@@ -202,22 +208,22 @@ public class PageFaultHandler {
 
         MemoryFragment fragment = fragmentOpt.get();
         if (fragment.getEmbedding() == null) {
-            fragment.setEmbedding(embedFragment(fragment.getContent()));
+            fragment.setEmbedding(embedL1(fragment.getContent()));
         }
 
         // Search L2 for semantically similar fragments
-        List<MemoryFragment> neighbors = l2.search(fragment.getEmbedding(), namespace,
-                SemanticPage.PAGE_SIZE);
+        List<MemoryFragment> neighbors = l2.search(resolveL2QueryEmbedding(fragment), namespace,
+                pageTable.pageSize());
         List<MemoryFragment> group = new ArrayList<>();
         group.add(fragment);
         Set<String> seen = new HashSet<>();
         seen.add(fragment.getId());
 
         for (MemoryFragment neighbor : neighbors) {
-            if (group.size() >= SemanticPage.PAGE_SIZE) break;
+            if (group.size() >= pageTable.pageSize()) break;
             if (seen.add(neighbor.getId())) {
                 if (neighbor.getEmbedding() == null) {
-                    neighbor.setEmbedding(embedFragment(neighbor.getContent()));
+                    neighbor.setEmbedding(embedL1(neighbor.getContent()));
                 }
                 group.add(neighbor);
             }
@@ -298,7 +304,34 @@ public class PageFaultHandler {
         return out;
     }
 
-    private float[] embedFragment(String content) {
-        return embeddingService.embedAsync(content).join();
+    private float[] resolveL2QueryEmbedding(MemoryFragment fragment) {
+        if (l2EmbeddingService == null) {
+            return fragment.getEmbedding();
+        }
+        if (fragment.getL2Embedding() == null) {
+            fragment.setL2Embedding(embedL2(fragment.getContent()));
+        }
+        return fragment.getL2Embedding();
+    }
+
+    private float[] embedL1(String content) {
+        return l1EmbeddingService.embedAsync(content).join();
+    }
+
+    private float[] embedL2(String content) {
+        return l2EmbeddingService.embedAsync(content).join();
+    }
+
+    @PreDestroy
+    void shutdown() {
+        virtualThreadExecutor.shutdown();
+        try {
+            if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                virtualThreadExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            virtualThreadExecutor.shutdownNow();
+        }
     }
 }

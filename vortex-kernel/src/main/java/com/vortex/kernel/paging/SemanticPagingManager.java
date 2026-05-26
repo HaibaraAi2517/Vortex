@@ -95,13 +95,19 @@ public class SemanticPagingManager {
     public void buildInitialPages(String namespace) {
         if (!enabled) return;
         try {
-            // Gather fragments — start with L1 since it's fastest
             List<MemoryFragment> fragments = new ArrayList<>(l1.getAll(namespace));
             if (fragments.isEmpty()) {
-                log.info("No L1 fragments to build pages for namespace={}", namespace);
+                fragments = new ArrayList<>(l2.listByNamespace(namespace, initialBuildMaxFragments));
+                for (MemoryFragment fragment : fragments) {
+                    if (fragment.getEmbedding() == null) {
+                        fragment.setEmbedding(embeddingService.embed(fragment.getContent()));
+                    }
+                }
+            }
+            if (fragments.isEmpty()) {
+                log.info("No L1/L2 fragments to build pages for namespace={}", namespace);
                 return;
             }
-            // Limit to avoid OOM on large datasets
             if (fragments.size() > initialBuildMaxFragments) {
                 fragments = fragments.subList(0, initialBuildMaxFragments);
             }
