@@ -1,6 +1,6 @@
 package com.vortex.app.health;
 
-import com.vortex.kernel.hmc.HierarchicalMemoryController;
+import com.vortex.kernel.hmc.MemoryDiagnosticsCollector;
 import com.vortex.kernel.hmc.MemorySloTracker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.actuate.health.Status;
@@ -20,7 +20,7 @@ public class MemoryHealthStateLogger {
             Status status,
             List<MemorySloHealthIndicator.HealthSummaryItem> summary,
             MemorySloTracker.SloSnapshot snapshot,
-            HierarchicalMemoryController.MemoryDiagnosticsSnapshot diagnostics) {
+            MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot diagnostics) {
         if (status == null || summary == null || snapshot == null) {
             return;
         }

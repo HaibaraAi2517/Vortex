@@ -3,6 +3,7 @@ package com.vortex.app.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vortex.common.model.TaskState;
 import com.vortex.kernel.snapshot.SnapshotService;
+import com.vortex.kernel.snapshot.TaskLifecycleManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -17,6 +18,7 @@ import java.util.Map;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -43,7 +45,7 @@ class TaskControllerTest {
                 .createdAt(Instant.parse("2026-05-25T00:00:00Z"))
                 .build();
         when(snapshotService.listActiveTasks(1, 1))
-                .thenReturn(new SnapshotService.TaskPage(List.of(task), 1, 1, 3));
+                .thenReturn(new TaskLifecycleManager.TaskPage(List.of(task), 1, 1, 3));
 
         mockMvc.perform(get("/api/v1/tasks").param("page", "1").param("size", "1"))
                 .andExpect(status().isOk())
@@ -93,6 +95,29 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.status").value("FAILED"));
 
         verify(snapshotService).failTask("task-1");
+    }
+
+    @Test
+    void deleteTask_returnsDeletedStatusWhenServiceDeletes() throws Exception {
+        when(snapshotService.deleteTask("task-1")).thenReturn(true);
+
+        mockMvc.perform(delete("/api/v1/tasks/task-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskId").value("task-1"))
+                .andExpect(jsonPath("$.status").value("DELETED"));
+    }
+
+    @Test
+    void deleteNode_callsService() throws Exception {
+        doNothing().when(snapshotService).deleteNode("task-1", "node-1");
+
+        mockMvc.perform(delete("/api/v1/tasks/task-1/nodes/node-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskId").value("task-1"))
+                .andExpect(jsonPath("$.nodeId").value("node-1"))
+                .andExpect(jsonPath("$.status").value("DELETED"));
+
+        verify(snapshotService).deleteNode("task-1", "node-1");
     }
 
     @Test

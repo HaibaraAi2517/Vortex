@@ -2,6 +2,7 @@ package com.vortex.app.controller;
 
 import com.vortex.common.model.*;
 import com.vortex.kernel.snapshot.SnapshotService;
+import com.vortex.kernel.snapshot.TaskLifecycleManager;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -37,7 +38,7 @@ public class TaskController {
     public ResponseEntity<TaskPageResponse> listTasks(
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "50") int size) {
-        SnapshotService.TaskPage result = snapshotService.listActiveTasks(page, size);
+        TaskLifecycleManager.TaskPage result = snapshotService.listActiveTasks(page, size);
         return ResponseEntity.ok(new TaskPageResponse(
                 result.items(), result.page(), result.size(), result.total(), result.hasNext()));
     }
@@ -64,6 +65,15 @@ public class TaskController {
         return ResponseEntity.ok(Map.of("taskId", taskId, "status", "FAILED"));
     }
 
+    @DeleteMapping("/{taskId}")
+    @Operation(summary = "Delete a task and its durable artifacts")
+    public ResponseEntity<Map<String, String>> deleteTask(@PathVariable("taskId") String taskId) {
+        if (!snapshotService.deleteTask(taskId)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(Map.of("taskId", taskId, "status", "DELETED"));
+    }
+
     // ---- DAG Node Operations ----
 
     @PostMapping("/{taskId}/nodes")
@@ -87,6 +97,15 @@ public class TaskController {
             @PathVariable("taskId") String taskId,
             @Valid @RequestBody CompleteNodeRequest req) {
         return ResponseEntity.ok(snapshotService.completeNode(taskId, req.nodeId(), req.result()));
+    }
+
+    @DeleteMapping("/{taskId}/nodes/{nodeId}")
+    @Operation(summary = "Delete a DAG node")
+    public ResponseEntity<Map<String, String>> deleteNode(
+            @PathVariable("taskId") String taskId,
+            @PathVariable("nodeId") String nodeId) {
+        snapshotService.deleteNode(taskId, nodeId);
+        return ResponseEntity.ok(Map.of("taskId", taskId, "nodeId", nodeId, "status", "DELETED"));
     }
 
     @PostMapping("/{taskId}/nodes/edge")

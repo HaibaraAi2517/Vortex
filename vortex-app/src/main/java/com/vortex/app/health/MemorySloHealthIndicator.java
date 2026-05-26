@@ -2,6 +2,7 @@ package com.vortex.app.health;
 
 import com.vortex.common.health.MemoryDiagnosticSignal;
 import com.vortex.kernel.hmc.HierarchicalMemoryController;
+import com.vortex.kernel.hmc.MemoryDiagnosticsCollector;
 import com.vortex.kernel.hmc.MemorySloTracker;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,7 +22,7 @@ public class MemorySloHealthIndicator implements HealthIndicator {
     public static final Status DEGRADED = new Status("DEGRADED");
 
     private final Supplier<MemorySloTracker.SloSnapshot> snapshotSupplier;
-    private final Supplier<HierarchicalMemoryController.MemoryDiagnosticsSnapshot> diagnosticsSupplier;
+    private final Supplier<MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot> diagnosticsSupplier;
     private final MemoryHealthStateLogger stateLogger;
     private final double minEvictionLogCoverage;
     private final double maxEvictionRegretRate;
@@ -69,7 +70,7 @@ public class MemorySloHealthIndicator implements HealthIndicator {
 
     MemorySloHealthIndicator(
             Supplier<MemorySloTracker.SloSnapshot> snapshotSupplier,
-            Supplier<HierarchicalMemoryController.MemoryDiagnosticsSnapshot> diagnosticsSupplier,
+            Supplier<MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot> diagnosticsSupplier,
             MemoryHealthStateLogger stateLogger,
             double minEvictionLogCoverage,
             double maxEvictionRegretRate,
@@ -101,7 +102,7 @@ public class MemorySloHealthIndicator implements HealthIndicator {
     @Override
     public Health health() {
         MemorySloTracker.SloSnapshot snapshot = snapshotSupplier.get();
-        HierarchicalMemoryController.MemoryDiagnosticsSnapshot diagnostics =
+        MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot diagnostics =
                 diagnosticsSupplier == null ? null : diagnosticsSupplier.get();
         long observedLearningSamples = observedLearningSamples(diagnostics);
         boolean learningSignalsActive = observedLearningSamples >= minLearningSamplesForHealth;
@@ -156,7 +157,7 @@ public class MemorySloHealthIndicator implements HealthIndicator {
 
     private List<HealthSummaryItem> buildSummary(
             MemorySloTracker.SloSnapshot snapshot,
-            HierarchicalMemoryController.MemoryDiagnosticsSnapshot diagnostics,
+            MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot diagnostics,
             boolean healthy,
             boolean learningSignalsActive) {
         List<RankedSummaryItem> items = new ArrayList<>();
@@ -298,12 +299,12 @@ public class MemorySloHealthIndicator implements HealthIndicator {
         return String.format(java.util.Locale.ROOT, "%.3f", value);
     }
 
-    private long observedLearningSamples(HierarchicalMemoryController.MemoryDiagnosticsSnapshot diagnostics) {
+    private long observedLearningSamples(MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot diagnostics) {
         if (diagnostics == null || diagnostics.learning() == null || diagnostics.learning().isEmpty()) {
             return 0L;
         }
         return diagnostics.learning().stream()
-                .mapToLong(HierarchicalMemoryController.LearningScenarioDiagnostic::sampleCount)
+                .mapToLong(MemoryDiagnosticsCollector.LearningScenarioDiagnostic::sampleCount)
                 .max()
                 .orElse(0L);
     }

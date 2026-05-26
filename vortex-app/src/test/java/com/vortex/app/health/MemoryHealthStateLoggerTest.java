@@ -2,7 +2,7 @@ package com.vortex.app.health;
 
 import com.vortex.common.health.MemoryDiagnosticSignal;
 import com.vortex.common.health.MemoryHealthCodes;
-import com.vortex.kernel.hmc.HierarchicalMemoryController;
+import com.vortex.kernel.hmc.MemoryDiagnosticsCollector;
 import com.vortex.kernel.hmc.MemorySloTracker;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -68,7 +68,7 @@ class MemoryHealthStateLoggerTest {
         assertThat(output.toString()).contains("warnings=eviction mode semantic regret elevated");
     }
 
-    private static HierarchicalMemoryController.MemoryDiagnosticsSnapshot diagnostics(List<String> warnings) {
+    private static MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot diagnostics(List<String> warnings) {
         List<MemoryDiagnosticSignal> signals = warnings.stream()
                 .map(warning -> new MemoryDiagnosticSignal(
                         MemoryHealthCodes.EVICTION_REGRET_MODE_HIGH,
@@ -77,23 +77,23 @@ class MemoryHealthStateLoggerTest {
                         warning,
                         java.util.Map.of("mode", "semantic")))
                 .toList();
-        return new HierarchicalMemoryController.MemoryDiagnosticsSnapshot(
+        return new MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot(
                 new MemorySloTracker.SloSnapshot(
                         1, 1, 1.0, 0.0, 0.1, 0.3, 1.0, 0, 1.0, 1.0, 1.0, 1.0,
                         1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0, 0, 0),
-                new HierarchicalMemoryController.PagingDiagnosticsSnapshot(
+                new MemoryDiagnosticsCollector.PagingDiagnosticsSnapshot(
                         1,
                         1,
                         0,
                         new com.vortex.kernel.paging.SemanticPageTable.AssignmentStats(1, 1, 0, 1.0, 0.0),
                         List.of()),
-                new HierarchicalMemoryController.RegretDiagnosticsSnapshot(
+                new MemoryDiagnosticsCollector.RegretDiagnosticsSnapshot(
                         10,
                         2,
                         0.2,
                         1,
                         1,
-                        List.of(new HierarchicalMemoryController.RegretModeDiagnostic("semantic", 10, 2, 0.2))),
+                        List.of(new MemoryDiagnosticsCollector.RegretModeDiagnostic("semantic", 10, 2, 0.2))),
                 List.of(),
                 signals,
                 warnings);

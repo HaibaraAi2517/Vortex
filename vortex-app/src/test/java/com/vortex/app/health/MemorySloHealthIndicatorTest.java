@@ -3,7 +3,7 @@ package com.vortex.app.health;
 import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.health.MemoryDiagnosticSignal;
 import com.vortex.common.health.MemoryHealthCodes;
-import com.vortex.kernel.hmc.HierarchicalMemoryController;
+import com.vortex.kernel.hmc.MemoryDiagnosticsCollector;
 import com.vortex.kernel.hmc.MemorySloTracker;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.actuate.health.Status;
@@ -270,28 +270,28 @@ class MemorySloHealthIndicatorTest {
         assertThat(health.getDetails().get("summary").toString()).doesNotContain("baseline_lift_low");
     }
 
-    private static HierarchicalMemoryController.MemoryDiagnosticsSnapshot diagnostics(List<String> warnings) {
+    private static MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot diagnostics(List<String> warnings) {
         List<MemoryDiagnosticSignal> signals = warnings.stream()
                 .map(MemorySloHealthIndicatorTest::signalForWarning)
                 .toList();
-        return new HierarchicalMemoryController.MemoryDiagnosticsSnapshot(
+        return new MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot(
                 new MemorySloTracker.SloSnapshot(
                         1, 1, 1.0, 0.0, 0.1, 0.3, 1.0, 0, 1.0, 1.0, 1.0, 1.0,
                         1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0, 0, 0),
-                new HierarchicalMemoryController.PagingDiagnosticsSnapshot(
+                new MemoryDiagnosticsCollector.PagingDiagnosticsSnapshot(
                         4,
                         2,
                         2,
                         new com.vortex.kernel.paging.SemanticPageTable.AssignmentStats(10, 4, 6, 0.4, 0.6),
-                        List.of(new HierarchicalMemoryController.PrefetchStrategyDiagnostic("semantic-nbhd", 25, 2, 23, 0.08, 1))),
-                new HierarchicalMemoryController.RegretDiagnosticsSnapshot(
+                        List.of(new MemoryDiagnosticsCollector.PrefetchStrategyDiagnostic("semantic-nbhd", 25, 2, 23, 0.08, 1))),
+                new MemoryDiagnosticsCollector.RegretDiagnosticsSnapshot(
                         20,
                         3,
                         0.15,
                         2,
                         1,
-                        List.of(new HierarchicalMemoryController.RegretModeDiagnostic("semantic", 20, 3, 0.15))),
-                List.of(new HierarchicalMemoryController.LearningScenarioDiagnostic(
+                        List.of(new MemoryDiagnosticsCollector.RegretModeDiagnostic("semantic", 20, 3, 0.15))),
+                List.of(new MemoryDiagnosticsCollector.LearningScenarioDiagnostic(
                         MemoryScenario.CHAT,
                         "chat-active",
                         "chat-shadow",
@@ -303,25 +303,25 @@ class MemorySloHealthIndicatorTest {
                 warnings);
     }
 
-    private static HierarchicalMemoryController.MemoryDiagnosticsSnapshot diagnosticsWithoutLearningSamples() {
-        return new HierarchicalMemoryController.MemoryDiagnosticsSnapshot(
+    private static MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot diagnosticsWithoutLearningSamples() {
+        return new MemoryDiagnosticsCollector.MemoryDiagnosticsSnapshot(
                 new MemorySloTracker.SloSnapshot(
                         1, 1, 1.0, 0.0, 0.0, 0.0, 0.0, 0, 1.0, 1.0, 1.0, 1.0,
                         1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0, 0, 0),
-                new HierarchicalMemoryController.PagingDiagnosticsSnapshot(
+                new MemoryDiagnosticsCollector.PagingDiagnosticsSnapshot(
                         0,
                         0,
                         0,
                         new com.vortex.kernel.paging.SemanticPageTable.AssignmentStats(0, 0, 0, 0.0, 0.0),
                         List.of()),
-                new HierarchicalMemoryController.RegretDiagnosticsSnapshot(
+                new MemoryDiagnosticsCollector.RegretDiagnosticsSnapshot(
                         0,
                         0,
                         0.0,
                         0,
                         0,
                         List.of()),
-                List.of(new HierarchicalMemoryController.LearningScenarioDiagnostic(
+                List.of(new MemoryDiagnosticsCollector.LearningScenarioDiagnostic(
                         MemoryScenario.CHAT,
                         "chat-active",
                         "chat-shadow",

@@ -97,7 +97,7 @@ vortex:
       bge:
         # Local directory containing model.onnx and tokenizer.json
         # Download from: https://hf-mirror.com/BAAI/bge-small-zh-v1.5
-        model-path: ${BGE_MODEL_PATH:E:/1projects/claude/Vortex/models/bge-small-zh}
+        model-path: ${BGE_MODEL_PATH:models/bge-small-zh}
       cloud:
         # DeepSeek embedding API — set DEEPSEEK_API_KEY env var
         enabled: ${CLOUD_EMBEDDING_ENABLED:false}
