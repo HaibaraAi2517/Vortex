@@ -73,7 +73,7 @@ class DagMutationServiceTest {
                 walWriter, walReader, walTruncator,
                 scheduler, dirtySetTracker, memorySloTracker,
                 new TaskFinalizationMetrics(meterRegistry),
-                null, null);
+                null);
 
         dagMutationService = new DagMutationService(
                 walWriter, dirtySetTracker, scheduler,

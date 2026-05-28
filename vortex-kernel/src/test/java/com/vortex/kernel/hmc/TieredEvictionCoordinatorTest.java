@@ -138,7 +138,7 @@ class TieredEvictionCoordinatorTest {
         l1.put(a2);
         l1.put(b1);
 
-        Map<String, Long> usage = tec.computeNamespaceTokenUsage(l1.getAllFragments());
+        Map<String, Long> usage = tec.computeNamespaceTokenUsage(l1.allFragments());
 
         assertThat(usage).containsEntry("ns-a", 30L);
         assertThat(usage).containsEntry("ns-b", 5L);

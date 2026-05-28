@@ -597,7 +597,7 @@ public class DockerComposeIT {
 
     private void clearIntegrationNamespaces() {
         if (l1HotStore instanceof CaffeineHotStore caffeineHotStore) {
-            Set<String> namespaces = caffeineHotStore.getAllFragments().stream()
+            Set<String> namespaces = caffeineHotStore.allFragments().stream()
                     .map(MemoryFragment::getNamespace)
                     .filter(ns -> ns != null && ns.startsWith(TEST_NAMESPACE_PREFIX))
                     .collect(Collectors.toSet());

@@ -3,7 +3,7 @@ package com.vortex.kernel.hmc;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.model.SemanticPage;
 import com.vortex.storage.api.L1HotStore;
-import com.vortex.storage.l1.CaffeineHotStore;
+import com.vortex.storage.api.L1HotStoreAdmin;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 public class TieredEvictionCoordinator {
 
     private final L1HotStore l1;
+    private final L1HotStoreAdmin l1Admin;
     private final SemanticEvictionPolicy evictionPolicy;
     private final NamespaceQuotaManager namespaceQuotaManager;
     private final EvictionDecisionLogger evictionDecisionLogger;
@@ -61,6 +62,7 @@ public class TieredEvictionCoordinator {
             @Value("${vortex.kernel.eviction.max-cold-tier-candidates:64}") int maxColdTierCandidates,
             @Value("${vortex.kernel.eviction.hot-tier-expansion-factor:2}") int hotTierExpansionFactor) {
         this.l1 = l1;
+        this.l1Admin = l1 instanceof L1HotStoreAdmin admin ? admin : null;
         this.evictionPolicy = evictionPolicy;
         this.namespaceQuotaManager = namespaceQuotaManager;
         this.evictionDecisionLogger = evictionDecisionLogger;
@@ -248,10 +250,10 @@ public class TieredEvictionCoordinator {
 
     private void enforceQuotaBeforeInsert(MemoryFragment incomingFragment) {
         pinManager.clearExpiredPins();
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
+        if (l1Admin == null) {
             return;
         }
-        List<MemoryFragment> allFragments = new ArrayList<>(caffeineStore.getAllFragments());
+        List<MemoryFragment> allFragments = new ArrayList<>(l1Admin.allFragments());
         NamespaceQuotaManager.QuotaSnapshot snapshot = namespaceQuotaManager.snapshot(
                 allFragments,
                 l1.maxTokenCapacity(),
@@ -309,7 +311,7 @@ public class TieredEvictionCoordinator {
 
     private boolean canAdmitPageCompanionWithoutReclaim(MemoryFragment incomingFragment) {
         pinManager.clearExpiredPins();
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
+        if (l1Admin == null) {
             return true;
         }
         long capacity = l1.maxTokenCapacity();
@@ -317,7 +319,7 @@ public class TieredEvictionCoordinator {
         if (pinManager.getPinnedTokenCount() + requiredTokens > capacity) {
             return false;
         }
-        List<MemoryFragment> allFragments = new ArrayList<>(caffeineStore.getAllFragments());
+        List<MemoryFragment> allFragments = new ArrayList<>(l1Admin.allFragments());
         NamespaceQuotaManager.QuotaSnapshot snapshot = namespaceQuotaManager.snapshot(
                 allFragments,
                 capacity,
@@ -326,11 +328,11 @@ public class TieredEvictionCoordinator {
         if (projectedUsage > snapshot.hardQuotaPerNamespace()) {
             return false;
         }
-        return caffeineStore.currentTokenCount() + requiredTokens <= capacity;
+        return l1.currentTokenCount() + requiredTokens <= capacity;
     }
 
     private boolean ensureCapacityForAdmission(MemoryFragment incomingFragment, String context) {
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
+        if (l1Admin == null) {
             return true;
         }
         long capacity = l1.maxTokenCapacity();
@@ -348,7 +350,7 @@ public class TieredEvictionCoordinator {
             return false;
         }
 
-        long gap = (caffeineStore.currentTokenCount() + requiredTokens) - capacity;
+        long gap = (l1.currentTokenCount() + requiredTokens) - capacity;
         if (gap <= 0) {
             return true;
         }
@@ -381,11 +383,11 @@ public class TieredEvictionCoordinator {
             return released;
         }
 
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
+        if (l1Admin == null) {
             return released;
         }
         long remaining = gap - released;
-        List<MemoryFragment> allFragments = new ArrayList<>(caffeineStore.getAllFragments());
+        List<MemoryFragment> allFragments = new ArrayList<>(l1Admin.allFragments());
         List<SemanticEvictionPolicy.EvictionCandidate> globalCandidates = rankTieredCandidates(
                 allFragments.stream()
                         .filter(fragment -> !Objects.equals(fragment.getNamespace(), incomingFragment.getNamespace()))
@@ -648,10 +650,10 @@ public class TieredEvictionCoordinator {
     }
 
     private void rebuildTierIndexes() {
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
+        if (l1Admin == null) {
             return;
         }
-        Map<String, List<MemoryFragment>> fragmentsByNamespace = caffeineStore.getAllFragments().stream()
+        Map<String, List<MemoryFragment>> fragmentsByNamespace = l1Admin.allFragments().stream()
                 .filter(fragment -> fragment.getNamespace() != null && !fragment.getNamespace().isBlank())
                 .collect(Collectors.groupingBy(MemoryFragment::getNamespace));
         hotTierIndex.clear();

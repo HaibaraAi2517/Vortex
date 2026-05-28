@@ -90,18 +90,17 @@ class TaskFinalizationMetricsTest {
         ApplicationEventPublisher eventPublisher = event -> {};
         TaskLifecycleManager taskLifecycleMgr = new TaskLifecycleManager(
                 store, checkpointManager, lifecycleManager, walWriter, walReader, walTruncator,
-                scheduler, dirtySetTracker, memorySloTracker, taskFinalizationMetrics, null, null);
+                scheduler, dirtySetTracker, memorySloTracker, taskFinalizationMetrics, null);
         DagMutationService dagMutationSvc = new DagMutationService(
                 walWriter, dirtySetTracker, scheduler, eventPublisher, branchManager, taskLifecycleMgr);
         RecoveryEngine recoveryEng = new RecoveryEngine(
                 walReader, walWriter, checkpointManager, checkpointRecoveryMetrics, memorySloTracker,
-                branchManager, scheduler, taskLifecycleMgr);
+                branchManager, scheduler);
 
         SnapshotService snapshotService = new SnapshotService(
                 taskLifecycleMgr, dagMutationSvc, recoveryEng,
                 branchManager, dotExporter, walWriter, walTruncator,
                 checkpointManager, lifecycleManager, scheduler, checkpointRecoveryMetrics, memorySloTracker);
-        taskLifecycleMgr.setSnapshotService(snapshotService);
         taskLifecycleMgr.setRecoveryEngine(recoveryEng);
         return snapshotService;
     }

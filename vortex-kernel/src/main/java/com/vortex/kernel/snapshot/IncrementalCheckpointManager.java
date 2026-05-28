@@ -128,11 +128,9 @@ public class IncrementalCheckpointManager {
         }
 
         Set<DagEdge> newEdges = new HashSet<>();
-        synchronized (state.getGraph().getEdges()) {
-            for (DagEdge edge : state.getGraph().getEdges()) {
-                if (dirty.edgeIds().contains(edge.getEdgeId())) {
-                    newEdges.add(edge);
-                }
+        for (DagEdge edge : state.getGraph().edgeSnapshot()) {
+            if (dirty.edgeIds().contains(edge.getEdgeId())) {
+                newEdges.add(edge);
             }
         }
 

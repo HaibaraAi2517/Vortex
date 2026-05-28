@@ -64,7 +64,7 @@ class KryoSerializerTest {
         DagNode a = DagNode.builder().type(DagNode.NodeType.THOUGHT).content("step 1").build();
         DagNode b = DagNode.builder().type(DagNode.NodeType.ACTION).content("step 2").build();
         graph.addNode(a); graph.addNode(b);
-        graph.getEdges().add(DagEdge.builder()
+        graph.addEdgeUncheckedForImport(DagEdge.builder()
                 .sourceNodeId(a.getNodeId())
                 .targetNodeId(b.getNodeId())
                 .dependencyType(DagEdge.EdgeType.CONTROL_DEP)
@@ -190,7 +190,7 @@ class KryoSerializerTest {
                     .build();
             graph.addNode(node);
             if (previousId != null) {
-                graph.getEdges().add(DagEdge.builder()
+                graph.addEdgeUncheckedForImport(DagEdge.builder()
                         .sourceNodeId(previousId)
                         .targetNodeId(node.getNodeId())
                         .dependencyType(DagEdge.EdgeType.CONTROL_DEP)
@@ -282,8 +282,8 @@ class KryoSerializerTest {
         DagNode b = DagNode.builder().type(DagNode.NodeType.ACTION).content("process").status(DagNode.NodeStatus.COMPLETED).build();
         DagNode c = DagNode.builder().type(DagNode.NodeType.OBSERVATION).content("observe").status(DagNode.NodeStatus.PENDING).build();
         graph.addNode(a); graph.addNode(b); graph.addNode(c);
-        graph.getEdges().add(DagEdge.builder().sourceNodeId(a.getNodeId()).targetNodeId(b.getNodeId()).build());
-        graph.getEdges().add(DagEdge.builder().sourceNodeId(b.getNodeId()).targetNodeId(c.getNodeId()).build());
+        graph.addEdgeUncheckedForImport(DagEdge.builder().sourceNodeId(a.getNodeId()).targetNodeId(b.getNodeId()).build());
+        graph.addEdgeUncheckedForImport(DagEdge.builder().sourceNodeId(b.getNodeId()).targetNodeId(c.getNodeId()).build());
 
         TaskState state = TaskState.builder()
                 .taskId("task-test-1")

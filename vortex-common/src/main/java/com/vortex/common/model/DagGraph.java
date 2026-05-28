@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
  * Directed Acyclic Graph representing an Agent's thought-action chain.
  *
  * Thread-safe for concurrent read/write via ConcurrentHashMap for nodes
- * and synchronized blocks for structural mutations.
+ * and graph-owned synchronization for structural mutations.
  *
  * Core guarantees:
  * - Cycle detection on edge insertion (rejects edges that would create cycles)
@@ -23,7 +23,6 @@ import java.util.stream.Collectors;
  * - Lazy adjacency list rebuilding with dirty flag
  */
 @Slf4j
-@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -57,6 +56,36 @@ public class DagGraph {
 
     public void addNode(DagNode node) {
         nodes.put(node.getNodeId(), node);
+    }
+
+    public Map<String, DagNode> getNodes() {
+        return nodes;
+    }
+
+    public void setNodes(Map<String, DagNode> nodes) {
+        this.nodes = nodes != null ? new ConcurrentHashMap<>(nodes) : new ConcurrentHashMap<>();
+    }
+
+    public boolean isDirty() {
+        return dirty;
+    }
+
+    public void setDirty(boolean dirty) {
+        this.dirty = dirty;
+    }
+
+    public List<DagEdge> getEdges() {
+        return edgeSnapshot();
+    }
+
+    public void setEdges(List<DagEdge> edges) {
+        synchronized (this.edges) {
+            this.edges.clear();
+            if (edges != null) {
+                this.edges.addAll(edges);
+            }
+        }
+        markDirty();
     }
 
     public Optional<DagNode> getNode(String nodeId) {
@@ -111,7 +140,7 @@ public class DagGraph {
     }
 
     public List<DagEdge> getOutgoingEdges(String nodeId) {
-        rebuildAdjacency();
+        rebuildIfDirty();
         List<String> targets = adjacencyList.getOrDefault(nodeId, Collections.emptyList());
         synchronized (edges) {
             return edges.stream()
@@ -121,7 +150,7 @@ public class DagGraph {
     }
 
     public List<DagEdge> getIncomingEdges(String nodeId) {
-        rebuildAdjacency();
+        rebuildIfDirty();
         List<String> sources = reverseAdjacencyList.getOrDefault(nodeId, Collections.emptyList());
         synchronized (edges) {
             return edges.stream()
@@ -131,7 +160,9 @@ public class DagGraph {
     }
 
     public int edgeCount() {
-        return edges.size();
+        synchronized (edges) {
+            return edges.size();
+        }
     }
 
     // ---- Graph analysis ----
@@ -140,7 +171,7 @@ public class DagGraph {
      * Returns nodes with no incoming edges (entry points of the DAG).
      */
     public List<DagNode> getSourceNodes() {
-        rebuildAdjacency();
+        rebuildIfDirty();
         return nodes.keySet().stream()
                 .filter(id -> reverseAdjacencyList.getOrDefault(id, Collections.emptyList()).isEmpty())
                 .map(nodes::get)
@@ -152,7 +183,7 @@ public class DagGraph {
      * Returns nodes with no outgoing edges (exit points of the DAG).
      */
     public List<DagNode> getSinkNodes() {
-        rebuildAdjacency();
+        rebuildIfDirty();
         return nodes.keySet().stream()
                 .filter(id -> adjacencyList.getOrDefault(id, Collections.emptyList()).isEmpty())
                 .map(nodes::get)
@@ -164,7 +195,7 @@ public class DagGraph {
      * Check if the graph contains a cycle using DFS with three-color marking.
      */
     public boolean hasCycle() {
-        rebuildAdjacency(); // always rebuild for safety
+        rebuildIfDirty();
         Set<String> white = new HashSet<>(nodes.keySet()); // unvisited
         Set<String> gray = new HashSet<>();                  // in current DFS path
         Set<String> black = new HashSet<>();                  // fully processed
@@ -200,7 +231,7 @@ public class DagGraph {
      * @throws IllegalStateException if the graph contains a cycle
      */
     public List<String> topologicalSort() {
-        rebuildAdjacency(); // always rebuild for safety
+        rebuildIfDirty();
 
         // Compute in-degree for each node
         Map<String, Integer> indeg = new HashMap<>();
@@ -244,7 +275,7 @@ public class DagGraph {
      * Check if targetNodeId is reachable from sourceNodeId via BFS.
      */
     public boolean areConnected(String sourceNodeId, String targetNodeId) {
-        rebuildAdjacency(); // always rebuild — dirty is transient, lost after deserialization
+        rebuildIfDirty();
         Set<String> visited = new HashSet<>();
         Queue<String> queue = new ArrayDeque<>();
         queue.offer(sourceNodeId);
@@ -290,14 +321,44 @@ public class DagGraph {
                         .dependencyType(DagEdge.EdgeType.CONTROL_DEP)
                         .build();
                 // Bypass cycle check for linear chains from legacy
-                synchronized (graph.edges) {
-                    graph.edges.add(edge);
-                }
-                graph.markDirty();
+                graph.addEdgeUnchecked(edge);
             }
             previousId = node.getNodeId();
         }
         return graph;
+    }
+
+    public List<DagEdge> edgeSnapshot() {
+        synchronized (edges) {
+            return List.copyOf(edges);
+        }
+    }
+
+    public void replaceEdges(Collection<DagEdge> edges) {
+        synchronized (this.edges) {
+            this.edges.clear();
+            if (edges != null) {
+                this.edges.addAll(edges);
+            }
+        }
+        markDirty();
+    }
+
+    public void addEdgeUncheckedForImport(DagEdge edge) {
+        if (edge == null) {
+            return;
+        }
+        addEdgeUnchecked(edge);
+    }
+
+    public void addEdgesUnchecked(Collection<DagEdge> edges) {
+        if (edges == null || edges.isEmpty()) {
+            return;
+        }
+        synchronized (this.edges) {
+            this.edges.addAll(edges);
+        }
+        markDirty();
     }
 
     private static DagNode.NodeType mapLegacyType(String legacyType) {
@@ -331,7 +392,7 @@ public class DagGraph {
             return false;
         }
 
-        rebuildAdjacency();
+        rebuildIfDirty();
         Map<String, List<String>> testAdj = deepCopyAdjacency(adjacencyList);
         testAdj.computeIfAbsent(edge.getSourceNodeId(), k -> new ArrayList<>()).add(edge.getTargetNodeId());
 
@@ -359,6 +420,13 @@ public class DagGraph {
         this.adjacencyList = adj;
         this.reverseAdjacencyList = rev;
         this.dirty = false;
+    }
+
+    private void addEdgeUnchecked(DagEdge edge) {
+        synchronized (edges) {
+            edges.add(edge);
+        }
+        markDirty();
     }
 
     private void rebuildIfDirty() {

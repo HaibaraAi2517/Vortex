@@ -45,19 +45,17 @@ class SnapshotRecoveryHealthLoggingTest {
         CheckpointLifecycleManager lifecycleManager = new CheckpointLifecycleManager(store, 20, 7, 48);
         TaskLifecycleManager taskLifecycleMgr = new TaskLifecycleManager(
                 store, checkpointManager, lifecycleManager, walWriter, walReader, walTruncator,
-                scheduler, dirtySetTracker, memorySloTracker, new TaskFinalizationMetrics(meterRegistry), null, null);
+                scheduler, dirtySetTracker, memorySloTracker, new TaskFinalizationMetrics(meterRegistry), null);
         DagMutationService dagMutationSvc = new DagMutationService(
                 walWriter, dirtySetTracker, scheduler, eventPublisher, branchManager, taskLifecycleMgr);
         RecoveryEngine recoveryEng = new RecoveryEngine(
                 walReader, walWriter, checkpointManager, checkpointRecoveryMetrics, memorySloTracker,
-                branchManager, scheduler, taskLifecycleMgr);
+                branchManager, scheduler);
         SnapshotService service = new SnapshotService(
                 taskLifecycleMgr, dagMutationSvc, recoveryEng,
                 branchManager, dotExporter, walWriter, walTruncator,
                 checkpointManager, lifecycleManager, scheduler, checkpointRecoveryMetrics, memorySloTracker);
-        taskLifecycleMgr.setSnapshotService(service);
         taskLifecycleMgr.setRecoveryEngine(recoveryEng);
-
         var task = service.createTask("recovery logging", "ns");
         service.appendNode(task.getTaskId(), "THOUGHT", "before checkpoint");
         String checkpointId = service.checkpoint(task.getTaskId());

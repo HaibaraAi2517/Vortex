@@ -75,11 +75,11 @@ class RecoveryEngineTest {
 
         taskLifecycleManager = new TaskLifecycleManager(
                 store, checkpointManager, lifecycleManager, walWriter, walReader, walTruncator,
-                scheduler, dirtySetTracker, memorySloTracker, new TaskFinalizationMetrics(meterRegistry), null, null);
+                scheduler, dirtySetTracker, memorySloTracker, new TaskFinalizationMetrics(meterRegistry), null);
 
         recoveryEngine = new RecoveryEngine(
                 walReader, walWriter, checkpointManager, checkpointRecoveryMetrics, memorySloTracker,
-                branchManager, scheduler, taskLifecycleManager);
+                branchManager, scheduler);
 
         dagMutationService = new DagMutationService(
                 walWriter, dirtySetTracker, scheduler, event -> {}, branchManager, taskLifecycleManager);
@@ -88,9 +88,8 @@ class RecoveryEngineTest {
                 taskLifecycleManager, dagMutationService, recoveryEngine,
                 branchManager, new DotGraphExporter(), walWriter, walTruncator,
                 checkpointManager, lifecycleManager, scheduler, checkpointRecoveryMetrics, memorySloTracker);
-
-        taskLifecycleManager.setSnapshotService(snapshotService);
         taskLifecycleManager.setRecoveryEngine(recoveryEngine);
+
     }
 
     // ========================================================================
@@ -101,7 +100,7 @@ class RecoveryEngineTest {
     void recoverWithNoCheckpointThrowsNoCheckpointAvailable() {
         String unknownTaskId = "non-existent-task";
 
-        assertThatThrownBy(() -> recoveryEngine.recover(unknownTaskId, null))
+        assertThatThrownBy(() -> recoveryEngine.recover(unknownTaskId, null, taskLifecycleManager))
                 .isInstanceOf(CheckpointRecoveryException.class)
                 .satisfies(ex -> {
                     CheckpointRecoveryException cex = (CheckpointRecoveryException) ex;
@@ -129,7 +128,7 @@ class RecoveryEngineTest {
         String checkpointId = createCheckpointViaManager(task);
 
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager);
 
         assertThat(recovered.getGraph().nodeCount()).isEqualTo(2);
         assertThat(recovered.getGraph().getNode(n1.getNodeId())).isPresent();
@@ -153,7 +152,7 @@ class RecoveryEngineTest {
         dagMutationService.completeNode(task.getTaskId(), n2.getNodeId(), "done");
 
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager);
 
         assertThat(recovered.getGraph().nodeCount()).isEqualTo(2);
         assertThat(recovered.getGraph().getNode(n1.getNodeId())).isPresent();
@@ -174,7 +173,7 @@ class RecoveryEngineTest {
         String checkpointId = createCheckpointViaManager(task);
 
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager);
 
         assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.RUNNING);
     }
@@ -191,7 +190,7 @@ class RecoveryEngineTest {
         String checkpointId = createCheckpointViaManager(task);
 
         checkpointManager.reloadTask(task.getTaskId());
-        recoveryEngine.recover(task.getTaskId(), checkpointId);
+        recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager);
 
         assertThat(counterValue("vortex.checkpoint.recovery.total",
                 "outcome", "success", "mode", "FULL"))
@@ -208,7 +207,7 @@ class RecoveryEngineTest {
         String checkpointId = createCheckpointViaManager(task);
 
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager);
 
         assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.COMPLETED);
         assertThat(recovered.getFinalizationStatus()).isEqualTo(TaskState.TaskFinalizationStatus.FINALIZED);
@@ -228,7 +227,7 @@ class RecoveryEngineTest {
         scheduler.unregisterTask(task.getTaskId());
 
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager);
 
         assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.RUNNING);
         // Verify task is registered by recording an action (no exception = registered)
@@ -247,7 +246,7 @@ class RecoveryEngineTest {
 
         scheduler.unregisterTask(task.getTaskId());
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager);
 
         assertThat(recovered.getLastCheckpointAt()).isEqualTo(checkpointCreatedAt);
         assertThat(lastCheckpointTimes()).containsEntry(task.getTaskId(), checkpointCreatedAt.toEpochMilli());
@@ -266,7 +265,7 @@ class RecoveryEngineTest {
         scheduler.unregisterTask(task.getTaskId());
 
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager);
 
         assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.COMPLETED);
         assertThat(recovered.getFinalizationStatus())
@@ -290,7 +289,7 @@ class RecoveryEngineTest {
         task.setLatestCheckpointId(checkpointId);
 
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), null);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), null, taskLifecycleManager);
 
         assertThat(recovered.getLatestCheckpointId()).isEqualTo(checkpointId);
         assertThat(recovered.getGraph().nodeCount()).isEqualTo(1);
@@ -311,7 +310,7 @@ class RecoveryEngineTest {
         taskLifecycleManager.putLatestCheckpointId(task.getTaskId(), checkpointId);
 
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), null);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), null, taskLifecycleManager);
 
         assertThat(recovered.getLatestCheckpointId()).isEqualTo(checkpointId);
         assertThat(recovered.getGraph().nodeCount()).isEqualTo(1);
@@ -331,7 +330,7 @@ class RecoveryEngineTest {
         taskLifecycleManager.evictFromCacheForTest(task.getTaskId());
 
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), null);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), null, taskLifecycleManager);
 
         assertThat(recovered.getLatestCheckpointId()).isEqualTo(checkpointId);
         assertThat(recovered.getGraph().nodeCount()).isEqualTo(1);
@@ -386,7 +385,7 @@ class RecoveryEngineTest {
         walWriter.append(task.getTaskId(), ActionLogEntry.OperationType.SET_STATUS, setStatusPayload);
 
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager);
 
         assertThat(recovered.getStatus()).isEqualTo(TaskState.TaskStatus.FAILED);
         assertThat(recovered.getFinalizationStatus())
@@ -408,7 +407,7 @@ class RecoveryEngineTest {
         walWriter.append(task.getTaskId(), ActionLogEntry.OperationType.UPDATE_CONTEXT, ctxPayload);
 
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager);
 
         assertThat(recovered.getContext()).containsEntry("env-var", "production");
     }
@@ -428,7 +427,7 @@ class RecoveryEngineTest {
         walWriter.append(task.getTaskId(), ActionLogEntry.OperationType.COMPLETE_NODE, payload);
 
         checkpointManager.reloadTask(task.getTaskId());
-        assertThatThrownBy(() -> recoveryEngine.recover(task.getTaskId(), checkpointId))
+        assertThatThrownBy(() -> recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager))
                 .isInstanceOf(CheckpointRecoveryException.class)
                 .satisfies(ex -> {
                     CheckpointRecoveryException cex = (CheckpointRecoveryException) ex;
@@ -451,7 +450,7 @@ class RecoveryEngineTest {
         taskLifecycleManager.evictFromCacheForTest(task.getTaskId());
 
         checkpointManager.reloadTask(task.getTaskId());
-        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId);
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager);
 
         assertThat(taskLifecycleManager.getCachedTask(task.getTaskId())).isPresent();
         assertThat(taskLifecycleManager.getCachedTask(task.getTaskId()).get())

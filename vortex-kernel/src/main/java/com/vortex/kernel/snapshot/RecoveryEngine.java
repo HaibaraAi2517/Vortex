@@ -1,12 +1,11 @@
 package com.vortex.kernel.snapshot;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vortex.common.model.ActionLogEntry;
 import com.vortex.common.model.CheckpointMetadata;
 import com.vortex.common.model.DagEdge;
 import com.vortex.common.model.DagNode;
 import com.vortex.common.model.TaskState;
+import com.vortex.common.serialization.WalPayloads;
 import com.vortex.kernel.hmc.MemorySloTracker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -15,7 +14,6 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -35,9 +33,6 @@ import java.util.Set;
 @Component
 public class RecoveryEngine {
 
-    private static final ObjectMapper PAYLOAD_MAPPER = new ObjectMapper();
-    private static final TypeReference<Map<String, String>> STRING_MAP_TYPE = new TypeReference<>() {};
-
     private final ActionLogReader walReader;
     private final ActionLogWriter walWriter;
     private final IncrementalCheckpointManager checkpointManager;
@@ -45,7 +40,6 @@ public class RecoveryEngine {
     private final MemorySloTracker memorySloTracker;
     private final BranchManager branchManager;
     private final CheckpointScheduler scheduler;
-    private final TaskLifecycleManager taskLifecycleManager;
 
     public RecoveryEngine(
             ActionLogReader walReader,
@@ -54,8 +48,7 @@ public class RecoveryEngine {
             CheckpointRecoveryMetrics checkpointRecoveryMetrics,
             MemorySloTracker memorySloTracker,
             BranchManager branchManager,
-            CheckpointScheduler scheduler,
-            TaskLifecycleManager taskLifecycleManager) {
+            CheckpointScheduler scheduler) {
         this.walReader = walReader;
         this.walWriter = walWriter;
         this.checkpointManager = checkpointManager;
@@ -63,7 +56,6 @@ public class RecoveryEngine {
         this.memorySloTracker = memorySloTracker;
         this.branchManager = branchManager;
         this.scheduler = scheduler;
-        this.taskLifecycleManager = taskLifecycleManager;
     }
 
     /**
@@ -74,10 +66,14 @@ public class RecoveryEngine {
      * @param checkpointId optional checkpoint ID; if null, the latest checkpoint is resolved
      * @return the recovered task state
      */
-    public TaskState recover(String taskId, String checkpointId) {
-        TaskState recovered = doRecover(taskId, checkpointId);
-        taskLifecycleManager.attachRecoveredTask(recovered);
+    public TaskState recover(String taskId, String checkpointId, RecoveryStateAccess access) {
+        TaskState recovered = doRecover(taskId, checkpointId, access);
+        access.attachRecoveredTask(recovered);
         return recovered;
+    }
+
+    public TaskState recover(String taskId, String checkpointId) {
+        throw new UnsupportedOperationException("RecoveryStateAccess is required for direct RecoveryEngine usage");
     }
 
     /**
@@ -89,18 +85,18 @@ public class RecoveryEngine {
      * @param checkpointId optional checkpoint ID; if null, auto-resolved
      * @return the recovered task state (not yet cached)
      */
-    TaskState doRecover(String taskId, String checkpointId) {
-        if (taskLifecycleManager.isDeleteCommitted(taskId)) {
-            throw new IllegalArgumentException("Task deleted: " + taskId);
+    TaskState doRecover(String taskId, String checkpointId, RecoveryStateAccess access) {
+        if (access.isDeleteCommitted(taskId)) {
+            throw new TaskDeletedException(taskId);
         }
 
         String resolvedId = checkpointId;
         if (resolvedId == null) {
-            TaskState current = taskLifecycleManager.getCachedTask(taskId).orElse(null);
+            TaskState current = access.getCachedTask(taskId).orElse(null);
             if (current != null && current.getLatestCheckpointId() != null) {
                 resolvedId = current.getLatestCheckpointId();
             } else {
-                resolvedId = taskLifecycleManager.getLatestCheckpointId(taskId);
+                resolvedId = access.getLatestCheckpointId(taskId);
                 if (resolvedId == null) {
                     resolvedId = checkpointManager.latestCheckpoint(taskId)
                             .map(CheckpointMetadata::getCheckpointId)
@@ -137,7 +133,7 @@ public class RecoveryEngine {
         if (recovery.checkpointMetadata() != null) {
             recovered.setLastCheckpointAt(recovery.checkpointMetadata().getCreatedAt());
         }
-        taskLifecycleManager.putLatestCheckpointId(taskId, resolvedId);
+        access.putLatestCheckpointId(taskId, resolvedId);
         checkpointManager.reloadTask(taskId);
 
         long checkpointSeq = recovered.getWalSequenceNumber();
@@ -366,13 +362,12 @@ public class RecoveryEngine {
         return state.getGraph().containsEquivalentEdge(edge);
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, String> parseJsonPayload(String json) {
         if (json == null || json.length() < 3) {
             return new HashMap<>();
         }
         try {
-            return PAYLOAD_MAPPER.readValue(json, STRING_MAP_TYPE);
+            return WalPayloads.parseStringMap(json);
         } catch (Exception e) {
             log.error("Failed to parse WAL payload: {}", json, e);
             return new HashMap<>();
@@ -389,7 +384,7 @@ public class RecoveryEngine {
                     "Replay payload is missing taskId=" + state.getTaskId() + " entryId=" + entry.getEntryId());
         }
         try {
-            return PAYLOAD_MAPPER.readValue(payload, STRING_MAP_TYPE);
+            return WalPayloads.parseStringMap(payload);
         } catch (Exception e) {
             throw new CheckpointRecoveryException(
                     CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
@@ -445,17 +440,18 @@ public class RecoveryEngine {
     // ========================================================================
 
     String jsonPayload(String... keyValues) {
-        if ((keyValues.length & 1) != 0) {
-            throw new IllegalArgumentException("jsonPayload requires an even number of key/value arguments");
-        }
-        Map<String, String> map = new LinkedHashMap<>();
-        for (int i = 0; i < keyValues.length; i += 2) {
-            map.put(keyValues[i], keyValues[i + 1] != null ? keyValues[i + 1] : "");
-        }
-        try {
-            return PAYLOAD_MAPPER.writeValueAsString(map);
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to serialize WAL payload", e);
-        }
+        return WalPayloads.jsonPayload(keyValues);
+    }
+
+    interface RecoveryStateAccess {
+        boolean isDeleteCommitted(String taskId);
+
+        java.util.Optional<TaskState> getCachedTask(String taskId);
+
+        String getLatestCheckpointId(String taskId);
+
+        void putLatestCheckpointId(String taskId, String checkpointId);
+
+        void attachRecoveredTask(TaskState state);
     }
 }

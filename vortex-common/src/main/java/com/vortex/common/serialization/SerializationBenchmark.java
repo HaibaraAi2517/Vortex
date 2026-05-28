@@ -43,7 +43,7 @@ public class SerializationBenchmark {
             graph.addNode(node);
 
             if (previousId != null) {
-                graph.getEdges().add(DagEdge.builder()
+                graph.addEdgeUncheckedForImport(DagEdge.builder()
                         .sourceNodeId(previousId)
                         .targetNodeId(node.getNodeId())
                         .dependencyType(DagEdge.EdgeType.CONTROL_DEP)

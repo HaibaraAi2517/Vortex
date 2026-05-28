@@ -1,11 +1,10 @@
 package com.vortex.kernel.snapshot;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vortex.common.model.ActionLogEntry;
 import com.vortex.common.model.DagEdge;
 import com.vortex.common.model.DagNode;
 import com.vortex.common.model.TaskState;
+import com.vortex.common.serialization.WalPayloads;
 import com.vortex.kernel.paging.DagChangeEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -13,9 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -29,9 +26,6 @@ import java.util.UUID;
 @Slf4j
 @Component
 public class DagMutationService {
-
-    private static final ObjectMapper PAYLOAD_MAPPER = new ObjectMapper();
-    private static final TypeReference<Map<String, String>> STRING_MAP_TYPE = new TypeReference<>() {};
 
     private final ActionLogWriter walWriter;
     private final DirtySetTracker dirtySetTracker;
@@ -239,12 +233,12 @@ public class DagMutationService {
 
     private TaskState requireTask(String taskId) {
         return taskLifecycleManager.getTask(taskId)
-                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+                .orElseThrow(() -> new TaskNotFoundException(taskId));
     }
 
     private DagNode requireNode(TaskState state, String nodeId) {
         return state.getGraph().getNode(nodeId)
-                .orElseThrow(() -> new IllegalArgumentException("Node not found: " + nodeId));
+                .orElseThrow(() -> new NodeNotFoundException(nodeId));
     }
 
     private DagNode.NodeType parseNodeType(String type) {
@@ -282,18 +276,7 @@ public class DagMutationService {
      * Package-private so the SnapshotService facade can use it for branching operations.
      */
     String jsonPayload(String... keyValues) {
-        if ((keyValues.length & 1) != 0) {
-            throw new IllegalArgumentException("jsonPayload requires an even number of key/value arguments");
-        }
-        Map<String, String> map = new LinkedHashMap<>();
-        for (int i = 0; i < keyValues.length; i += 2) {
-            map.put(keyValues[i], keyValues[i + 1] != null ? keyValues[i + 1] : "");
-        }
-        try {
-            return PAYLOAD_MAPPER.writeValueAsString(map);
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to serialize WAL payload", e);
-        }
+        return WalPayloads.jsonPayload(keyValues);
     }
 
     String normalizedBranchId(String branchId) {

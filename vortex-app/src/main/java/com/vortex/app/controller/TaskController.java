@@ -29,8 +29,8 @@ public class TaskController {
 
     @PostMapping
     @Operation(summary = "Create a task")
-    public ResponseEntity<TaskState> createTask(@Valid @RequestBody CreateTaskRequest req) {
-        return ResponseEntity.ok(snapshotService.createTask(req.description(), req.namespace()));
+    public ResponseEntity<TaskResponseModels.TaskResponse> createTask(@Valid @RequestBody CreateTaskRequest req) {
+        return ResponseEntity.ok(TaskResponseModels.from(snapshotService.createTask(req.description(), req.namespace())));
     }
 
     @GetMapping
@@ -40,13 +40,15 @@ public class TaskController {
             @RequestParam(name = "size", defaultValue = "50") int size) {
         TaskLifecycleManager.TaskPage result = snapshotService.listActiveTasks(page, size);
         return ResponseEntity.ok(new TaskPageResponse(
-                result.items(), result.page(), result.size(), result.total(), result.hasNext()));
+                result.items().stream().map(TaskResponseModels::from).toList(),
+                result.page(), result.size(), result.total(), result.hasNext()));
     }
 
     @GetMapping("/{taskId}")
     @Operation(summary = "Get a task by ID")
-    public ResponseEntity<TaskState> getTask(@PathVariable("taskId") String taskId) {
+    public ResponseEntity<TaskResponseModels.TaskResponse> getTask(@PathVariable("taskId") String taskId) {
         return snapshotService.getTask(taskId)
+                .map(TaskResponseModels::from)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -78,25 +80,25 @@ public class TaskController {
 
     @PostMapping("/{taskId}/nodes")
     @Operation(summary = "Append a DAG node")
-    public ResponseEntity<DagNode> appendNode(
+    public ResponseEntity<TaskResponseModels.DagNodeResponse> appendNode(
             @PathVariable("taskId") String taskId,
             @Valid @RequestBody AppendNodeRequest req) {
         if (req.targetNodeId() != null) {
             DagEdge.EdgeType edgeType = req.edgeType() != null
                     ? DagEdge.EdgeType.valueOf(req.edgeType().toUpperCase(Locale.ROOT))
                     : DagEdge.EdgeType.CONTROL_DEP;
-            return ResponseEntity.ok(snapshotService.appendNodeWithTarget(
-                    taskId, req.type(), req.content(), req.targetNodeId(), edgeType));
+            return ResponseEntity.ok(TaskResponseModels.from(snapshotService.appendNodeWithTarget(
+                    taskId, req.type(), req.content(), req.targetNodeId(), edgeType)));
         }
-        return ResponseEntity.ok(snapshotService.appendNode(taskId, req.type(), req.content()));
+        return ResponseEntity.ok(TaskResponseModels.from(snapshotService.appendNode(taskId, req.type(), req.content())));
     }
 
     @PostMapping("/{taskId}/nodes/complete")
     @Operation(summary = "Complete a DAG node")
-    public ResponseEntity<DagNode> completeNode(
+    public ResponseEntity<TaskResponseModels.DagNodeResponse> completeNode(
             @PathVariable("taskId") String taskId,
             @Valid @RequestBody CompleteNodeRequest req) {
-        return ResponseEntity.ok(snapshotService.completeNode(taskId, req.nodeId(), req.result()));
+        return ResponseEntity.ok(TaskResponseModels.from(snapshotService.completeNode(taskId, req.nodeId(), req.result())));
     }
 
     @DeleteMapping("/{taskId}/nodes/{nodeId}")
@@ -146,10 +148,11 @@ public class TaskController {
 
     @PostMapping("/{taskId}/recover")
     @Operation(summary = "Recover a task from a checkpoint or latest durable state")
-    public ResponseEntity<TaskState> recover(
+    public ResponseEntity<TaskResponseModels.TaskResponse> recover(
             @PathVariable("taskId") String taskId,
             @Valid @RequestBody(required = false) RecoverRequest body) {
-        return ResponseEntity.ok(snapshotService.recover(taskId, body != null ? body.checkpointId() : null));
+        return ResponseEntity.ok(TaskResponseModels.from(
+                snapshotService.recover(taskId, body != null ? body.checkpointId() : null)));
     }
 
     // ---- Branching ----
@@ -240,7 +243,7 @@ public class TaskController {
             @NotBlank @Size(max = 128) String targetBranchId) {}
 
     public record TaskPageResponse(
-            List<TaskState> items,
+            List<TaskResponseModels.TaskResponse> items,
             int page,
             int size,
             long total,

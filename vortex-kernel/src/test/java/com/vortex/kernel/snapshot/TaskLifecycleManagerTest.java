@@ -63,7 +63,7 @@ class TaskLifecycleManagerTest {
                 walWriter, walReader, walTruncator,
                 scheduler, dirtySetTracker, memorySloTracker,
                 new TaskFinalizationMetrics(meterRegistry),
-                null, null);
+                null);
     }
 
     private SnapshotService createSnapshotService() {
@@ -77,13 +77,12 @@ class TaskLifecycleManagerTest {
                 walWriter, dirtySetTracker, scheduler, eventPublisher, branchManager, tlm);
         RecoveryEngine recoveryEng = new RecoveryEngine(
                 walReader, walWriter, checkpointManager, checkpointRecoveryMetrics, memorySloTracker,
-                branchManager, scheduler, tlm);
+                branchManager, scheduler);
 
         SnapshotService snapshotService = new SnapshotService(
                 tlm, dagMutationSvc, recoveryEng,
                 branchManager, dotExporter, walWriter, walTruncator,
                 checkpointManager, lifecycleManager, scheduler, checkpointRecoveryMetrics, memorySloTracker);
-        tlm.setSnapshotService(snapshotService);
         tlm.setRecoveryEngine(recoveryEng);
         return snapshotService;
     }
@@ -422,7 +421,6 @@ class TaskLifecycleManagerTest {
                 .latestCheckpointId("cp-1")
                 .build();
 
-        tlm.setSnapshotService(snapshotService);
         tlm.attachRecoveredTask(recovered);
 
         assertThat(lastCheckpointTimes()).containsEntry(
@@ -443,7 +441,6 @@ class TaskLifecycleManagerTest {
                 .latestCheckpointId("cp-terminal")
                 .build();
 
-        tlm.setSnapshotService(snapshotService);
         tlm.attachRecoveredTask(recovered);
 
         assertThat(isTaskRegistered("terminal-task")).isFalse();

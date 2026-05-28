@@ -88,8 +88,8 @@ class DagGraphTest {
         DagNode b = DagNode.builder().build();
         g.addNode(a); g.addNode(b);
         // Bypass addEdge to create a cycle that would otherwise be rejected
-        g.getEdges().add(edge(a, b));
-        g.getEdges().add(edge(b, a));
+        g.addEdgeUncheckedForImport(edge(a, b));
+        g.addEdgeUncheckedForImport(edge(b, a));
         assertThatThrownBy(g::topologicalSort)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("cycle");

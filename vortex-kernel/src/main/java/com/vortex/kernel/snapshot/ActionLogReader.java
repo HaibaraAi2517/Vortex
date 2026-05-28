@@ -3,6 +3,7 @@ package com.vortex.kernel.snapshot;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vortex.common.model.ActionLogEntry;
+import com.vortex.common.serialization.JsonMapperFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -33,7 +34,7 @@ public class ActionLogReader {
     public ActionLogReader(
             @Value("${vortex.kernel.snapshot.wal.dir:${java.io.tmpdir}/vortex-wal}") String walDirPath) {
         this.walDir = Paths.get(walDirPath);
-        this.objectMapper = new ObjectMapper().findAndRegisterModules()
+        this.objectMapper = JsonMapperFactory.create()
                 .configure(JsonParser.Feature.AUTO_CLOSE_SOURCE, false);
     }
 

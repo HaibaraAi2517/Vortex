@@ -35,7 +35,7 @@ public class CheckpointScheduler {
     private final ConcurrentHashMap<String, Long> lastCheckpointTimes = new ConcurrentHashMap<>();
 
     /** Registered tasks that need scheduling. */
-    private final ConcurrentHashMap<String, SnapshotService> taskServices = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CheckpointCapable> taskServices = new ConcurrentHashMap<>();
 
     public CheckpointScheduler(
             @Value("${vortex.kernel.snapshot.scheduler.max-actions-between:50}") int maxActionsBetween,
@@ -49,7 +49,7 @@ public class CheckpointScheduler {
     /**
      * Register a task for automatic checkpointing.
      */
-    public void registerTask(String taskId, SnapshotService service) {
+    public void registerTask(String taskId, CheckpointCapable service) {
         registerTask(taskId, service, null);
     }
 
@@ -57,7 +57,7 @@ public class CheckpointScheduler {
      * Register a task for automatic checkpointing with an explicit checkpoint-time baseline.
      * A null baseline preserves any existing scheduler baseline, otherwise it falls back to now.
      */
-    public void registerTask(String taskId, SnapshotService service, Long lastCheckpointTimeMillis) {
+    public void registerTask(String taskId, CheckpointCapable service, Long lastCheckpointTimeMillis) {
         if (service != null) {
             taskServices.put(taskId, service);
         }
@@ -121,7 +121,7 @@ public class CheckpointScheduler {
         }
 
         for (String taskId : tasksNeedingCheckpoint) {
-            SnapshotService service = taskServices.get(taskId);
+            CheckpointCapable service = taskServices.get(taskId);
             if (service != null && service.isTaskLoadedForCheckpoint(taskId)) {
                 try {
                     service.checkpoint(taskId);

@@ -62,8 +62,9 @@ public class MemoryController {
     }
 
     @GetMapping("/fragment/{fragmentId}")
-    public ResponseEntity<MemoryFragment> getFragment(@PathVariable("fragmentId") String fragmentId) {
+    public ResponseEntity<MemoryResponseModels.MemoryFragmentResponse> getFragment(@PathVariable("fragmentId") String fragmentId) {
         return hmc.getFragment(fragmentId)
+                .map(MemoryResponseModels::from)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }

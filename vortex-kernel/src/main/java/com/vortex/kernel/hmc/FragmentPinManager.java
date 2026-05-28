@@ -3,9 +3,9 @@ package com.vortex.kernel.hmc;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.kernel.embedding.EmbeddingService;
 import com.vortex.storage.api.L1HotStore;
+import com.vortex.storage.api.L1HotStoreAdmin;
 import com.vortex.storage.api.L2WarmStore;
 import com.vortex.storage.api.L3ColdStore;
-import com.vortex.storage.l1.CaffeineHotStore;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class FragmentPinManager {
 
     private final L1HotStore l1;
+    private final L1HotStoreAdmin l1Admin;
     private final L2WarmStore l2;
     private final L3ColdStore l3;
     private final FragmentPersistenceManager persistenceManager;
@@ -53,6 +54,7 @@ public class FragmentPinManager {
             @Qualifier("cloudEmbeddingService") ObjectProvider<EmbeddingService> cloudEmbeddingProvider,
             @Lazy TieredEvictionCoordinator evictionCoordinator) {
         this.l1 = l1;
+        this.l1Admin = l1 instanceof L1HotStoreAdmin admin ? admin : null;
         this.l2 = l2;
         this.l3 = l3;
         this.persistenceManager = persistenceManager;
@@ -226,10 +228,10 @@ public class FragmentPinManager {
         pinnedTokenCount.set(0L);
         pinnedFragmentDeadlines.clear();
         pinExpirations.clear();
-        if (!(l1 instanceof CaffeineHotStore caffeineStore)) {
+        if (l1Admin == null) {
             return;
         }
-        caffeineStore.getAllFragments().forEach(fragment -> {
+        l1Admin.allFragments().forEach(fragment -> {
             indexPin(fragment);
         });
     }

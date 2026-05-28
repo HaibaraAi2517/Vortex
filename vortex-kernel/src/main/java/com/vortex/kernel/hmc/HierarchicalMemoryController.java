@@ -11,9 +11,9 @@ import com.vortex.common.model.SemanticPage;
 import com.vortex.kernel.embedding.EmbeddingService;
 import com.vortex.kernel.paging.SemanticPagingManager;
 import com.vortex.storage.api.L1HotStore;
+import com.vortex.storage.api.L1HotStoreAdmin;
 import com.vortex.storage.api.L2WarmStore;
 import com.vortex.storage.api.L3ColdStore;
-import com.vortex.storage.l1.CaffeineHotStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -107,8 +107,8 @@ public class HierarchicalMemoryController {
         this.recallOrchestrator = recallOrchestrator;
         this.diagnosticsCollector = diagnosticsCollector;
 
-        if (l1 instanceof CaffeineHotStore caffeineStore) {
-            caffeineStore.setEvictionListener(this::handleCaffeineEviction);
+        if (l1 instanceof L1HotStoreAdmin admin) {
+            admin.registerEvictionListener(this::handleL1Eviction);
         }
 
         if (this.l2EmbeddingService != null) {
@@ -307,7 +307,7 @@ public class HierarchicalMemoryController {
                 .toList();
     }
 
-    private void handleCaffeineEviction(MemoryFragment fragment, RemovalCause cause) {
+    private void handleL1Eviction(MemoryFragment fragment, L1HotStoreAdmin.EvictionCause cause) {
         SemanticEvictionPolicy.EvictionCandidate candidate = evictionPolicy.scoreFragment(fragment, null);
         evictionDecisionLogger.logFallbackEviction(candidate, fragment.getNamespace(), cause.name());
         regretTracker.recordEviction(fragment, "caffeine-" + cause.name().toLowerCase(Locale.ROOT));

@@ -5,6 +5,7 @@ import com.vortex.common.model.CheckpointMetadata;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.model.TaskState;
 import com.vortex.common.serialization.JacksonCompatibilityBridge;
+import com.vortex.common.serialization.JsonMapperFactory;
 import com.vortex.common.serialization.KryoSerializer;
 import com.vortex.storage.api.CheckpointStoreException;
 import com.vortex.storage.api.L3ColdStore;
@@ -68,7 +69,7 @@ public class MinioColdStore implements L3ColdStore {
     MinioColdStore(MinioClient minioClient, String bucket, String keyPrefix) {
         this.bucket = bucket;
         this.keyPrefix = normalizeKeyPrefix(keyPrefix);
-        this.objectMapper = new ObjectMapper().findAndRegisterModules();
+        this.objectMapper = JsonMapperFactory.create();
         this.kryoSerializer = new KryoSerializer();
         this.minioClient = minioClient;
     }

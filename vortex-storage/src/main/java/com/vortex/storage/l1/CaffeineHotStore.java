@@ -5,6 +5,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.storage.api.L1HotStore;
+import com.vortex.storage.api.L1HotStoreAdmin;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -23,14 +24,14 @@ import java.util.function.BiConsumer;
  */
 @Slf4j
 @Component
-public class CaffeineHotStore implements L1HotStore {
+public class CaffeineHotStore implements L1HotStore, L1HotStoreAdmin {
 
     private final Cache<String, MemoryFragment> cache;
     private final long maxTokens;
     private final AtomicLong currentTokens = new AtomicLong(0);
 
     /** Called when Caffeine evicts an entry — wired by HMC to push to L2. */
-    private BiConsumer<MemoryFragment, RemovalCause> evictionListener = (f, cause) -> {};
+    private BiConsumer<MemoryFragment, EvictionCause> evictionListener = (f, cause) -> {};
 
     public CaffeineHotStore(
             @Value("${vortex.storage.l1.max-tokens:8192}") long maxTokens) {
@@ -44,7 +45,7 @@ public class CaffeineHotStore implements L1HotStore {
                             currentTokens.addAndGet(-v.getTokenCount());
                             log.debug("L1 evicted fragment id={} tokens={} cause={}",
                                     v.getId(), v.getTokenCount(), cause);
-                            evictionListener.accept(v, cause);
+                            evictionListener.accept(v, mapCause(cause));
                         }
                     }
                 })
@@ -52,7 +53,8 @@ public class CaffeineHotStore implements L1HotStore {
     }
 
     /** Register a callback invoked when Caffeine evicts a fragment. */
-    public void setEvictionListener(BiConsumer<MemoryFragment, RemovalCause> listener) {
+    @Override
+    public void registerEvictionListener(BiConsumer<MemoryFragment, EvictionCause> listener) {
         this.evictionListener = listener;
     }
 
@@ -96,7 +98,8 @@ public class CaffeineHotStore implements L1HotStore {
                 .toList();
     }
 
-    public List<MemoryFragment> getAllFragments() {
+    @Override
+    public List<MemoryFragment> allFragments() {
         return List.copyOf(cache.asMap().values());
     }
 
@@ -127,5 +130,15 @@ public class CaffeineHotStore implements L1HotStore {
                 .toList();
         keys.forEach(this::remove);
         log.info("L1 cleared namespace={} removedCount={}", namespace, keys.size());
+    }
+
+    private EvictionCause mapCause(RemovalCause cause) {
+        return switch (cause) {
+            case SIZE -> EvictionCause.SIZE;
+            case EXPIRED -> EvictionCause.EXPIRED;
+            case EXPLICIT -> EvictionCause.EXPLICIT;
+            case REPLACED -> EvictionCause.REPLACED;
+            case COLLECTED -> EvictionCause.COLLECTED;
+        };
     }
 }

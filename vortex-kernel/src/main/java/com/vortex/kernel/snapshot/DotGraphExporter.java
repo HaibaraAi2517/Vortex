@@ -55,11 +55,7 @@ public class DotGraphExporter {
         sb.append("\n");
 
         // Export edges
-        List<DagEdge> edges;
-        synchronized (graph.getEdges()) {
-            edges = List.copyOf(graph.getEdges());
-        }
-        for (DagEdge edge : edges) {
+        for (DagEdge edge : graph.edgeSnapshot()) {
             sb.append("  ").append(quote(edge.getSourceNodeId()))
                     .append(" -> ").append(quote(edge.getTargetNodeId()));
             sb.append(" [").append(edgeAttributes(edge)).append("]");

@@ -5,10 +5,7 @@ import com.vortex.kernel.hmc.MemorySloTracker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Manages task lifecycle, checkpointing, recovery, branching, and DAG visualization.
@@ -26,7 +23,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 @Slf4j
 @Service
-public class SnapshotService {
+public class SnapshotService implements CheckpointCapable {
 
     private final TaskLifecycleManager taskLifecycleManager;
     private final DagMutationService dagMutationService;
@@ -34,12 +31,8 @@ public class SnapshotService {
     private final BranchManager branchManager;
     private final DotGraphExporter dotExporter;
     private final ActionLogWriter walWriter;
-    private final ActionLogTruncator walTruncator;
     private final IncrementalCheckpointManager checkpointManager;
-    private final CheckpointLifecycleManager lifecycleManager;
     private final CheckpointScheduler scheduler;
-    private final CheckpointRecoveryMetrics checkpointRecoveryMetrics;
-    private final MemorySloTracker memorySloTracker;
 
     public SnapshotService(
             TaskLifecycleManager taskLifecycleManager,
@@ -60,12 +53,8 @@ public class SnapshotService {
         this.branchManager = branchManager;
         this.dotExporter = dotExporter;
         this.walWriter = walWriter;
-        this.walTruncator = walTruncator;
         this.checkpointManager = checkpointManager;
-        this.lifecycleManager = lifecycleManager;
         this.scheduler = scheduler;
-        this.checkpointRecoveryMetrics = checkpointRecoveryMetrics;
-        this.memorySloTracker = memorySloTracker;
     }
 
     // ========================================================================
@@ -100,7 +89,7 @@ public class SnapshotService {
         return taskLifecycleManager.deleteTask(taskId);
     }
 
-    boolean isTaskLoadedForCheckpoint(String taskId) {
+    public boolean isTaskLoadedForCheckpoint(String taskId) {
         return taskLifecycleManager.isTaskLoadedForCheckpoint(taskId);
     }
 
@@ -142,56 +131,18 @@ public class SnapshotService {
      * Create a checkpoint for the task.
      */
     public String checkpoint(String taskId) {
-        TaskState state = taskLifecycleManager.requireTask(taskId);
-        return checkpoint(taskId, state);
+        return taskLifecycleManager.checkpoint(taskId);
     }
 
     String checkpointLoadedTask(String taskId, TaskState state) {
-        return checkpoint(taskId, state);
-    }
-
-    private String checkpoint(String taskId, TaskState state) {
-        ConcurrentHashMap<String, ReentrantLock> checkpointLocks = taskLifecycleManager.getCheckpointLocks();
-        ReentrantLock checkpointLock = checkpointLocks.computeIfAbsent(taskId, id -> new ReentrantLock());
-        checkpointLock.lock();
-        try {
-            // Flush WAL to ensure all entries are on disk
-            walWriter.flush(taskId);
-            walWriter.rotate(taskId);
-
-            long walSeq = walWriter.currentSequenceNumber(taskId);
-
-            // Create checkpoint (full or delta based on auto-detection)
-            CheckpointMetadata meta = checkpointManager.createCheckpoint(state, walSeq);
-
-            state.setLatestCheckpointId(meta.getCheckpointId());
-            state.setLastCheckpointAt(Instant.now());
-            taskLifecycleManager.putLatestCheckpointId(taskId, meta.getCheckpointId());
-
-            // Truncate WAL up to the checkpoint sequence
-            walTruncator.truncate(taskId, walSeq);
-
-            // Reset scheduler counters
-            scheduler.onCheckpoint(taskId);
-
-            // Apply retention policy periodically
-            lifecycleManager.applyRetention(taskId,
-                    checkpointManager.listCheckpoints(taskId));
-            checkpointManager.reloadTask(taskId);
-
-            log.info("Checkpoint completed taskId={} checkpointId={} type={} seqNo={}",
-                    taskId, meta.getCheckpointId(), meta.getType(), walSeq);
-            return meta.getCheckpointId();
-        } finally {
-            checkpointLock.unlock();
-        }
+        return taskLifecycleManager.checkpointLoadedTask(taskId, state);
     }
 
     /**
      * Recover a task from its latest checkpoint with exactly-once semantics.
      */
     public TaskState recover(String taskId, String checkpointId) {
-        return recoveryEngine.recover(taskId, checkpointId);
+        return recoveryEngine.recover(taskId, checkpointId, taskLifecycleManager);
     }
 
     /** Test-only: evicts task from cache to verify lazy recovery. */
@@ -268,7 +219,7 @@ public class SnapshotService {
     public String exportDag(String taskId, String branchId) {
         TaskState state = taskLifecycleManager.requireTask(taskId);
         TaskBranch branch = branchManager.getBranch(state, branchId)
-                .orElseThrow(() -> new IllegalArgumentException("Branch not found: " + branchId));
+                .orElseThrow(() -> new BranchNotFoundException(branchId));
         DagGraph branchGraph = buildBranchGraph(state, branchId, branch);
         return dotExporter.export(
                 branchGraph,
@@ -303,12 +254,10 @@ public class SnapshotService {
         for (String nodeId : includedNodeIds) {
             sourceGraph.getNode(nodeId).ifPresent(branchGraph::addNode);
         }
-        synchronized (sourceGraph.getEdges()) {
-            for (DagEdge edge : sourceGraph.getEdges()) {
-                if (includedNodeIds.contains(edge.getSourceNodeId())
-                        && includedNodeIds.contains(edge.getTargetNodeId())) {
-                    branchGraph.addEdge(edge);
-                }
+        for (DagEdge edge : sourceGraph.edgeSnapshot()) {
+            if (includedNodeIds.contains(edge.getSourceNodeId())
+                    && includedNodeIds.contains(edge.getTargetNodeId())) {
+                branchGraph.addEdge(edge);
             }
         }
         return branchGraph;

@@ -1374,18 +1374,17 @@ class SnapshotServiceTest {
         // Create components with circular dependency resolution
         TaskLifecycleManager taskLifecycleMgr = new TaskLifecycleManager(
                 store, checkpointManager, lifecycleManager, walWriter, walReader, walTruncator,
-                scheduler, dirtySetTracker, memorySloTracker, new TaskFinalizationMetrics(meterRegistry), null, null);
+                scheduler, dirtySetTracker, memorySloTracker, new TaskFinalizationMetrics(meterRegistry), null);
         DagMutationService dagMutationSvc = new DagMutationService(
                 walWriter, dirtySetTracker, scheduler, eventPublisher, branchManager, taskLifecycleMgr);
         RecoveryEngine recoveryEng = new RecoveryEngine(
                 walReader, walWriter, checkpointManager, checkpointRecoveryMetrics, memorySloTracker,
-                branchManager, scheduler, taskLifecycleMgr);
+                branchManager, scheduler);
 
         SnapshotService snapshotService = new SnapshotService(
                 taskLifecycleMgr, dagMutationSvc, recoveryEng,
                 branchManager, dotExporter, walWriter, walTruncator,
                 checkpointManager, lifecycleManager, scheduler, checkpointRecoveryMetrics, memorySloTracker);
-        taskLifecycleMgr.setSnapshotService(snapshotService);
         taskLifecycleMgr.setRecoveryEngine(recoveryEng);
         return snapshotService;
     }

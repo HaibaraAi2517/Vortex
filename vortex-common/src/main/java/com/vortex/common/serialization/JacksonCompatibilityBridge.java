@@ -1,7 +1,6 @@
 package com.vortex.common.serialization;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vortex.common.model.DagGraph;
 import com.vortex.common.model.TaskState;
 import lombok.extern.slf4j.Slf4j;
@@ -19,8 +18,6 @@ import java.util.List;
 @Slf4j
 public class JacksonCompatibilityBridge {
 
-    private static final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
-
     /**
      * Detect if the byte array is in Jackson JSON format.
      */
@@ -35,15 +32,15 @@ public class JacksonCompatibilityBridge {
     public static TaskState migrateFromJackson(byte[] jsonData) {
         try {
             // Deserialize into a temporary TaskState via Jackson
-            TaskState legacy = objectMapper.readValue(jsonData, TaskState.class);
+            TaskState legacy = JsonMapperFactory.shared().readValue(jsonData, TaskState.class);
 
             // Try to extract old nodes from the deprecated fields
-            JsonNode root = objectMapper.readTree(jsonData);
+            JsonNode root = JsonMapperFactory.shared().readTree(jsonData);
             JsonNode rawNodes = root.get("nodes");
             if (rawNodes != null && rawNodes.isArray()) {
                 List<TaskState.ThoughtNode> legacyNodes = new ArrayList<>();
                 for (JsonNode nodeJson : rawNodes) {
-                    TaskState.ThoughtNode tn = objectMapper.treeToValue(nodeJson, TaskState.ThoughtNode.class);
+                    TaskState.ThoughtNode tn = JsonMapperFactory.shared().treeToValue(nodeJson, TaskState.ThoughtNode.class);
                     legacyNodes.add(tn);
                 }
 

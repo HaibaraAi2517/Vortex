@@ -52,7 +52,7 @@ public class BranchManager {
         // Validate source node exists
         Optional<DagNode> sourceNode = task.getGraph().getNode(sourceNodeId);
         if (sourceNode.isEmpty()) {
-            throw new IllegalArgumentException("Source node not found: " + sourceNodeId);
+            throw new InvalidRequestException("Source node not found: " + sourceNodeId);
         }
 
         // Check branch limit
@@ -138,7 +138,7 @@ public class BranchManager {
                 .anyMatch(b -> b.getBranchId().equals(branchId)
                         && b.getStatus() == TaskBranch.BranchStatus.ACTIVE);
         if (!exists) {
-            throw new IllegalArgumentException("Active branch not found: " + branchId);
+            throw new InvalidRequestException("Active branch not found: " + branchId);
         }
     }
 
@@ -160,9 +160,9 @@ public class BranchManager {
      */
     public void validateMergeBranch(TaskState task, String sourceBranchId, String targetBranchId) {
         TaskBranch source = getBranch(task, sourceBranchId)
-                .orElseThrow(() -> new IllegalArgumentException("Source branch not found: " + sourceBranchId));
+                .orElseThrow(() -> new BranchNotFoundException(sourceBranchId));
         TaskBranch target = getBranch(task, targetBranchId)
-                .orElseThrow(() -> new IllegalArgumentException("Target branch not found: " + targetBranchId));
+                .orElseThrow(() -> new BranchNotFoundException(targetBranchId));
 
         if (source.getStatus() != TaskBranch.BranchStatus.ACTIVE) {
             throw new IllegalStateException("Source branch is not active: " + sourceBranchId);
@@ -210,7 +210,7 @@ public class BranchManager {
      */
     public void abandonBranch(TaskState task, String branchId) {
         TaskBranch branch = getBranch(task, branchId)
-                .orElseThrow(() -> new IllegalArgumentException("Branch not found: " + branchId));
+                .orElseThrow(() -> new BranchNotFoundException(branchId));
         branch.markAbandoned();
         log.info("Branch abandoned: taskId={} branchId={}", task.getTaskId(), branchId);
 

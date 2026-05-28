@@ -6,6 +6,7 @@ import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.vortex.common.model.CheckpointMetadata;
 import com.vortex.common.model.TaskState;
 import com.vortex.common.serialization.KryoSerializer;
+import com.vortex.common.serialization.WalPayloads;
 import com.vortex.kernel.hmc.MemorySloTracker;
 import com.vortex.storage.api.L3ColdStore;
 import jakarta.annotation.PostConstruct;
@@ -13,7 +14,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -27,13 +27,10 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * Responsible for task CRUD, in-memory caching, lazy-loading from L3,
  * checkpoint-index maintenance, and lifecycle transitions (complete / fail).
- * Delegates recovery to {@link RecoveryEngine} and checkpoint execution to
- * the {@link SnapshotService} facade via {@code @Lazy} injection to break
- * the circular dependency.
  */
 @Slf4j
 @Component
-public class TaskLifecycleManager {
+public class TaskLifecycleManager implements CheckpointCapable, RecoveryEngine.RecoveryStateAccess {
     private static final String ACTIVE_TASK_INDEX_KEY = "system/active-task-index.bin";
 
     private final L3ColdStore l3;
@@ -46,7 +43,6 @@ public class TaskLifecycleManager {
     private final DirtySetTracker dirtySetTracker;
     private final MemorySloTracker memorySloTracker;
     private final TaskFinalizationMetrics taskFinalizationMetrics;
-    private SnapshotService snapshotService;
     private RecoveryEngine recoveryEngine;
 
     /** In-memory registry of active tasks. */
@@ -86,8 +82,7 @@ public class TaskLifecycleManager {
             DirtySetTracker dirtySetTracker,
             MemorySloTracker memorySloTracker,
             TaskFinalizationMetrics taskFinalizationMetrics,
-            @Lazy SnapshotService snapshotService,
-            @Lazy RecoveryEngine recoveryEngine) {
+            RecoveryEngine recoveryEngine) {
         this.l3 = l3;
         this.checkpointManager = checkpointManager;
         this.lifecycleManager = lifecycleManager;
@@ -98,21 +93,13 @@ public class TaskLifecycleManager {
         this.dirtySetTracker = dirtySetTracker;
         this.memorySloTracker = memorySloTracker;
         this.taskFinalizationMetrics = taskFinalizationMetrics;
-        this.snapshotService = snapshotService;
         this.recoveryEngine = recoveryEngine;
     }
 
     /**
-     * Setters for the {@code @Lazy} dependencies; used to resolve circular
-     * dependencies during programmatic construction (e.g., unit tests).
-     * In a Spring context the {@code @Lazy} proxies handle this automatically.
+     * Setter for programmatic construction in tests where the recovery engine
+     * is wired after the lifecycle manager.
      */
-    void setSnapshotService(SnapshotService snapshotService) {
-        if (this.snapshotService == null) {
-            this.snapshotService = snapshotService;
-        }
-    }
-
     void setRecoveryEngine(RecoveryEngine recoveryEngine) {
         if (this.recoveryEngine == null) {
             this.recoveryEngine = recoveryEngine;
@@ -157,7 +144,7 @@ public class TaskLifecycleManager {
                 .build();
         activeTasks.put(taskId, state);
         recordListingState(state);
-        scheduler.registerTask(taskId, snapshotService);
+        scheduler.registerTask(taskId, this);
 
         log.info("Task created taskId={} namespace={}", taskId, namespace);
         return state;
@@ -187,7 +174,7 @@ public class TaskLifecycleManager {
         if (checkpointId == null) {
             return Optional.empty();
         }
-        TaskState recovered = recoveryEngine.doRecover(taskId, checkpointId);
+        TaskState recovered = recoveryEngine.doRecover(taskId, checkpointId, this);
         attachRecoveredTask(recovered);
         log.info("Lazy-loaded task from L3 taskId={}", taskId);
         return Optional.of(recovered);
@@ -198,7 +185,7 @@ public class TaskLifecycleManager {
      */
     public TaskState requireTask(String taskId) {
         return getTask(taskId)
-                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+                .orElseThrow(() -> new TaskNotFoundException(taskId));
     }
 
     /**
@@ -216,10 +203,10 @@ public class TaskLifecycleManager {
      */
     public TaskPage listActiveTasks(int page, int size) {
         if (page < 0) {
-            throw new IllegalArgumentException("page must be >= 0");
+            throw new InvalidRequestException("page must be >= 0");
         }
         if (size <= 0 || size > 200) {
-            throw new IllegalArgumentException("size must be between 1 and 200");
+            throw new InvalidRequestException("size must be between 1 and 200");
         }
 
         Map<String, TaskState> cachedTasks = new HashMap<>(activeTasks.asMap());
@@ -254,6 +241,12 @@ public class TaskLifecycleManager {
         transitionToTerminalState(taskId, TaskState.TaskStatus.FAILED);
     }
 
+    @Override
+    public String checkpoint(String taskId) {
+        TaskState state = requireTask(taskId);
+        return checkpointLoadedTask(taskId, state);
+    }
+
     /**
      * Hard-delete a task together with its WAL and checkpoints.
      */
@@ -275,13 +268,6 @@ public class TaskLifecycleManager {
             return false;
         }
 
-        scheduler.unregisterTask(taskId);
-        activeTasks.invalidate(taskId);
-        pendingFinalizationTasks.remove(taskId);
-        pendingFinalizationCleanupTasks.remove(taskId);
-        latestCheckpointIds.remove(taskId);
-        removeListingState(taskId);
-
         if (!deleteCommitted) {
             walWriter.append(taskId, com.vortex.common.model.ActionLogEntry.OperationType.DELETE_TASK,
                     jsonPayload("taskId", taskId));
@@ -290,6 +276,12 @@ public class TaskLifecycleManager {
         }
 
         pendingDeletionCleanupTasks.add(taskId);
+        scheduler.unregisterTask(taskId);
+        activeTasks.invalidate(taskId);
+        pendingFinalizationTasks.remove(taskId);
+        pendingFinalizationCleanupTasks.remove(taskId);
+        latestCheckpointIds.remove(taskId);
+        removeListingState(taskId);
         try {
             cleanupDeletedTaskArtifacts(taskId, checkpoints);
         } catch (RuntimeException e) {
@@ -320,7 +312,7 @@ public class TaskLifecycleManager {
         activeTasks.invalidate(taskId);
     }
 
-    Optional<TaskState> getCachedTask(String taskId) {
+    public Optional<TaskState> getCachedTask(String taskId) {
         if (pendingDeletionCleanupTasks.contains(taskId)) {
             return Optional.empty();
         }
@@ -335,11 +327,11 @@ public class TaskLifecycleManager {
         return Optional.ofNullable(pendingFinalizationCleanupTasks.get(taskId));
     }
 
-    String getLatestCheckpointId(String taskId) {
+    public String getLatestCheckpointId(String taskId) {
         return latestCheckpointIds.get(taskId);
     }
 
-    void putLatestCheckpointId(String taskId, String checkpointId) {
+    public void putLatestCheckpointId(String taskId, String checkpointId) {
         if (pendingDeletionCleanupTasks.contains(taskId)) {
             return;
         }
@@ -375,7 +367,7 @@ public class TaskLifecycleManager {
         activeTasks.put(taskId, state);
     }
 
-    void attachRecoveredTask(TaskState state) {
+    public void attachRecoveredTask(TaskState state) {
         if (pendingDeletionCleanupTasks.contains(state.getTaskId())) {
             activeTasks.invalidate(state.getTaskId());
             pendingFinalizationTasks.remove(state.getTaskId());
@@ -402,14 +394,14 @@ public class TaskLifecycleManager {
         refreshFinalizationMetrics();
         recordListingState(state);
         activeTasks.put(state.getTaskId(), state);
-        scheduler.registerTask(state.getTaskId(), snapshotService, checkpointBaselineMillis(state));
+        scheduler.registerTask(state.getTaskId(), this, checkpointBaselineMillis(state));
     }
 
     ConcurrentHashMap<String, ReentrantLock> getCheckpointLocks() {
         return checkpointLocks;
     }
 
-    boolean isDeleteCommitted(String taskId) {
+    public boolean isDeleteCommitted(String taskId) {
         if (pendingDeletionCleanupTasks.contains(taskId)) {
             return true;
         }
@@ -515,7 +507,7 @@ public class TaskLifecycleManager {
 
         try {
             state.setFinalizationStatus(TaskState.TaskFinalizationStatus.FINALIZED);
-            snapshotService.checkpointLoadedTask(taskId, state);
+            checkpointLoadedTask(taskId, state);
         } catch (RuntimeException e) {
             state.setFinalizationStatus(TaskState.TaskFinalizationStatus.PENDING_FINALIZATION);
             parkPendingFinalizationTask(taskId, state);
@@ -533,7 +525,7 @@ public class TaskLifecycleManager {
         if (state.getLatestCheckpointId() != null) {
             return;
         }
-        snapshotService.checkpointLoadedTask(taskId, state);
+        checkpointLoadedTask(taskId, state);
     }
 
     private void finalizeTerminalTask(String taskId, TaskState state) {
@@ -598,6 +590,33 @@ public class TaskLifecycleManager {
         return state.getLastCheckpointAt().toEpochMilli();
     }
 
+    String checkpointLoadedTask(String taskId, TaskState state) {
+        ReentrantLock checkpointLock = checkpointLocks.computeIfAbsent(taskId, id -> new ReentrantLock());
+        checkpointLock.lock();
+        try {
+            walWriter.flush(taskId);
+            walWriter.rotate(taskId);
+
+            long walSeq = walWriter.currentSequenceNumber(taskId);
+            CheckpointMetadata meta = checkpointManager.createCheckpoint(state, walSeq);
+
+            state.setLatestCheckpointId(meta.getCheckpointId());
+            state.setLastCheckpointAt(Instant.now());
+            putLatestCheckpointId(taskId, meta.getCheckpointId());
+
+            walTruncator.truncate(taskId, walSeq);
+            scheduler.onCheckpoint(taskId);
+            lifecycleManager.applyRetention(taskId, checkpointManager.listCheckpoints(taskId));
+            checkpointManager.reloadTask(taskId);
+
+            log.info("Checkpoint completed taskId={} checkpointId={} type={} seqNo={}",
+                    taskId, meta.getCheckpointId(), meta.getType(), walSeq);
+            return meta.getCheckpointId();
+        } finally {
+            checkpointLock.unlock();
+        }
+    }
+
     @SuppressWarnings("unused")
     private void onTaskEvicted(String taskId, TaskState state, RemovalCause cause) {
         if (cause == RemovalCause.EXPLICIT || cause == RemovalCause.REPLACED || state == null) {
@@ -613,7 +632,7 @@ public class TaskLifecycleManager {
                     return;
                 }
                 try {
-                    snapshotService.checkpointLoadedTask(taskId, state);
+                    checkpointLoadedTask(taskId, state);
                 } catch (Exception e) {
                     SnapshotHealthLogSupport.logCheckpointFailure(log,
                             "emergency-checkpoint-on-eviction", taskId,
@@ -704,19 +723,7 @@ public class TaskLifecycleManager {
     // ========================================================================
 
     private static String jsonPayload(String... keyValues) {
-        if ((keyValues.length & 1) != 0) {
-            throw new IllegalArgumentException(
-                    "jsonPayload requires an even number of key/value arguments");
-        }
-        Map<String, String> map = new LinkedHashMap<>();
-        for (int i = 0; i < keyValues.length; i += 2) {
-            map.put(keyValues[i], keyValues[i + 1] != null ? keyValues[i + 1] : "");
-        }
-        try {
-            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(map);
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to serialize WAL payload", e);
-        }
+        return WalPayloads.jsonPayload(keyValues);
     }
 
     // ========================================================================

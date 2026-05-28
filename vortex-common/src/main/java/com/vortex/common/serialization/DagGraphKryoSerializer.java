@@ -30,10 +30,7 @@ public class DagGraphKryoSerializer extends Serializer<DagGraph> {
         }
 
         // Write edges: size, then each edge (must synchronize on edges list)
-        List<DagEdge> edges;
-        synchronized (graph.getEdges()) {
-            edges = new ArrayList<>(graph.getEdges());
-        }
+        List<DagEdge> edges = new ArrayList<>(graph.edgeSnapshot());
         output.writeInt(edges.size());
         for (DagEdge edge : edges) {
             kryo.writeObject(output, edge);
@@ -61,9 +58,7 @@ public class DagGraphKryoSerializer extends Serializer<DagGraph> {
         for (int i = 0; i < edgeCount; i++) {
             edges.add(kryo.readObject(input, DagEdge.class));
         }
-        synchronized (graph.getEdges()) {
-            graph.getEdges().addAll(edges);
-        }
+        graph.addEdgesUnchecked(edges);
 
         // Mark dirty so adjacency is rebuilt on next query
         graph.setDirty(true);
