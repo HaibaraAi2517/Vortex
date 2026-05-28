@@ -43,7 +43,7 @@ public class TaskExceptionHandler {
                  DELTA_PAYLOAD_INVALID,
                  BASE_FULL_CHECKPOINT_MISSING,
                  DELTA_STATE_APPLY_FAILED,
-                 WAL_STATE_APPLY_FAILED -> HttpStatus.SERVICE_UNAVAILABLE;
+                 WAL_STATE_APPLY_FAILED -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
     }
 
