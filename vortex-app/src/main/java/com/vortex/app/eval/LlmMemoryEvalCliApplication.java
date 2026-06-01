@@ -59,15 +59,18 @@ public final class LlmMemoryEvalCliApplication {
 
     private static int executeVerify(String[] args) {
         try {
-            Path reportPath = verifyReportPath(args);
+            VerifyRequest request = parseVerifyRequest(args);
             LlmMemoryEvalBaselineVerifier verifier = new LlmMemoryEvalBaselineVerifier(JsonMapperFactory.create());
-            LlmMemoryEvalBaselineVerificationResult result = verifier.verify(reportPath);
+            LlmMemoryEvalBaselineVerificationResult result = verifier.verify(request.reportPath(), request.profile());
             if (result.isPassed()) {
                 System.out.println(result.renderHumanReadable());
                 return 0;
             }
             System.err.println(result.renderHumanReadable());
             return 2;
+        } catch (IllegalArgumentException e) {
+            System.err.println(e.getMessage());
+            return 1;
         } catch (RuntimeException e) {
             log.error("LLM memory eval baseline verification failed: {}", e.getMessage(), e);
             return 1;
@@ -80,11 +83,45 @@ public final class LlmMemoryEvalCliApplication {
                 && VERIFY_COMMAND.equalsIgnoreCase(args[0]);
     }
 
-    private static Path verifyReportPath(String[] args) {
-        if (args == null || args.length != 2) {
-            throw new IllegalArgumentException(
-                    "Usage: java -jar vortex-app-<version>-eval-cli.jar verify <path-to-llm-memory-eval-report.json>");
+    private static VerifyRequest parseVerifyRequest(String[] args) {
+        if (args == null) {
+            throw new IllegalArgumentException(verifyUsage());
         }
-        return Path.of(args[1]).toAbsolutePath().normalize();
+        String profileId = LlmMemoryEvalBaselineProfile.OFFICIAL_V2_STRICT.id();
+        String reportPath = null;
+        int index = 1;
+        while (index < args.length) {
+            String current = args[index];
+            if ("--profile".equals(current)) {
+                if (index + 1 >= args.length) {
+                    throw new IllegalArgumentException(verifyUsage());
+                }
+                profileId = args[index + 1];
+                index += 2;
+                continue;
+            }
+            if (reportPath != null) {
+                throw new IllegalArgumentException(verifyUsage());
+            }
+            reportPath = current;
+            index++;
+        }
+        if (reportPath == null) {
+            throw new IllegalArgumentException(verifyUsage());
+        }
+        LlmMemoryEvalBaselineProfile profile = LlmMemoryEvalBaselineProfile.require(profileId);
+        if (!profile.strictReportProfile()) {
+            throw new IllegalArgumentException(
+                    "Baseline profile '" + profile.id() + "' is audit-only and cannot verify a single report.");
+        }
+        return new VerifyRequest(Path.of(reportPath).toAbsolutePath().normalize(), profile);
+    }
+
+    private static String verifyUsage() {
+        return "Usage: java -jar vortex-app-<version>-eval-cli.jar verify "
+                + "[--profile <baseline-profile-id>] <path-to-llm-memory-eval-report.json>";
+    }
+
+    private record VerifyRequest(Path reportPath, LlmMemoryEvalBaselineProfile profile) {
     }
 }

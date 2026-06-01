@@ -1,13 +1,19 @@
 ﻿{
     "AuditStamp":  "20260601-mode-scoped-l2-wait-audit-5x-net",
-    "GeneratedAt":  "2026-06-01T08:27:43.1625166Z",
-    "BaselineId":  "20260529-real-bge-v2-006",
+    "GeneratedAt":  "2026-06-01T09:40:10.4376120Z",
+    "BaselineId":  "20260601-mode-scoped-l2-wait-audit-5x-net",
+    "BaselineProfile":  "audit-v2-stability",
+    "DatasetVersion":  "v2",
+    "StrictVerifierProfile":  "official-v2-strict",
     "OverallPassed":  true,
     "StrictVerifierPassed":  false,
     "Settings":  {
                      "BaseUrl":  "https://sub2.congmingai.com",
                      "Model":  "gpt-5.2",
                      "DatasetLocation":  "classpath:llm-memory-eval-set-v2.json",
+                     "DatasetVersion":  "v2",
+                     "BaselineProfile":  "audit-v2-stability",
+                     "StrictVerifierProfile":  "official-v2-strict",
                      "BgeModelPath":  "E:/1projects/claude/Vortex/models/bge-small-zh",
                      "L1MaxTokens":  96,
                      "Modes":  "BASELINE_NO_MEMORY,VORTEX_MEMORY,VORTEX_RECOVERED_MEMORY",
@@ -19,12 +25,13 @@
                      "MinRecoveredL2MeanHitRate":  0.95
                  },
     "Aggregate":  {
-                      "StartedAt":  "2026-06-01T08:27:33.6867087Z",
-                      "CompletedAt":  "2026-06-01T08:27:43.0025446Z",
-                      "TotalDurationSeconds":  9.316,
+                      "StartedAt":  "2026-06-01T09:40:05.0463618Z",
+                      "CompletedAt":  "2026-06-01T09:40:10.3073131Z",
+                      "TotalDurationSeconds":  5.261,
                       "EvalSuccessCount":  5,
                       "EvalFailureCount":  0,
                       "VerifierPassCount":  4,
+                      "VerifierSkippedCount":  0,
                       "VerifierFailCount":  1,
                       "BaselineNoMemoryCorrectValues":  [
                                                             0,
@@ -174,7 +181,7 @@
                      "RoundIndex":  1,
                      "RoundStamp":  "20260601-mode-scoped-l2-wait-audit-5x-net-run01",
                      "Status":  "completed",
-                     "DurationSeconds":  2.091,
+                     "DurationSeconds":  1.087,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run01",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run01\\llm-memory-eval-20260601-081513.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run01\\llm-memory-eval-20260601-081513.md",
@@ -182,6 +189,9 @@
                      "TotalCases":  15,
                      "TotalRuns":  45,
                      "DatasetLocation":  "classpath:llm-memory-eval-set-v2.json",
+                     "DatasetVersion":  "v2",
+                     "BaselineProfileId":  "audit-v2-stability",
+                     "StrictVerifierProfileId":  "official-v2-strict",
                      "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
                      "GenerationModel":  "gpt-5.2",
                      "L1MaxTokens":  96,
@@ -233,9 +243,11 @@
                                                                       }
                                        },
                      "Verify":  {
+                                    "Profile":  "official-v2-strict",
+                                    "Skipped":  false,
                                     "Passed":  true,
                                     "ExitCode":  0,
-                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run01\\llm-memory-eval-20260601-081513.json\u0027 still matches official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027."
+                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run01\\llm-memory-eval-20260601-081513.json\u0027 still matches LLM memory eval baseline profile \u0027official-v2-strict\u0027 (baseline \u002720260529-real-bge-v2-006\u0027, dataset v2)."
                                 },
                      "FailureMessage":  null
                  },
@@ -243,7 +255,7 @@
                      "RoundIndex":  2,
                      "RoundStamp":  "20260601-mode-scoped-l2-wait-audit-5x-net-run02",
                      "Status":  "completed",
-                     "DurationSeconds":  2.063,
+                     "DurationSeconds":  1.041,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run02",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run02\\llm-memory-eval-20260601-081730.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run02\\llm-memory-eval-20260601-081730.md",
@@ -251,6 +263,9 @@
                      "TotalCases":  15,
                      "TotalRuns":  45,
                      "DatasetLocation":  "classpath:llm-memory-eval-set-v2.json",
+                     "DatasetVersion":  "v2",
+                     "BaselineProfileId":  "audit-v2-stability",
+                     "StrictVerifierProfileId":  "official-v2-strict",
                      "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
                      "GenerationModel":  "gpt-5.2",
                      "L1MaxTokens":  96,
@@ -302,9 +317,11 @@
                                                                       }
                                        },
                      "Verify":  {
+                                    "Profile":  "official-v2-strict",
+                                    "Skipped":  false,
                                     "Passed":  true,
                                     "ExitCode":  0,
-                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run02\\llm-memory-eval-20260601-081730.json\u0027 still matches official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027."
+                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run02\\llm-memory-eval-20260601-081730.json\u0027 still matches LLM memory eval baseline profile \u0027official-v2-strict\u0027 (baseline \u002720260529-real-bge-v2-006\u0027, dataset v2)."
                                 },
                      "FailureMessage":  null
                  },
@@ -312,7 +329,7 @@
                      "RoundIndex":  3,
                      "RoundStamp":  "20260601-mode-scoped-l2-wait-audit-5x-net-run03",
                      "Status":  "completed",
-                     "DurationSeconds":  1.031,
+                     "DurationSeconds":  1.034,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run03",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run03\\llm-memory-eval-20260601-082017.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run03\\llm-memory-eval-20260601-082017.md",
@@ -320,6 +337,9 @@
                      "TotalCases":  15,
                      "TotalRuns":  45,
                      "DatasetLocation":  "classpath:llm-memory-eval-set-v2.json",
+                     "DatasetVersion":  "v2",
+                     "BaselineProfileId":  "audit-v2-stability",
+                     "StrictVerifierProfileId":  "official-v2-strict",
                      "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
                      "GenerationModel":  "gpt-5.2",
                      "L1MaxTokens":  96,
@@ -371,9 +391,11 @@
                                                                       }
                                        },
                      "Verify":  {
+                                    "Profile":  "official-v2-strict",
+                                    "Skipped":  false,
                                     "Passed":  false,
                                     "ExitCode":  2,
-                                    "Output":  "FAIL: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run03\\llm-memory-eval-20260601-082017.json\u0027 drifted from official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027.\r\n- modeSummaries.Vortex-Memory.correct expected=15 actual=14\r\n- modeSummaries.Vortex-Memory.accuracy expected=1.0 actual=0.9333333333333333"
+                                    "Output":  "FAIL: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run03\\llm-memory-eval-20260601-082017.json\u0027 drifted from LLM memory eval baseline profile \u0027official-v2-strict\u0027 (baseline \u002720260529-real-bge-v2-006\u0027, dataset v2).\r\n- modeSummaries.Vortex-Memory.correct expected=15 actual=14\r\n- modeSummaries.Vortex-Memory.accuracy expected=1.0 actual=0.9333333333333333"
                                 },
                      "FailureMessage":  null
                  },
@@ -381,7 +403,7 @@
                      "RoundIndex":  4,
                      "RoundStamp":  "20260601-mode-scoped-l2-wait-audit-5x-net-run04",
                      "Status":  "completed",
-                     "DurationSeconds":  2.048,
+                     "DurationSeconds":  1.033,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run04",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run04\\llm-memory-eval-20260601-082238.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run04\\llm-memory-eval-20260601-082238.md",
@@ -389,6 +411,9 @@
                      "TotalCases":  15,
                      "TotalRuns":  45,
                      "DatasetLocation":  "classpath:llm-memory-eval-set-v2.json",
+                     "DatasetVersion":  "v2",
+                     "BaselineProfileId":  "audit-v2-stability",
+                     "StrictVerifierProfileId":  "official-v2-strict",
                      "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
                      "GenerationModel":  "gpt-5.2",
                      "L1MaxTokens":  96,
@@ -440,9 +465,11 @@
                                                                       }
                                        },
                      "Verify":  {
+                                    "Profile":  "official-v2-strict",
+                                    "Skipped":  false,
                                     "Passed":  true,
                                     "ExitCode":  0,
-                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run04\\llm-memory-eval-20260601-082238.json\u0027 still matches official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027."
+                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run04\\llm-memory-eval-20260601-082238.json\u0027 still matches LLM memory eval baseline profile \u0027official-v2-strict\u0027 (baseline \u002720260529-real-bge-v2-006\u0027, dataset v2)."
                                 },
                      "FailureMessage":  null
                  },
@@ -450,7 +477,7 @@
                      "RoundIndex":  5,
                      "RoundStamp":  "20260601-mode-scoped-l2-wait-audit-5x-net-run05",
                      "Status":  "completed",
-                     "DurationSeconds":  2.051,
+                     "DurationSeconds":  1.033,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run05",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run05\\llm-memory-eval-20260601-082500.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run05\\llm-memory-eval-20260601-082500.md",
@@ -458,6 +485,9 @@
                      "TotalCases":  15,
                      "TotalRuns":  45,
                      "DatasetLocation":  "classpath:llm-memory-eval-set-v2.json",
+                     "DatasetVersion":  "v2",
+                     "BaselineProfileId":  "audit-v2-stability",
+                     "StrictVerifierProfileId":  "official-v2-strict",
                      "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
                      "GenerationModel":  "gpt-5.2",
                      "L1MaxTokens":  96,
@@ -509,9 +539,11 @@
                                                                       }
                                        },
                      "Verify":  {
+                                    "Profile":  "official-v2-strict",
+                                    "Skipped":  false,
                                     "Passed":  true,
                                     "ExitCode":  0,
-                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run05\\llm-memory-eval-20260601-082500.json\u0027 still matches official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027."
+                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run05\\llm-memory-eval-20260601-082500.json\u0027 still matches LLM memory eval baseline profile \u0027official-v2-strict\u0027 (baseline \u002720260529-real-bge-v2-006\u0027, dataset v2)."
                                 },
                      "FailureMessage":  null
                  }

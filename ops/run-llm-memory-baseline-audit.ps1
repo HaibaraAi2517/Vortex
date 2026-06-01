@@ -13,6 +13,10 @@ param(
 
     [string]$DatasetLocation = "classpath:llm-memory-eval-set-v2.json",
 
+    [string]$BaselineProfile = "",
+
+    [string]$StrictVerifierProfile = "",
+
     [string]$BgeModelPath = "E:/1projects/claude/Vortex/models/bge-small-zh",
 
     [int]$L1MaxTokens = 96,
@@ -70,13 +74,67 @@ function ConvertTo-PlainObject {
 function New-VerifyResult {
     param(
         [int]$ExitCode,
-        [string]$Output
+        [string]$Output,
+        [string]$Profile = "",
+        [bool]$Skipped = $false
     )
     [pscustomobject]@{
-        Passed = ($ExitCode -eq 0)
+        Profile = $Profile
+        Skipped = $Skipped
+        Passed = (-not $Skipped -and $ExitCode -eq 0)
         ExitCode = $ExitCode
         Output = $Output.Trim()
     }
+}
+
+function Get-DatasetVersion {
+    param([string]$Location)
+    if ($Location -eq "classpath:llm-memory-eval-set-v2-1.json") {
+        return "v2.1"
+    }
+    if ($Location -eq "classpath:llm-memory-eval-set-v2.json") {
+        return "v2"
+    }
+    if ($Location -eq "classpath:llm-memory-eval-set.json") {
+        return "v1"
+    }
+    return "custom"
+}
+
+function Get-AuditBaselineProfile {
+    param([string]$Location)
+    if ($Location -eq "classpath:llm-memory-eval-set-v2-1.json") {
+        return "contract-v2.1-candidate"
+    }
+    if ($Location -eq "classpath:llm-memory-eval-set-v2.json") {
+        return "audit-v2-stability"
+    }
+    return "custom"
+}
+
+function Get-StrictVerifierProfile {
+    param([string]$Location)
+    if ($Location -eq "classpath:llm-memory-eval-set-v2-1.json") {
+        return "contract-v2.1-candidate"
+    }
+    if ($Location -eq "classpath:llm-memory-eval-set-v2.json") {
+        return "official-v2-strict"
+    }
+    return ""
+}
+
+function Get-BaselineIdForProfile {
+    param([string]$Profile)
+    if ($Profile -eq "contract-v2.1-candidate") {
+        return "20260601-v2-009-contract-audit-5x-net"
+    }
+    if ($Profile -eq "audit-v2-stability") {
+        return "20260601-mode-scoped-l2-wait-audit-5x-net"
+    }
+    if ($Profile -eq "official-v2-strict") {
+        return "20260529-real-bge-v2-006"
+    }
+    return $Profile
 }
 
 function Assert-LastExitCodeZero {
@@ -476,6 +534,22 @@ function Import-ExistingRun {
     }
     $reportMarkdown = Get-LatestReportArtifact -Directory $ReportDir -Filter "llm-memory-eval-*.md"
     $report = Get-Content -Raw $reportJson.FullName | ConvertFrom-Json
+    $runDatasetLocation = [string]$report.environment.datasetLocation
+    $runDatasetVersion = if ($report.environment.PSObject.Properties["datasetVersion"]) {
+        [string]$report.environment.datasetVersion
+    } else {
+        Get-DatasetVersion -Location $runDatasetLocation
+    }
+    $runBaselineProfileId = if ($report.environment.PSObject.Properties["baselineProfileId"]) {
+        [string]$report.environment.baselineProfileId
+    } else {
+        Get-AuditBaselineProfile -Location $runDatasetLocation
+    }
+    $runStrictVerifierProfileId = if ($report.environment.PSObject.Properties["strictVerifierProfileId"]) {
+        [string]$report.environment.strictVerifierProfileId
+    } else {
+        Get-StrictVerifierProfile -Location $runDatasetLocation
+    }
     return [pscustomobject]@{
         Stamp = $RoundStamp
         ReportDir = $ReportDir
@@ -484,7 +558,10 @@ function Import-ExistingRun {
         GeneratedAt = $report.generatedAt
         TotalCases = $report.totalCases
         TotalRuns = $report.totalRuns
-        DatasetLocation = $report.environment.datasetLocation
+        DatasetLocation = $runDatasetLocation
+        DatasetVersion = $runDatasetVersion
+        BaselineProfileId = $runBaselineProfileId
+        StrictVerifierProfileId = $runStrictVerifierProfileId
         GenerationBaseUrl = $report.environment.generationBaseUrl
         GenerationModel = $report.environment.generationModel
         L1MaxTokens = $report.environment.l1MaxTokens
@@ -553,7 +630,9 @@ function Get-RunMarkdownRows {
             ""
         }
         $reportName = if ($run.ReportJsonPath) { Split-Path $run.ReportJsonPath -Leaf } else { "" }
-        $verifyLabel = if ($run.Verify.Passed) {
+        $verifyLabel = if ($run.Verify.Skipped) {
+            "SKIP"
+        } elseif ($run.Verify.Passed) {
             "PASS"
         } elseif ($run.Verify.ExitCode -eq 2) {
             "DRIFT"
@@ -585,6 +664,14 @@ Set-Location $repoRoot
 if ([string]::IsNullOrWhiteSpace($AuditStamp)) {
     $AuditStamp = "baseline-audit-" + (Get-Date -Format "yyyyMMdd-HHmmss")
 }
+if ([string]::IsNullOrWhiteSpace($BaselineProfile)) {
+    $BaselineProfile = Get-AuditBaselineProfile -Location $DatasetLocation
+}
+if ([string]::IsNullOrWhiteSpace($StrictVerifierProfile)) {
+    $StrictVerifierProfile = Get-StrictVerifierProfile -Location $DatasetLocation
+}
+$datasetVersion = Get-DatasetVersion -Location $DatasetLocation
+$baselineId = Get-BaselineIdForProfile -Profile $BaselineProfile
 
 $normalizedReportRoot = $ReportRoot.TrimEnd('/').TrimEnd([char]92)
 $auditDir = Join-Path $repoRoot ($normalizedReportRoot + "/" + $AuditStamp)
@@ -603,6 +690,9 @@ Write-Host "Starting LLM memory baseline audit"
 Write-Host "  Audit Stamp : $AuditStamp"
 Write-Host "  Rounds      : $Rounds"
 Write-Host "  Dataset     : $DatasetLocation"
+Write-Host "  Dataset Ver : $datasetVersion"
+Write-Host "  Profile     : $BaselineProfile"
+Write-Host "  Verifier    : $StrictVerifierProfile"
 Write-Host "  Report Dir  : $auditDir"
 
 if (-not $SkipComposeUp) {
@@ -650,13 +740,26 @@ for ($round = 1; $round -le $Rounds; $round++) {
                 -SkipPackage
         }
 
-        $verifyInvocation = Invoke-ProcessCapture -FilePath "java" -ArgumentList @(
-            "-jar",
-            $evalCliJar,
-            "verify",
-            $singleRun.ReportJsonPath
-        )
-        $verify = New-VerifyResult -ExitCode $verifyInvocation.ExitCode -Output $verifyInvocation.Output
+        if ([string]::IsNullOrWhiteSpace($StrictVerifierProfile)) {
+            $verify = New-VerifyResult `
+                -ExitCode 0 `
+                -Output "Strict verifier skipped: no strict verifier profile for dataset $DatasetLocation" `
+                -Profile "" `
+                -Skipped $true
+        } else {
+            $verifyInvocation = Invoke-ProcessCapture -FilePath "java" -ArgumentList @(
+                "-jar",
+                $evalCliJar,
+                "verify",
+                "--profile",
+                $StrictVerifierProfile,
+                $singleRun.ReportJsonPath
+            )
+            $verify = New-VerifyResult `
+                -ExitCode $verifyInvocation.ExitCode `
+                -Output $verifyInvocation.Output `
+                -Profile $StrictVerifierProfile
+        }
 
         $durationSeconds = [Math]::Round(((Get-Date) - $roundStartedAt).TotalSeconds, 3)
         $runResults.Add([pscustomobject]@{
@@ -671,6 +774,9 @@ for ($round = 1; $round -le $Rounds; $round++) {
             TotalCases = $singleRun.TotalCases
             TotalRuns = $singleRun.TotalRuns
             DatasetLocation = $singleRun.DatasetLocation
+            DatasetVersion = if ($singleRun.PSObject.Properties["DatasetVersion"]) { $singleRun.DatasetVersion } else { $datasetVersion }
+            BaselineProfileId = if ($singleRun.PSObject.Properties["BaselineProfileId"]) { $singleRun.BaselineProfileId } else { $BaselineProfile }
+            StrictVerifierProfileId = if ($singleRun.PSObject.Properties["StrictVerifierProfileId"]) { $singleRun.StrictVerifierProfileId } else { $StrictVerifierProfile }
             GenerationBaseUrl = $singleRun.GenerationBaseUrl
             GenerationModel = $singleRun.GenerationModel
             L1MaxTokens = $singleRun.L1MaxTokens
@@ -695,6 +801,9 @@ for ($round = 1; $round -le $Rounds; $round++) {
             TotalCases = $null
             TotalRuns = $null
             DatasetLocation = $DatasetLocation
+            DatasetVersion = $datasetVersion
+            BaselineProfileId = $BaselineProfile
+            StrictVerifierProfileId = $StrictVerifierProfile
             GenerationBaseUrl = $BaseUrl
             GenerationModel = $Model
             L1MaxTokens = $L1MaxTokens
@@ -702,6 +811,8 @@ for ($round = 1; $round -le $Rounds; $round++) {
             Modes = @()
             ModeSummaries = $null
             Verify = [pscustomobject]@{
+                Profile = $StrictVerifierProfile
+                Skipped = $false
                 Passed = $false
                 ExitCode = 1
                 Output = $failureMessage
@@ -716,6 +827,7 @@ try {
     $completedAt = Get-Date
     $completedRuns = $runResults.ToArray()
     $verifierPassCount = @($completedRuns | Where-Object { $_.Verify.Passed }).Count
+    $verifierSkippedCount = @($completedRuns | Where-Object { $_.Verify.Skipped }).Count
     $evalSuccessCount = @($completedRuns | Where-Object { $_.Status -eq "completed" }).Count
     $strictVerifierPassed = ($completedRuns.Count -eq $Rounds) -and ($verifierPassCount -eq $Rounds)
 
@@ -743,13 +855,19 @@ try {
     $summary = [pscustomobject]@{
         AuditStamp = $AuditStamp
         GeneratedAt = (Get-Date).ToUniversalTime().ToString("o")
-        BaselineId = "20260529-real-bge-v2-006"
+        BaselineId = $baselineId
+        BaselineProfile = $BaselineProfile
+        DatasetVersion = $datasetVersion
+        StrictVerifierProfile = $StrictVerifierProfile
         OverallPassed = $overallPassed
         StrictVerifierPassed = $strictVerifierPassed
         Settings = [pscustomobject]@{
             BaseUrl = $BaseUrl
             Model = $Model
             DatasetLocation = $DatasetLocation
+            DatasetVersion = $datasetVersion
+            BaselineProfile = $BaselineProfile
+            StrictVerifierProfile = $StrictVerifierProfile
             BgeModelPath = $BgeModelPath
             L1MaxTokens = $L1MaxTokens
             Modes = $Modes
@@ -767,7 +885,8 @@ try {
             EvalSuccessCount = $evalSuccessCount
             EvalFailureCount = $Rounds - $evalSuccessCount
             VerifierPassCount = $verifierPassCount
-            VerifierFailCount = $Rounds - $verifierPassCount
+            VerifierSkippedCount = $verifierSkippedCount
+            VerifierFailCount = $Rounds - $verifierPassCount - $verifierSkippedCount
             BaselineNoMemoryCorrectValues = $baselineCorrectValues
             VortexMemoryAccuracyValues = $memoryAccuracyValues
             RecoveredAccuracyValues = $recoveredAccuracyValues
@@ -791,6 +910,9 @@ try {
         "- Audit Stamp: $AuditStamp"
         "- GeneratedAt: $($summary.GeneratedAt)"
         "- Baseline Id: $($summary.BaselineId)"
+        "- Baseline Profile: $($summary.BaselineProfile)"
+        "- Dataset Version: $($summary.DatasetVersion)"
+        "- Strict Verifier Profile: $($summary.StrictVerifierProfile)"
         "- Overall Passed: $($summary.OverallPassed)"
         "- Audit Gate Passed: $($summary.AuditGate.Passed)"
         "- Strict Verifier Passed: $($summary.StrictVerifierPassed)"
@@ -858,6 +980,9 @@ if ($FailOnAuditGateFailure -and -not $auditGate.Passed) {
     AuditStamp = $AuditStamp
     SummaryJsonPath = $auditJsonPath
     SummaryMarkdownPath = $auditMarkdownPath
+    BaselineProfile = $BaselineProfile
+    DatasetVersion = $datasetVersion
+    StrictVerifierProfile = $StrictVerifierProfile
     OverallPassed = $overallPassed
     AuditGatePassed = $auditGate.Passed
     StrictVerifierPassed = $strictVerifierPassed

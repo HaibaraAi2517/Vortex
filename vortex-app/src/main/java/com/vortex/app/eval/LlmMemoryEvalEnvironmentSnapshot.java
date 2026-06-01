@@ -22,6 +22,9 @@ public class LlmMemoryEvalEnvironmentSnapshot {
     private String milvusCollection;
     private String minioKeyPrefix;
     private String datasetLocation;
+    private String datasetVersion;
+    private String baselineProfileId;
+    private String strictVerifierProfileId;
     private String evalSystemPromptSha256;
     private Integer evalSystemPromptChars;
     private List<String> modes;

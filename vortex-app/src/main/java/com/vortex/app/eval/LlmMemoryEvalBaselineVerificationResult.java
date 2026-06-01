@@ -10,6 +10,8 @@ import java.util.List;
 public class LlmMemoryEvalBaselineVerificationResult {
 
     private final String baselineId;
+    private final String baselineProfileId;
+    private final String datasetVersion;
     private final String reportPath;
     private final boolean passed;
     private final List<Drift> drifts;
@@ -17,15 +19,20 @@ public class LlmMemoryEvalBaselineVerificationResult {
     public String renderHumanReadable() {
         if (passed) {
             return "PASS: report '" + reportPath
-                    + "' still matches official LLM memory eval baseline '" + baselineId + "'.";
+                    + "' still matches LLM memory eval baseline profile '" + baselineProfileId
+                    + "' (baseline '" + baselineId + "', dataset " + datasetVersion + ").";
         }
 
         StringBuilder builder = new StringBuilder();
         builder.append("FAIL: report '")
                 .append(reportPath)
-                .append("' drifted from official LLM memory eval baseline '")
+                .append("' drifted from LLM memory eval baseline profile '")
+                .append(baselineProfileId)
+                .append("' (baseline '")
                 .append(baselineId)
-                .append("'.");
+                .append("', dataset ")
+                .append(datasetVersion)
+                .append(").");
         for (Drift drift : drifts) {
             builder.append(System.lineSeparator())
                     .append("- ")

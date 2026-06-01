@@ -13,8 +13,6 @@ import java.util.Set;
 
 public class LlmMemoryEvalBaselineVerifier {
 
-    static final String OFFICIAL_BASELINE_ID = "20260529-real-bge-v2-006";
-    static final String EXPECTED_DATASET_LOCATION = "classpath:llm-memory-eval-set-v2.json";
     static final String EXPECTED_GENERATION_BASE_URL = "https://sub2.congmingai.com/v1";
     static final String EXPECTED_GENERATION_MODEL = "gpt-5.2";
     static final long EXPECTED_L1_MAX_TOKENS = 96L;
@@ -32,18 +30,36 @@ public class LlmMemoryEvalBaselineVerifier {
     }
 
     public LlmMemoryEvalBaselineVerificationResult verify(Path reportPath) {
+        return verify(reportPath, LlmMemoryEvalBaselineProfile.OFFICIAL_V2_STRICT);
+    }
+
+    public LlmMemoryEvalBaselineVerificationResult verify(Path reportPath, LlmMemoryEvalBaselineProfile profile) {
         Path normalizedPath = Objects.requireNonNull(reportPath, "reportPath must not be null")
                 .toAbsolutePath()
                 .normalize();
-        return verify(normalizedPath.toString(), readReport(normalizedPath));
+        return verify(normalizedPath.toString(), readReport(normalizedPath), profile);
     }
 
     public LlmMemoryEvalBaselineVerificationResult verify(String reportPath, LlmMemoryEvalReport report) {
+        return verify(reportPath, report, LlmMemoryEvalBaselineProfile.OFFICIAL_V2_STRICT);
+    }
+
+    public LlmMemoryEvalBaselineVerificationResult verify(
+            String reportPath,
+            LlmMemoryEvalReport report,
+            LlmMemoryEvalBaselineProfile profile) {
+        LlmMemoryEvalBaselineProfile baselineProfile =
+                Objects.requireNonNull(profile, "profile must not be null");
+        if (!baselineProfile.strictReportProfile()) {
+            throw new IllegalArgumentException(
+                    "Baseline profile '" + baselineProfile.id() + "' does not support strict single-report verify");
+        }
+
         List<LlmMemoryEvalBaselineVerificationResult.Drift> drifts = new ArrayList<>();
         LlmMemoryEvalEnvironmentSnapshot environment = report == null ? null : report.getEnvironment();
 
         expectEqual(drifts, "environment.datasetLocation",
-                EXPECTED_DATASET_LOCATION, environment == null ? null : environment.getDatasetLocation());
+                baselineProfile.datasetLocation(), environment == null ? null : environment.getDatasetLocation());
         expectEqual(drifts, "environment.generationBaseUrl",
                 EXPECTED_GENERATION_BASE_URL, environment == null ? null : environment.getGenerationBaseUrl());
         expectEqual(drifts, "environment.generationModel",
@@ -56,12 +72,14 @@ public class LlmMemoryEvalBaselineVerifier {
 
         Map<String, LlmMemoryEvalReport.ModeSummary> modeSummaries =
                 report == null || report.getModeSummaries() == null ? Map.of() : report.getModeSummaries();
-        verifyModeSummary(drifts, modeSummaries, "Baseline-NoMemory", 0, 15, null, null, null);
-        verifyModeSummary(drifts, modeSummaries, "Vortex-Memory", 15, 15, 1.0d, null, null);
-        verifyModeSummary(drifts, modeSummaries, "Vortex-RecoveredMemory", 15, 15, 1.0d, 1.0d, 1.0d);
+        for (LlmMemoryEvalBaselineProfile.ModeExpectation expectation : baselineProfile.modeExpectations()) {
+            verifyModeSummary(drifts, modeSummaries, expectation);
+        }
 
         return LlmMemoryEvalBaselineVerificationResult.builder()
-                .baselineId(OFFICIAL_BASELINE_ID)
+                .baselineId(baselineProfile.baselineId())
+                .baselineProfileId(baselineProfile.id())
+                .datasetVersion(baselineProfile.datasetVersion())
                 .reportPath(reportPath)
                 .passed(drifts.isEmpty())
                 .drifts(List.copyOf(drifts))
@@ -93,12 +111,8 @@ public class LlmMemoryEvalBaselineVerifier {
     private void verifyModeSummary(
             List<LlmMemoryEvalBaselineVerificationResult.Drift> drifts,
             Map<String, LlmMemoryEvalReport.ModeSummary> modeSummaries,
-            String modeName,
-            int expectedCorrect,
-            int expectedTotal,
-            Double expectedAccuracy,
-            Double expectedRecoveredAccuracy,
-            Double expectedRecoveredL2HitRate) {
+            LlmMemoryEvalBaselineProfile.ModeExpectation expectation) {
+        String modeName = expectation.modeName();
         LlmMemoryEvalReport.ModeSummary summary = modeSummaries.get(modeName);
         if (summary == null) {
             drifts.add(new LlmMemoryEvalBaselineVerificationResult.Drift(
@@ -108,23 +122,27 @@ public class LlmMemoryEvalBaselineVerifier {
             return;
         }
 
-        expectEqual(drifts, "modeSummaries." + modeName + ".correct", expectedCorrect, summary.getCorrect());
-        expectEqual(drifts, "modeSummaries." + modeName + ".total", expectedTotal, summary.getTotal());
-        if (expectedAccuracy != null) {
-            expectEqual(drifts, "modeSummaries." + modeName + ".accuracy", expectedAccuracy, summary.getAccuracy());
+        expectEqual(drifts, "modeSummaries." + modeName + ".correct", expectation.expectedCorrect(), summary.getCorrect());
+        expectEqual(drifts, "modeSummaries." + modeName + ".total", expectation.expectedTotal(), summary.getTotal());
+        if (expectation.expectedAccuracy() != null) {
+            expectEqual(
+                    drifts,
+                    "modeSummaries." + modeName + ".accuracy",
+                    expectation.expectedAccuracy(),
+                    summary.getAccuracy());
         }
-        if (expectedRecoveredAccuracy != null) {
+        if (expectation.expectedRecoveredAccuracy() != null) {
             expectEqual(
                     drifts,
                     "modeSummaries." + modeName + ".recoveredAccuracy",
-                    expectedRecoveredAccuracy,
+                    expectation.expectedRecoveredAccuracy(),
                     summary.getRecoveredAccuracy());
         }
-        if (expectedRecoveredL2HitRate != null) {
+        if (expectation.expectedRecoveredL2HitRate() != null) {
             expectEqual(
                     drifts,
                     "modeSummaries." + modeName + ".recoveredL2HitRate",
-                    expectedRecoveredL2HitRate,
+                    expectation.expectedRecoveredL2HitRate(),
                     summary.getRecoveredL2HitRate());
         }
     }

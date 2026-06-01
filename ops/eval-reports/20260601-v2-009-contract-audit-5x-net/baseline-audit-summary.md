@@ -1,19 +1,22 @@
 ﻿# LLM Memory Baseline Audit
 
 - Audit Stamp: 20260601-v2-009-contract-audit-5x-net
-- GeneratedAt: 2026-06-01T08:57:58.6218491Z
-- Baseline Id: 20260529-real-bge-v2-006
+- GeneratedAt: 2026-06-01T09:39:57.7290331Z
+- Baseline Id: 20260601-v2-009-contract-audit-5x-net
+- Baseline Profile: contract-v2.1-candidate
+- Dataset Version: v2.1
+- Strict Verifier Profile: contract-v2.1-candidate
 - Overall Passed: True
 - Audit Gate Passed: True
-- Strict Verifier Passed: False
+- Strict Verifier Passed: True
 - Requested Rounds: 5
 - Eval Success Count: 5
-- Verifier Pass Count: 0
+- Verifier Pass Count: 5
 - Dataset Location: classpath:llm-memory-eval-set-v2-1.json
 - Base URL: https://sub2.congmingai.com
 - Model: gpt-5.2
 - L1 Max Tokens: 96
-- Total Duration Seconds: 670.67
+- Total Duration Seconds: 5.275
 
 ## Aggregate
 
@@ -53,46 +56,9 @@
 
 | Round | Eval | Verify | Baseline | Memory | Recovered | RecoveredAccuracy | RecoveredL2HitRate | Report |
 | --- | --- | --- | --- | --- | --- | ---: | ---: | --- |
-| 1 | completed | DRIFT | 0/15 | 15/15 | 15/15 | 1.0000 | 1.0000 | llm-memory-eval-20260601-084900.json |
-| 2 | completed | DRIFT | 0/15 | 15/15 | 15/15 | 1.0000 | 1.0000 | llm-memory-eval-20260601-085126.json |
-| 3 | completed | DRIFT | 0/15 | 15/15 | 15/15 | 1.0000 | 1.0000 | llm-memory-eval-20260601-085331.json |
-| 4 | completed | DRIFT | 0/15 | 15/15 | 15/15 | 1.0000 | 1.0000 | llm-memory-eval-20260601-085547.json |
-| 5 | completed | DRIFT | 0/15 | 15/15 | 15/15 | 1.0000 | 1.0000 | llm-memory-eval-20260601-085755.json |
+| 1 | completed | PASS | 0/15 | 15/15 | 15/15 | 1.0000 | 1.0000 | llm-memory-eval-20260601-084900.json |
+| 2 | completed | PASS | 0/15 | 15/15 | 15/15 | 1.0000 | 1.0000 | llm-memory-eval-20260601-085126.json |
+| 3 | completed | PASS | 0/15 | 15/15 | 15/15 | 1.0000 | 1.0000 | llm-memory-eval-20260601-085331.json |
+| 4 | completed | PASS | 0/15 | 15/15 | 15/15 | 1.0000 | 1.0000 | llm-memory-eval-20260601-085547.json |
+| 5 | completed | PASS | 0/15 | 15/15 | 15/15 | 1.0000 | 1.0000 | llm-memory-eval-20260601-085755.json |
 
-
-## Verification Drift
-
-## Round 1
-
-```text
-FAIL: report 'E:\1projects\claude\Vortex\ops\eval-reports\20260601-v2-009-contract-audit-5x-net\runs\20260601-v2-009-contract-audit-5x-net-run01\llm-memory-eval-20260601-084900.json' drifted from official LLM memory eval baseline '20260529-real-bge-v2-006'.
-- environment.datasetLocation expected="classpath:llm-memory-eval-set-v2.json" actual="classpath:llm-memory-eval-set-v2-1.json"
-```
-
-## Round 2
-
-```text
-FAIL: report 'E:\1projects\claude\Vortex\ops\eval-reports\20260601-v2-009-contract-audit-5x-net\runs\20260601-v2-009-contract-audit-5x-net-run02\llm-memory-eval-20260601-085126.json' drifted from official LLM memory eval baseline '20260529-real-bge-v2-006'.
-- environment.datasetLocation expected="classpath:llm-memory-eval-set-v2.json" actual="classpath:llm-memory-eval-set-v2-1.json"
-```
-
-## Round 3
-
-```text
-FAIL: report 'E:\1projects\claude\Vortex\ops\eval-reports\20260601-v2-009-contract-audit-5x-net\runs\20260601-v2-009-contract-audit-5x-net-run03\llm-memory-eval-20260601-085331.json' drifted from official LLM memory eval baseline '20260529-real-bge-v2-006'.
-- environment.datasetLocation expected="classpath:llm-memory-eval-set-v2.json" actual="classpath:llm-memory-eval-set-v2-1.json"
-```
-
-## Round 4
-
-```text
-FAIL: report 'E:\1projects\claude\Vortex\ops\eval-reports\20260601-v2-009-contract-audit-5x-net\runs\20260601-v2-009-contract-audit-5x-net-run04\llm-memory-eval-20260601-085547.json' drifted from official LLM memory eval baseline '20260529-real-bge-v2-006'.
-- environment.datasetLocation expected="classpath:llm-memory-eval-set-v2.json" actual="classpath:llm-memory-eval-set-v2-1.json"
-```
-
-## Round 5
-
-```text
-FAIL: report 'E:\1projects\claude\Vortex\ops\eval-reports\20260601-v2-009-contract-audit-5x-net\runs\20260601-v2-009-contract-audit-5x-net-run05\llm-memory-eval-20260601-085755.json' drifted from official LLM memory eval baseline '20260529-real-bge-v2-006'.
-- environment.datasetLocation expected="classpath:llm-memory-eval-set-v2.json" actual="classpath:llm-memory-eval-set-v2-1.json"
-```

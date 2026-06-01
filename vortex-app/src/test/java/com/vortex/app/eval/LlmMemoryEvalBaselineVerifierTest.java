@@ -21,8 +21,10 @@ class LlmMemoryEvalBaselineVerifierTest {
         LlmMemoryEvalBaselineVerificationResult result = verifier.verify(reportPath);
 
         assertThat(result.isPassed()).isTrue();
+        assertThat(result.getBaselineProfileId()).isEqualTo("official-v2-strict");
+        assertThat(result.getDatasetVersion()).isEqualTo("v2");
         assertThat(result.getDrifts()).isEmpty();
-        assertThat(result.renderHumanReadable()).contains("still matches official LLM memory eval baseline");
+        assertThat(result.renderHumanReadable()).contains("still matches LLM memory eval baseline profile");
     }
 
     @Test
@@ -42,6 +44,40 @@ class LlmMemoryEvalBaselineVerifierTest {
                 .contains("environment.generationModel", "modeSummaries.Vortex-Memory.correct");
         assertThat(result.renderHumanReadable()).contains("expected=\"gpt-5.2\" actual=\"gpt-4.1\"");
         assertThat(result.renderHumanReadable()).contains("modeSummaries.Vortex-Memory.correct expected=15 actual=14");
+    }
+
+    @Test
+    void verifyShouldPassForContractV21Profile(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+        Path reportPath = tempDir.resolve("llm-memory-eval-v2-1.json");
+        LlmMemoryEvalReport report = officialBaselineReport();
+        report.getEnvironment().setDatasetLocation("classpath:llm-memory-eval-set-v2-1.json");
+        JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
+
+        LlmMemoryEvalBaselineVerifier verifier = new LlmMemoryEvalBaselineVerifier(JsonMapperFactory.create());
+        LlmMemoryEvalBaselineVerificationResult result =
+                verifier.verify(reportPath, LlmMemoryEvalBaselineProfile.CONTRACT_V2_1_CANDIDATE);
+
+        assertThat(result.isPassed()).isTrue();
+        assertThat(result.getBaselineProfileId()).isEqualTo("contract-v2.1-candidate");
+        assertThat(result.getDatasetVersion()).isEqualTo("v2.1");
+        assertThat(result.getDrifts()).isEmpty();
+    }
+
+    @Test
+    void defaultOfficialProfileShouldRejectV21Dataset(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+        Path reportPath = tempDir.resolve("llm-memory-eval-v2-1.json");
+        LlmMemoryEvalReport report = officialBaselineReport();
+        report.getEnvironment().setDatasetLocation("classpath:llm-memory-eval-set-v2-1.json");
+        JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
+
+        LlmMemoryEvalBaselineVerifier verifier = new LlmMemoryEvalBaselineVerifier(JsonMapperFactory.create());
+        LlmMemoryEvalBaselineVerificationResult result = verifier.verify(reportPath);
+
+        assertThat(result.isPassed()).isFalse();
+        assertThat(result.getBaselineProfileId()).isEqualTo("official-v2-strict");
+        assertThat(result.getDrifts())
+                .extracting(LlmMemoryEvalBaselineVerificationResult.Drift::field)
+                .contains("environment.datasetLocation");
     }
 
     private LlmMemoryEvalReport officialBaselineReport() {
@@ -72,6 +108,9 @@ class LlmMemoryEvalBaselineVerifierTest {
                         .generationModel("gpt-5.2")
                         .l1MaxTokens(96L)
                         .datasetLocation("classpath:llm-memory-eval-set-v2.json")
+                        .datasetVersion("v2")
+                        .baselineProfileId("audit-v2-stability")
+                        .strictVerifierProfileId("official-v2-strict")
                         .evalSystemPromptSha256("e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3")
                         .modes(List.of("Baseline-NoMemory", "Vortex-Memory", "Vortex-RecoveredMemory"))
                         .build())

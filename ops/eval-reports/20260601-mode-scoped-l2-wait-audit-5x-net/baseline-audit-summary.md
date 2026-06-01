@@ -1,8 +1,11 @@
 ﻿# LLM Memory Baseline Audit
 
 - Audit Stamp: 20260601-mode-scoped-l2-wait-audit-5x-net
-- GeneratedAt: 2026-06-01T08:27:43.1625166Z
-- Baseline Id: 20260529-real-bge-v2-006
+- GeneratedAt: 2026-06-01T09:40:10.4376120Z
+- Baseline Id: 20260601-mode-scoped-l2-wait-audit-5x-net
+- Baseline Profile: audit-v2-stability
+- Dataset Version: v2
+- Strict Verifier Profile: official-v2-strict
 - Overall Passed: True
 - Audit Gate Passed: True
 - Strict Verifier Passed: False
@@ -13,7 +16,7 @@
 - Base URL: https://sub2.congmingai.com
 - Model: gpt-5.2
 - L1 Max Tokens: 96
-- Total Duration Seconds: 9.316
+- Total Duration Seconds: 5.261
 
 ## Aggregate
 
@@ -66,7 +69,7 @@
 ## Round 3
 
 ```text
-FAIL: report 'E:\1projects\claude\Vortex\ops\eval-reports\20260601-mode-scoped-l2-wait-audit-5x-net\runs\20260601-mode-scoped-l2-wait-audit-5x-net-run03\llm-memory-eval-20260601-082017.json' drifted from official LLM memory eval baseline '20260529-real-bge-v2-006'.
+FAIL: report 'E:\1projects\claude\Vortex\ops\eval-reports\20260601-mode-scoped-l2-wait-audit-5x-net\runs\20260601-mode-scoped-l2-wait-audit-5x-net-run03\llm-memory-eval-20260601-082017.json' drifted from LLM memory eval baseline profile 'official-v2-strict' (baseline '20260529-real-bge-v2-006', dataset v2).
 - modeSummaries.Vortex-Memory.correct expected=15 actual=14
 - modeSummaries.Vortex-Memory.accuracy expected=1.0 actual=0.9333333333333333
 ```

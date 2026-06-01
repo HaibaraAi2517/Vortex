@@ -55,11 +55,40 @@ Do not fabricate hidden facts or fragment identifiers.
   - [Eval System Prompt SHA-256](E:/1projects/claude/Vortex/ops/eval-reports/20260529-real-bge-v2-006/llm-memory-eval-20260529-140002.md:19)
   - [Eval System Prompt Chars](E:/1projects/claude/Vortex/ops/eval-reports/20260529-real-bge-v2-006/llm-memory-eval-20260529-140002.md:20)
 
+## Baseline Profiles
+
+真实 LLM eval 现在用 profile 机器区分“单轮严格复现”和“多轮稳定性门禁”，避免把候选数据集、audit gate 和正式 strict baseline 混成同一个信号。
+
+当前 profile：
+
+1. `official-v2-strict`
+   - 数据集：`classpath:llm-memory-eval-set-v2.json`
+   - baseline id：`20260529-real-bge-v2-006`
+   - 语义：正式单轮 strict baseline，要求 `0/15, 15/15, 15/15`
+2. `audit-v2-stability`
+   - 数据集：`classpath:llm-memory-eval-set-v2.json`
+   - baseline id：`20260601-mode-scoped-l2-wait-audit-5x-net`
+   - 语义：v2 多轮稳定性 audit gate，不用于单个报告 strict verify
+3. `contract-v2.1-candidate`
+   - 数据集：`classpath:llm-memory-eval-set-v2-1.json`
+   - baseline id：`20260601-v2-009-contract-audit-5x-net`
+   - 语义：v2.1 contract 候选 profile，支持单轮 strict verify 和多轮 audit
+
+`eval-cli verify` 默认使用 `official-v2-strict`。其它 strict profile 需要显式传入：
+
+```powershell
+java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
+  --profile contract-v2.1-candidate `
+  .\ops\eval-reports\20260601-v2-009-contract-audit-5x-net\runs\20260601-v2-009-contract-audit-5x-net-run01\llm-memory-eval-*.json
+```
+
 ## 候选多轮审计基线
 
 当前推荐作为多轮稳定性门禁参考的候选 audit baseline 是：
 
 - 报告批次：`20260601-mode-scoped-l2-wait-audit-5x-net`
+- baseline profile：`audit-v2-stability`
+- strict verifier profile：`official-v2-strict`
 - 汇总报告：
   - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260601-mode-scoped-l2-wait-audit-5x-net/baseline-audit-summary.json:1)
   - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260601-mode-scoped-l2-wait-audit-5x-net/baseline-audit-summary.md:1)
@@ -96,14 +125,16 @@ Do not fabricate hidden facts or fragment identifiers.
 v2.1 候选多轮 audit baseline：
 
 - 报告批次：`20260601-v2-009-contract-audit-5x-net`
+- baseline profile：`contract-v2.1-candidate`
+- strict verifier profile：`contract-v2.1-candidate`
 - 汇总报告：
   - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/baseline-audit-summary.json:1)
   - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/baseline-audit-summary.md:1)
 - 结果：
   - `OverallPassed = true`
   - `AuditGate.Passed = true`
-  - `StrictVerifierPassed = false`
-  - `VerifierPassCount = 0/5`
+  - `StrictVerifierPassed = true`
+  - `VerifierPassCount = 5/5`
   - `Baseline-NoMemory correct values = 0, 0, 0, 0, 0`
   - `Vortex-Memory accuracy values = 1.0000, 1.0000, 1.0000, 1.0000, 1.0000`
   - `Vortex-RecoveredMemory recoveredAccuracy values = 1.0000, 1.0000, 1.0000, 1.0000, 1.0000`
@@ -111,7 +142,7 @@ v2.1 候选多轮 audit baseline：
   - `CaseFailureCount = 0`
   - `CaseFailureGroupCount = 0`
 
-`StrictVerifierPassed = false` 在该批次中是预期结果：现有 strict verifier 固定校验正式 v2 数据集和 `20260529-real-bge-v2-006` 单轮基线。只有明确升级正式数据集 baseline 后，才应调整 verifier 的 expected dataset 和指标。
+`contract-v2.1-candidate` 已是独立 strict profile，因此该批次可以用 v2.1 数据集执行单轮 strict verify。它仍然是候选 contract profile，不自动替代 `official-v2-strict`。
 
 ## 判定标准
 

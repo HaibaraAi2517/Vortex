@@ -1,13 +1,19 @@
 ﻿{
     "AuditStamp":  "20260601-v2-009-contract-audit-5x-net",
-    "GeneratedAt":  "2026-06-01T08:57:58.6218491Z",
-    "BaselineId":  "20260529-real-bge-v2-006",
+    "GeneratedAt":  "2026-06-01T09:39:57.7290331Z",
+    "BaselineId":  "20260601-v2-009-contract-audit-5x-net",
+    "BaselineProfile":  "contract-v2.1-candidate",
+    "DatasetVersion":  "v2.1",
+    "StrictVerifierProfile":  "contract-v2.1-candidate",
     "OverallPassed":  true,
-    "StrictVerifierPassed":  false,
+    "StrictVerifierPassed":  true,
     "Settings":  {
                      "BaseUrl":  "https://sub2.congmingai.com",
                      "Model":  "gpt-5.2",
                      "DatasetLocation":  "classpath:llm-memory-eval-set-v2-1.json",
+                     "DatasetVersion":  "v2.1",
+                     "BaselineProfile":  "contract-v2.1-candidate",
+                     "StrictVerifierProfile":  "contract-v2.1-candidate",
                      "BgeModelPath":  "E:/1projects/claude/Vortex/models/bge-small-zh",
                      "L1MaxTokens":  96,
                      "Modes":  "BASELINE_NO_MEMORY,VORTEX_MEMORY,VORTEX_RECOVERED_MEMORY",
@@ -19,13 +25,14 @@
                      "MinRecoveredL2MeanHitRate":  0.95
                  },
     "Aggregate":  {
-                      "StartedAt":  "2026-06-01T08:46:47.7700391Z",
-                      "CompletedAt":  "2026-06-01T08:57:58.4397001Z",
-                      "TotalDurationSeconds":  670.67,
+                      "StartedAt":  "2026-06-01T09:39:52.3430483Z",
+                      "CompletedAt":  "2026-06-01T09:39:57.6184180Z",
+                      "TotalDurationSeconds":  5.275,
                       "EvalSuccessCount":  5,
                       "EvalFailureCount":  0,
-                      "VerifierPassCount":  0,
-                      "VerifierFailCount":  5,
+                      "VerifierPassCount":  5,
+                      "VerifierSkippedCount":  0,
+                      "VerifierFailCount":  0,
                       "BaselineNoMemoryCorrectValues":  [
                                                             0,
                                                             0,
@@ -127,7 +134,7 @@
                      "RoundIndex":  1,
                      "RoundStamp":  "20260601-v2-009-contract-audit-5x-net-run01",
                      "Status":  "completed",
-                     "DurationSeconds":  135.293,
+                     "DurationSeconds":  1.076,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run01",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run01\\llm-memory-eval-20260601-084900.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run01\\llm-memory-eval-20260601-084900.md",
@@ -135,6 +142,9 @@
                      "TotalCases":  15,
                      "TotalRuns":  45,
                      "DatasetLocation":  "classpath:llm-memory-eval-set-v2-1.json",
+                     "DatasetVersion":  "v2.1",
+                     "BaselineProfileId":  "contract-v2.1-candidate",
+                     "StrictVerifierProfileId":  "contract-v2.1-candidate",
                      "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
                      "GenerationModel":  "gpt-5.2",
                      "L1MaxTokens":  96,
@@ -186,9 +196,11 @@
                                                                       }
                                        },
                      "Verify":  {
-                                    "Passed":  false,
-                                    "ExitCode":  2,
-                                    "Output":  "FAIL: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run01\\llm-memory-eval-20260601-084900.json\u0027 drifted from official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027.\r\n- environment.datasetLocation expected=\"classpath:llm-memory-eval-set-v2.json\" actual=\"classpath:llm-memory-eval-set-v2-1.json\""
+                                    "Profile":  "contract-v2.1-candidate",
+                                    "Skipped":  false,
+                                    "Passed":  true,
+                                    "ExitCode":  0,
+                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run01\\llm-memory-eval-20260601-084900.json\u0027 still matches LLM memory eval baseline profile \u0027contract-v2.1-candidate\u0027 (baseline \u002720260601-v2-009-contract-audit-5x-net\u0027, dataset v2.1)."
                                 },
                      "FailureMessage":  null
                  },
@@ -196,7 +208,7 @@
                      "RoundIndex":  2,
                      "RoundStamp":  "20260601-v2-009-contract-audit-5x-net-run02",
                      "Status":  "completed",
-                     "DurationSeconds":  145.568,
+                     "DurationSeconds":  1.037,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run02",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run02\\llm-memory-eval-20260601-085126.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run02\\llm-memory-eval-20260601-085126.md",
@@ -204,6 +216,9 @@
                      "TotalCases":  15,
                      "TotalRuns":  45,
                      "DatasetLocation":  "classpath:llm-memory-eval-set-v2-1.json",
+                     "DatasetVersion":  "v2.1",
+                     "BaselineProfileId":  "contract-v2.1-candidate",
+                     "StrictVerifierProfileId":  "contract-v2.1-candidate",
                      "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
                      "GenerationModel":  "gpt-5.2",
                      "L1MaxTokens":  96,
@@ -255,9 +270,11 @@
                                                                       }
                                        },
                      "Verify":  {
-                                    "Passed":  false,
-                                    "ExitCode":  2,
-                                    "Output":  "FAIL: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run02\\llm-memory-eval-20260601-085126.json\u0027 drifted from official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027.\r\n- environment.datasetLocation expected=\"classpath:llm-memory-eval-set-v2.json\" actual=\"classpath:llm-memory-eval-set-v2-1.json\""
+                                    "Profile":  "contract-v2.1-candidate",
+                                    "Skipped":  false,
+                                    "Passed":  true,
+                                    "ExitCode":  0,
+                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run02\\llm-memory-eval-20260601-085126.json\u0027 still matches LLM memory eval baseline profile \u0027contract-v2.1-candidate\u0027 (baseline \u002720260601-v2-009-contract-audit-5x-net\u0027, dataset v2.1)."
                                 },
                      "FailureMessage":  null
                  },
@@ -265,7 +282,7 @@
                      "RoundIndex":  3,
                      "RoundStamp":  "20260601-v2-009-contract-audit-5x-net-run03",
                      "Status":  "completed",
-                     "DurationSeconds":  124.833,
+                     "DurationSeconds":  1.044,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run03",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run03\\llm-memory-eval-20260601-085331.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run03\\llm-memory-eval-20260601-085331.md",
@@ -273,6 +290,9 @@
                      "TotalCases":  15,
                      "TotalRuns":  45,
                      "DatasetLocation":  "classpath:llm-memory-eval-set-v2-1.json",
+                     "DatasetVersion":  "v2.1",
+                     "BaselineProfileId":  "contract-v2.1-candidate",
+                     "StrictVerifierProfileId":  "contract-v2.1-candidate",
                      "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
                      "GenerationModel":  "gpt-5.2",
                      "L1MaxTokens":  96,
@@ -324,9 +344,11 @@
                                                                       }
                                        },
                      "Verify":  {
-                                    "Passed":  false,
-                                    "ExitCode":  2,
-                                    "Output":  "FAIL: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run03\\llm-memory-eval-20260601-085331.json\u0027 drifted from official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027.\r\n- environment.datasetLocation expected=\"classpath:llm-memory-eval-set-v2.json\" actual=\"classpath:llm-memory-eval-set-v2-1.json\""
+                                    "Profile":  "contract-v2.1-candidate",
+                                    "Skipped":  false,
+                                    "Passed":  true,
+                                    "ExitCode":  0,
+                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run03\\llm-memory-eval-20260601-085331.json\u0027 still matches LLM memory eval baseline profile \u0027contract-v2.1-candidate\u0027 (baseline \u002720260601-v2-009-contract-audit-5x-net\u0027, dataset v2.1)."
                                 },
                      "FailureMessage":  null
                  },
@@ -334,7 +356,7 @@
                      "RoundIndex":  4,
                      "RoundStamp":  "20260601-v2-009-contract-audit-5x-net-run04",
                      "Status":  "completed",
-                     "DurationSeconds":  136.311,
+                     "DurationSeconds":  1.041,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run04",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run04\\llm-memory-eval-20260601-085547.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run04\\llm-memory-eval-20260601-085547.md",
@@ -342,6 +364,9 @@
                      "TotalCases":  15,
                      "TotalRuns":  45,
                      "DatasetLocation":  "classpath:llm-memory-eval-set-v2-1.json",
+                     "DatasetVersion":  "v2.1",
+                     "BaselineProfileId":  "contract-v2.1-candidate",
+                     "StrictVerifierProfileId":  "contract-v2.1-candidate",
                      "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
                      "GenerationModel":  "gpt-5.2",
                      "L1MaxTokens":  96,
@@ -393,9 +418,11 @@
                                                                       }
                                        },
                      "Verify":  {
-                                    "Passed":  false,
-                                    "ExitCode":  2,
-                                    "Output":  "FAIL: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run04\\llm-memory-eval-20260601-085547.json\u0027 drifted from official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027.\r\n- environment.datasetLocation expected=\"classpath:llm-memory-eval-set-v2.json\" actual=\"classpath:llm-memory-eval-set-v2-1.json\""
+                                    "Profile":  "contract-v2.1-candidate",
+                                    "Skipped":  false,
+                                    "Passed":  true,
+                                    "ExitCode":  0,
+                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run04\\llm-memory-eval-20260601-085547.json\u0027 still matches LLM memory eval baseline profile \u0027contract-v2.1-candidate\u0027 (baseline \u002720260601-v2-009-contract-audit-5x-net\u0027, dataset v2.1)."
                                 },
                      "FailureMessage":  null
                  },
@@ -403,7 +430,7 @@
                      "RoundIndex":  5,
                      "RoundStamp":  "20260601-v2-009-contract-audit-5x-net-run05",
                      "Status":  "completed",
-                     "DurationSeconds":  128.575,
+                     "DurationSeconds":  1.043,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run05",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run05\\llm-memory-eval-20260601-085755.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run05\\llm-memory-eval-20260601-085755.md",
@@ -411,6 +438,9 @@
                      "TotalCases":  15,
                      "TotalRuns":  45,
                      "DatasetLocation":  "classpath:llm-memory-eval-set-v2-1.json",
+                     "DatasetVersion":  "v2.1",
+                     "BaselineProfileId":  "contract-v2.1-candidate",
+                     "StrictVerifierProfileId":  "contract-v2.1-candidate",
                      "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
                      "GenerationModel":  "gpt-5.2",
                      "L1MaxTokens":  96,
@@ -462,9 +492,11 @@
                                                                       }
                                        },
                      "Verify":  {
-                                    "Passed":  false,
-                                    "ExitCode":  2,
-                                    "Output":  "FAIL: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run05\\llm-memory-eval-20260601-085755.json\u0027 drifted from official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027.\r\n- environment.datasetLocation expected=\"classpath:llm-memory-eval-set-v2.json\" actual=\"classpath:llm-memory-eval-set-v2-1.json\""
+                                    "Profile":  "contract-v2.1-candidate",
+                                    "Skipped":  false,
+                                    "Passed":  true,
+                                    "ExitCode":  0,
+                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run05\\llm-memory-eval-20260601-085755.json\u0027 still matches LLM memory eval baseline profile \u0027contract-v2.1-candidate\u0027 (baseline \u002720260601-v2-009-contract-audit-5x-net\u0027, dataset v2.1)."
                                 },
                      "FailureMessage":  null
                  }

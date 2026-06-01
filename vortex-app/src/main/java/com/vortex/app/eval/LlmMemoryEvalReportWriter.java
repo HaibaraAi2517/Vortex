@@ -183,6 +183,9 @@ public class LlmMemoryEvalReportWriter {
         builder.append("- Milvus Collection: ").append(nullToEmpty(environment.getMilvusCollection())).append('\n');
         builder.append("- MinIO Key Prefix: ").append(nullToEmpty(environment.getMinioKeyPrefix())).append('\n');
         builder.append("- Dataset Location: ").append(nullToEmpty(environment.getDatasetLocation())).append('\n');
+        builder.append("- Dataset Version: ").append(nullToEmpty(environment.getDatasetVersion())).append('\n');
+        builder.append("- Baseline Profile Id: ").append(nullToEmpty(environment.getBaselineProfileId())).append('\n');
+        builder.append("- Strict Verifier Profile Id: ").append(nullToEmpty(environment.getStrictVerifierProfileId())).append('\n');
         builder.append("- Eval System Prompt SHA-256: ").append(nullToEmpty(environment.getEvalSystemPromptSha256())).append('\n');
         builder.append("- Eval System Prompt Chars: ").append(formatNullable(environment.getEvalSystemPromptChars())).append('\n');
         builder.append("- Modes: ").append(sanitizeMarkdown(String.join(", ", safeList(environment.getModes())))).append('\n');

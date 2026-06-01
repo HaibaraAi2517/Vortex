@@ -37,6 +37,8 @@
 当前候选多轮 audit baseline 是：
 
 - 报告批次：`20260601-mode-scoped-l2-wait-audit-5x-net`
+- baseline profile：`audit-v2-stability`
+- strict verifier profile：`official-v2-strict`
 - 汇总报告：
   - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260601-mode-scoped-l2-wait-audit-5x-net/baseline-audit-summary.json:1)
   - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260601-mode-scoped-l2-wait-audit-5x-net/baseline-audit-summary.md:1)
@@ -48,12 +50,14 @@
 
 - 数据集：`classpath:llm-memory-eval-set-v2-1.json`
 - 报告批次：`20260601-v2-009-contract-audit-5x-net`
+- baseline profile：`contract-v2.1-candidate`
+- strict verifier profile：`contract-v2.1-candidate`
 - 汇总报告：
   - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/baseline-audit-summary.json:1)
   - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/baseline-audit-summary.md:1)
-- 结论：`AuditGate.Passed = true`，`CaseFailureCount = 0`，所有 memory/recovered 轮次均为 `15/15`
+- 结论：`AuditGate.Passed = true`，`StrictVerifierPassed = true`，`VerifierPassCount = 5/5`，`CaseFailureCount = 0`，所有 memory/recovered 轮次均为 `15/15`
 
-v2.1 只显式化 `v2-009` 的 same-weekday 时间偏移 contract。现有 strict verifier 仍固定校验正式 v2 baseline，所以 v2.1 audit 的 `StrictVerifierPassed = false` 是预期结果。
+v2.1 只显式化 `v2-009` 的 same-weekday 时间偏移 contract。它有独立的 `contract-v2.1-candidate` strict profile，因此不会再被误判为相对正式 v2 数据集漂移。
 
 ## 评测 Prompt Contract
 
@@ -138,6 +142,24 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-real-llm-memory-eval.ps1 `
 ```
 
 如果要切换到其它评测集，只改 `-Stamp` 和 `-DatasetLocation`，其它环境保持不变。
+
+## Baseline Profile
+
+真实 eval 的 baseline governance 分为三个 profile：
+
+1. `official-v2-strict`：正式 v2 单轮 strict baseline，默认用于 `verify <report>`。
+2. `audit-v2-stability`：v2 多轮稳定性 audit gate，不用于单个报告 strict verify。
+3. `contract-v2.1-candidate`：v2.1 contract 候选 profile，用于 v2.1 单轮 strict verify 和多轮 audit。
+
+显式验证 v2.1 单轮报告：
+
+```powershell
+java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
+  --profile contract-v2.1-candidate `
+  .\ops\eval-reports\20260601-v2-009-contract-audit-5x-net\runs\20260601-v2-009-contract-audit-5x-net-run01\llm-memory-eval-*.json
+```
+
+`run-llm-memory-baseline-audit.ps1` 会按 `-DatasetLocation` 自动推断 `BaselineProfile` 和 `StrictVerifierProfile`。需要覆盖时可显式传入 `-BaselineProfile` 和 `-StrictVerifierProfile`。
 
 v2.1 contract audit 示例：
 
@@ -266,6 +288,7 @@ java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
 
 1. 通过时输出清晰 PASS 结论，并返回退出码 `0`
 2. 漂移时输出逐项 drift 明细，并返回退出码 `2`
+3. profile 不存在或 audit-only profile 被用于单轮 verify 时返回退出码 `1`
 
 ## 基线审计
 
@@ -273,7 +296,7 @@ java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
 
 审计脚本有两层结论：
 
-1. `StrictVerifierPassed`：每一轮都必须完全匹配正式单轮基线，也就是 `Vortex-Memory = 15/15` 且 `Vortex-RecoveredMemory = 15/15`。这个信号用于发现相对 `20260529-real-bge-v2-006` 的严格漂移。
+1. `StrictVerifierPassed`：每一轮都必须完全匹配当前 `StrictVerifierProfile` 对应的单轮 strict baseline。v2 默认是 `official-v2-strict`；v2.1 默认是 `contract-v2.1-candidate`。
 2. `AuditGate.Passed` / `OverallPassed`：多轮真实 LLM 稳定性 gate。默认允许真实模型输出波动，但要求环境不漂移、NoMemory 保持 0、Memory/Recovered 的多轮均值达到阈值。
 
 默认 audit gate 阈值：
@@ -329,7 +352,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
 1. 每轮报告路径
 2. 每轮 verifier 结论与输出
 3. 每轮 3 个 mode 的关键结果
-4. 总体通过率和关键基线指标序列
+4. baseline profile、dataset version、strict verifier profile、总体通过率和关键基线指标序列
 5. `AuditGate`：多轮统计 gate 的阈值、实际均值和逐项 check
 6. `CaseFailureSummary`：按 `caseId + mode` 聚合的失败次数、失败轮次、召回命中/未命中次数、缺失的 expected fragments
 7. `CaseFailureDetails`：逐轮失败明细，包括 returned fragments、missing expected fragments、召回 tiers、生成答案和对应报告路径
@@ -368,5 +391,5 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
 1. 脚本完成并生成 `baseline-audit-summary.json` / `.md`
 2. `AuditGate.Passed = true`
 3. `OverallPassed = true`
-4. `StrictVerifierPassed` 可以为 `false`；这表示单轮严格 15/15 基线有漂移，但多轮稳定性 gate 仍然通过
+4. `StrictVerifierPassed` 的含义取决于 `StrictVerifierProfile`；v2 stability audit 可接受它为 `false`，v2.1 contract 候选 audit 期望它为 `true`
 5. 如果 `AuditGate.Passed = false`，优先看 `AuditGate.Checks`，再看 `CaseFailureSummary`

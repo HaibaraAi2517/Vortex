@@ -39,6 +39,7 @@ public class LlmMemoryEvalEnvironmentSnapshotFactory {
     private String userDir;
 
     public LlmMemoryEvalEnvironmentSnapshot snapshot() {
+        String datasetLocation = evalProperties.getDatasetLocation();
         return LlmMemoryEvalEnvironmentSnapshot.builder()
                 .generationBaseUrl(generationProperties.getBaseUrl())
                 .generationModel(generationProperties.getModel())
@@ -48,7 +49,10 @@ public class LlmMemoryEvalEnvironmentSnapshotFactory {
                 .l1MaxTokens(l1MaxTokens)
                 .milvusCollection(milvusCollection)
                 .minioKeyPrefix(minioKeyPrefix)
-                .datasetLocation(evalProperties.getDatasetLocation())
+                .datasetLocation(datasetLocation)
+                .datasetVersion(LlmMemoryEvalBaselineProfile.inferDatasetVersion(datasetLocation))
+                .baselineProfileId(LlmMemoryEvalBaselineProfile.inferAuditProfileId(datasetLocation))
+                .strictVerifierProfileId(LlmMemoryEvalBaselineProfile.inferStrictVerifierProfileId(datasetLocation))
                 .evalSystemPromptSha256(sha256Hex(evalProperties.getSystemPrompt()))
                 .evalSystemPromptChars(evalProperties.getSystemPrompt() == null ? 0 : evalProperties.getSystemPrompt().length())
                 .modes(configuredModes())
