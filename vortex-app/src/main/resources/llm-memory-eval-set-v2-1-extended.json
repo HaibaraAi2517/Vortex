@@ -1,0 +1,817 @@
+[
+  {
+    "caseId": "v2-001",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "billing-export-producer",
+        "content": "The overnight billing export uses the finance bridge service partner export format.",
+        "tags": ["reporting", "billing"]
+      },
+      {
+        "fragmentId": "finance-bridge-format",
+        "content": "The finance bridge service partner export format is newline-delimited JSON.",
+        "tags": ["reporting", "format"]
+      },
+      {
+        "fragmentId": "legacy-export-format",
+        "content": "The legacy ledger backfill job still emits CSV files for historical replays.",
+        "tags": ["reporting", "format"]
+      }
+    ],
+    "question": "Which format does the overnight billing export use?",
+    "expectedAnswer": "newline-delimited JSON",
+    "expectedFragments": ["billing-export-producer", "finance-bridge-format"],
+    "tags": ["reporting"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-002",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "locale-program-manager",
+        "content": "The locale program's release manager is Harper.",
+        "tags": ["team", "program"]
+      },
+      {
+        "fragmentId": "localization-owner",
+        "content": "The consumer web localization backlog is owned by the locale program's release manager.",
+        "tags": ["team", "ownership"]
+      },
+      {
+        "fragmentId": "release-notes-owner",
+        "content": "Mina coordinates release notes for the consumer web app.",
+        "tags": ["team", "communications"]
+      }
+    ],
+    "question": "Who owns the consumer web localization backlog?",
+    "expectedAnswer": "Harper",
+    "expectedFragments": ["locale-program-manager", "localization-owner"],
+    "tags": ["team"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-003",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "northstar-auth-history",
+        "content": "Service Northstar used Auth0 before the security refresh.",
+        "tags": ["security", "history"]
+      },
+      {
+        "fragmentId": "northstar-auth-current",
+        "content": "After the security refresh, Service Northstar authenticates through WorkOS.",
+        "tags": ["security", "identity"]
+      },
+      {
+        "fragmentId": "northstar-admin-legacy",
+        "content": "The Northstar admin console still carries a tiny Auth0 decommissioning flow for internal cleanup tasks.",
+        "tags": ["security", "identity"]
+      }
+    ],
+    "question": "Which authentication provider does Service Northstar use now?",
+    "expectedAnswer": "WorkOS",
+    "expectedFragments": ["northstar-auth-current"],
+    "tags": ["security"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-004",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "mercury-region",
+        "content": "Mercury's production region is eu-west-1.",
+        "tags": ["ops", "region"]
+      },
+      {
+        "fragmentId": "secondary-cover-policy",
+        "content": "The secondary paging group covers the region used by Mercury during weekends.",
+        "tags": ["ops", "policy"]
+      },
+      {
+        "fragmentId": "eu-west-1-oncall",
+        "content": "The eu-west-1 weekend secondary paging group is run by Talia.",
+        "tags": ["ops", "oncall"]
+      },
+      {
+        "fragmentId": "us-east-1-oncall",
+        "content": "The us-east-1 weekend secondary paging group is run by Marcus.",
+        "tags": ["ops", "oncall"]
+      }
+    ],
+    "question": "Who covers Mercury during weekends?",
+    "expectedAnswer": "Talia",
+    "expectedFragments": ["mercury-region", "secondary-cover-policy", "eu-west-1-oncall"],
+    "tags": ["ops"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v2-005",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "public-mobile-api-port",
+        "content": "The public mobile API endpoint listens on port 8443.",
+        "tags": ["network", "public"]
+      },
+      {
+        "fragmentId": "admin-api-port",
+        "content": "The admin API endpoint listens on port 8444.",
+        "tags": ["network", "admin"]
+      },
+      {
+        "fragmentId": "health-proxy-port",
+        "content": "The internal health proxy listens on port 8081.",
+        "tags": ["network", "internal"]
+      }
+    ],
+    "question": "Which port does the public mobile API endpoint listen on?",
+    "expectedAnswer": "8443",
+    "expectedFragments": ["public-mobile-api-port"],
+    "tags": ["network"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-006",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "juniper-target",
+        "content": "The Juniper migration note says the analytics warehouse target is BigQuery.",
+        "tags": ["data", "warehouse"]
+      },
+      {
+        "fragmentId": "analytics-mart-dependency",
+        "content": "The analytics mart runs on the warehouse named in the Juniper migration note.",
+        "tags": ["data", "dependency"]
+      },
+      {
+        "fragmentId": "historical-warehouse",
+        "content": "Before the migration, the analytics mart read from Snowflake snapshots.",
+        "tags": ["data", "history"]
+      }
+    ],
+    "question": "Which warehouse backs the analytics mart now?",
+    "expectedAnswer": "BigQuery",
+    "expectedFragments": ["juniper-target", "analytics-mart-dependency"],
+    "tags": ["data"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-007",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "compliance-archive-location",
+        "content": "Compliance archives are stored in the same cloud region as the audit vault.",
+        "tags": ["compliance", "storage"]
+      },
+      {
+        "fragmentId": "audit-vault-region",
+        "content": "The audit vault is pinned to ap-southeast-1.",
+        "tags": ["compliance", "region"]
+      },
+      {
+        "fragmentId": "legacy-archive-region",
+        "content": "Legacy exports were previously mirrored to us-west-2.",
+        "tags": ["compliance", "history"]
+      }
+    ],
+    "question": "Which region stores the compliance archives?",
+    "expectedAnswer": "ap-southeast-1",
+    "expectedFragments": ["compliance-archive-location", "audit-vault-region"],
+    "tags": ["compliance"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-008",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "orders-delay-queue",
+        "content": "The orders retry pipeline now uses RabbitMQ for delayed retries.",
+        "tags": ["messaging", "queue"]
+      },
+      {
+        "fragmentId": "orders-old-queue",
+        "content": "An older orders retry prototype used SQS before the redesign.",
+        "tags": ["messaging", "history"]
+      },
+      {
+        "fragmentId": "orders-streaming-bus",
+        "content": "Order status fan-out still publishes event streams through Kafka.",
+        "tags": ["messaging", "streaming"]
+      }
+    ],
+    "question": "Which queue system does the orders retry pipeline use for delayed retries?",
+    "expectedAnswer": "RabbitMQ",
+    "expectedFragments": ["orders-delay-queue"],
+    "tags": ["messaging"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-009",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "mobile-cutoff",
+        "content": "The mobile release happens one hour after the localization freeze starts, on the same weekday.",
+        "tags": ["release", "schedule"]
+      },
+      {
+        "fragmentId": "localization-freeze",
+        "content": "The localization freeze starts every Thursday at 08:00 UTC.",
+        "tags": ["release", "schedule"]
+      },
+      {
+        "fragmentId": "old-release-window",
+        "content": "Last quarter, the mobile release happened on Wednesdays.",
+        "tags": ["release", "history"]
+      }
+    ],
+    "question": "On which weekday does the mobile release happen?",
+    "expectedAnswer": "Thursday",
+    "expectedFragments": ["mobile-cutoff", "localization-freeze"],
+    "tags": ["release"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-010",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "incident-owner-role",
+        "content": "The primary payments incident contact is the person who owns the redline rotation.",
+        "tags": ["incident", "role"]
+      },
+      {
+        "fragmentId": "redline-owner",
+        "content": "Elena owns the redline rotation.",
+        "tags": ["incident", "ownership"]
+      },
+      {
+        "fragmentId": "backup-contact",
+        "content": "Jordan is the backup payments contact when Elena is offline.",
+        "tags": ["incident", "backup"]
+      }
+    ],
+    "question": "Who is the primary payments incident contact?",
+    "expectedAnswer": "Elena",
+    "expectedFragments": ["incident-owner-role", "redline-owner"],
+    "tags": ["incident"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-011",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "sandbox-cloud-alias",
+        "content": "The research sandbox runs on GCP.",
+        "tags": ["infra", "cloud"]
+      },
+      {
+        "fragmentId": "procurement-style-guide",
+        "content": "External reports must use the procurement form rather than cloud abbreviations.",
+        "tags": ["infra", "reporting"]
+      },
+      {
+        "fragmentId": "gcp-procurement-name",
+        "content": "The procurement form for GCP is Google Cloud.",
+        "tags": ["infra", "cloud"]
+      }
+    ],
+    "question": "Which cloud provider name should external reports use for the research sandbox?",
+    "expectedAnswer": "Google Cloud",
+    "expectedFragments": ["sandbox-cloud-alias", "procurement-style-guide", "gcp-procurement-name"],
+    "tags": ["infra"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v2-012",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "quarterly-export-policy",
+        "content": "Quarterly finance exports follow the format mandated by the compliance handoff.",
+        "tags": ["reporting", "policy"]
+      },
+      {
+        "fragmentId": "compliance-handoff-format",
+        "content": "The compliance handoff format for quarterly finance exports is CSV.",
+        "tags": ["reporting", "format"]
+      },
+      {
+        "fragmentId": "ad-hoc-export-format",
+        "content": "Ad-hoc analyst extracts are often delivered as XLSX.",
+        "tags": ["reporting", "format"]
+      }
+    ],
+    "question": "Which format must quarterly finance exports use?",
+    "expectedAnswer": "CSV",
+    "expectedFragments": ["quarterly-export-policy", "compliance-handoff-format"],
+    "tags": ["reporting"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-013",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "atlas-service-datastore",
+        "content": "The Atlas metrics service stores data in the same database used by the ledger writer.",
+        "tags": ["database", "dependency"]
+      },
+      {
+        "fragmentId": "ledger-writer-db",
+        "content": "The ledger writer now uses PostgreSQL.",
+        "tags": ["database", "primary"]
+      },
+      {
+        "fragmentId": "old-metrics-store",
+        "content": "The old Atlas metrics prototype wrote to SQLite.",
+        "tags": ["database", "history"]
+      }
+    ],
+    "question": "Which database does the Atlas metrics service use?",
+    "expectedAnswer": "PostgreSQL",
+    "expectedFragments": ["atlas-service-datastore", "ledger-writer-db"],
+    "tags": ["database"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-014",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "dr-owner-role",
+        "content": "The disaster recovery runbook is maintained by the person who chairs the continuity review.",
+        "tags": ["ops", "continuity"]
+      },
+      {
+        "fragmentId": "continuity-chair",
+        "content": "Sofia chairs the continuity review.",
+        "tags": ["ops", "ownership"]
+      },
+      {
+        "fragmentId": "incident-captain",
+        "content": "Elena is the active incident captain this month.",
+        "tags": ["ops", "incident"]
+      }
+    ],
+    "question": "Who maintains the disaster recovery runbook?",
+    "expectedAnswer": "Sofia",
+    "expectedFragments": ["dr-owner-role", "continuity-chair"],
+    "tags": ["ops"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-015",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "orion-region-alias",
+        "content": "Service Orion is deployed in the region named after the east-coast primary cluster.",
+        "tags": ["infra", "region"]
+      },
+      {
+        "fragmentId": "east-coast-cluster-region",
+        "content": "The east-coast primary cluster runs in us-east-1.",
+        "tags": ["infra", "region"]
+      },
+      {
+        "fragmentId": "orion-staging-region",
+        "content": "Staging for Orion remains in us-west-2.",
+        "tags": ["infra", "staging"]
+      }
+    ],
+    "question": "Which region is Service Orion deployed to?",
+    "expectedAnswer": "us-east-1",
+    "expectedFragments": ["orion-region-alias", "east-coast-cluster-region"],
+    "tags": ["infra"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-016",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "avery-old-alert-channel",
+        "content": "Avery previously asked for deployment alerts in Slack.",
+        "tags": ["preference", "history"]
+      },
+      {
+        "fragmentId": "avery-current-alert-channel",
+        "content": "Avery's current deployment alert preference is email.",
+        "tags": ["preference", "current"]
+      },
+      {
+        "fragmentId": "avery-email-address",
+        "content": "Avery's deployment alert email alias is avery-deploy@example.com.",
+        "tags": ["preference", "contact"]
+      }
+    ],
+    "question": "Where should deployment alerts be sent for Avery now?",
+    "expectedAnswer": "avery-deploy@example.com",
+    "mustContain": ["avery-deploy@example.com"],
+    "mustNotContain": ["Slack"],
+    "expectedFragments": ["avery-current-alert-channel", "avery-email-address"],
+    "tags": ["preference"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-017",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "nina-report-style",
+        "content": "Nina prefers incident summaries to use bullet points.",
+        "tags": ["preference", "writing"]
+      },
+      {
+        "fragmentId": "incident-brief-owner",
+        "content": "The launch incident brief writing style should follow Nina's preferred incident summary style, not Ravi's.",
+        "tags": ["incident", "preference", "writing"]
+      },
+      {
+        "fragmentId": "ravi-report-style",
+        "content": "Ravi prefers incident summaries as a short narrative paragraph.",
+        "tags": ["preference", "writing"]
+      }
+    ],
+    "question": "Which writing style should the launch incident brief use?",
+    "expectedAnswer": "bullet points",
+    "mustContain": ["bullet points"],
+    "mustNotContain": ["narrative paragraph"],
+    "expectedFragments": ["nina-report-style", "incident-brief-owner"],
+    "tags": ["preference", "writing"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-018",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "europe-freeze-window",
+        "content": "The Europe commerce freeze starts every Friday at 18:00 UTC.",
+        "tags": ["release", "schedule"]
+      },
+      {
+        "fragmentId": "checkout-deploy-offset",
+        "content": "Checkout deploys two hours before the Europe commerce freeze starts on the same weekday.",
+        "tags": ["release", "deploy"]
+      },
+      {
+        "fragmentId": "old-checkout-window",
+        "content": "Before the commerce freeze policy, Checkout deployed on Thursdays.",
+        "tags": ["release", "history"]
+      }
+    ],
+    "question": "On which weekday does Checkout deploy?",
+    "expectedAnswer": "Friday",
+    "mustContain": ["Friday"],
+    "mustNotContain": ["Thursday"],
+    "expectedFragments": ["europe-freeze-window", "checkout-deploy-offset"],
+    "tags": ["release"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-019",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "pager-maintenance-window",
+        "content": "Pager maintenance is allowed only during the quiet window.",
+        "tags": ["ops", "schedule"]
+      },
+      {
+        "fragmentId": "quiet-window-time",
+        "content": "The quiet window is Sunday 03:00 to 04:00 UTC.",
+        "tags": ["ops", "schedule"]
+      },
+      {
+        "fragmentId": "legacy-maintenance-window",
+        "content": "The previous pager maintenance window was Saturday 22:00 UTC.",
+        "tags": ["ops", "history"]
+      }
+    ],
+    "question": "When is pager maintenance allowed?",
+    "expectedAnswer": "Sunday 03:00 to 04:00 UTC",
+    "mustContain": ["Sunday 03:00 to 04:00 UTC"],
+    "mustNotContain": ["Saturday 22:00 UTC"],
+    "expectedFragments": ["pager-maintenance-window", "quiet-window-time"],
+    "tags": ["ops", "schedule"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-020",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "project-heron-owner-role",
+        "content": "Project Heron's launch checklist is owned by the current Aurora coordinator.",
+        "tags": ["project", "ownership"]
+      },
+      {
+        "fragmentId": "aurora-current-coordinator",
+        "content": "Mika is the current Aurora coordinator.",
+        "tags": ["project", "team"]
+      },
+      {
+        "fragmentId": "aurora-previous-coordinator",
+        "content": "Jonah coordinated Aurora before the ownership rotation.",
+        "tags": ["project", "history"]
+      }
+    ],
+    "question": "Who owns Project Heron's launch checklist?",
+    "expectedAnswer": "Mika",
+    "mustContain": ["Mika"],
+    "mustNotContain": ["Jonah"],
+    "expectedFragments": ["project-heron-owner-role", "aurora-current-coordinator"],
+    "tags": ["project"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-021",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "zephyr-risk-dashboard",
+        "content": "The Zephyr risk dashboard reads from the same warehouse as the compliance lake.",
+        "tags": ["data", "dependency"]
+      },
+      {
+        "fragmentId": "compliance-lake-warehouse",
+        "content": "The compliance lake currently uses Redshift.",
+        "tags": ["data", "warehouse"]
+      },
+      {
+        "fragmentId": "zephyr-old-dashboard-store",
+        "content": "The retired Zephyr risk dashboard prototype used BigQuery.",
+        "tags": ["data", "history"]
+      }
+    ],
+    "question": "Which warehouse does the Zephyr risk dashboard use now?",
+    "expectedAnswer": "Redshift",
+    "mustContain": ["Redshift"],
+    "mustNotContain": ["BigQuery"],
+    "expectedFragments": ["zephyr-risk-dashboard", "compliance-lake-warehouse"],
+    "tags": ["data"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-022",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "delta-proxy-port",
+        "content": "Delta's customer proxy listens on the port assigned to the green gateway.",
+        "tags": ["network", "routing"]
+      },
+      {
+        "fragmentId": "green-gateway-port",
+        "content": "The green gateway listens on port 9443.",
+        "tags": ["network", "gateway"]
+      },
+      {
+        "fragmentId": "blue-gateway-port",
+        "content": "The blue gateway listens on port 9444.",
+        "tags": ["network", "gateway"]
+      }
+    ],
+    "question": "Which port does Delta's customer proxy listen on?",
+    "expectedAnswer": "9443",
+    "mustContain": ["9443"],
+    "mustNotContain": ["9444"],
+    "expectedFragments": ["delta-proxy-port", "green-gateway-port"],
+    "tags": ["network"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-023",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "phoenix-deploy-code-name",
+        "content": "The Phoenix deploy train uses the codename Lantern.",
+        "tags": ["release", "codename"]
+      },
+      {
+        "fragmentId": "lantern-release-manager",
+        "content": "Lantern is managed by Priya.",
+        "tags": ["release", "team"]
+      },
+      {
+        "fragmentId": "phoenix-incident-manager",
+        "content": "Mateo manages Phoenix production incidents.",
+        "tags": ["incident", "team"]
+      }
+    ],
+    "question": "Who manages the Phoenix deploy train?",
+    "expectedAnswer": "Priya",
+    "mustContain": ["Priya"],
+    "mustNotContain": ["Mateo"],
+    "expectedFragments": ["phoenix-deploy-code-name", "lantern-release-manager"],
+    "tags": ["release"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-024",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "customer-aria-account",
+        "content": "The enterprise account named Aria maps to customer id C-7319.",
+        "tags": ["customer", "identity"]
+      },
+      {
+        "fragmentId": "aria-support-tier",
+        "content": "Customer id C-7319 is on the Platinum support tier.",
+        "tags": ["customer", "support"]
+      },
+      {
+        "fragmentId": "aria-legacy-tier",
+        "content": "Aria was on the Gold support tier before contract renewal.",
+        "tags": ["customer", "history"]
+      }
+    ],
+    "question": "Which support tier is Aria on now?",
+    "expectedAnswer": "Platinum",
+    "mustContain": ["Platinum"],
+    "mustNotContain": ["Gold"],
+    "expectedFragments": ["customer-aria-account", "aria-support-tier"],
+    "tags": ["customer"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-025",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "migration-rhea-status",
+        "content": "Migration Rhea is blocked until the billing schema review is complete.",
+        "tags": ["task", "migration"]
+      },
+      {
+        "fragmentId": "billing-schema-review-status",
+        "content": "The billing schema review is still waiting on security approval.",
+        "tags": ["task", "review"]
+      },
+      {
+        "fragmentId": "rhea-old-status",
+        "content": "Migration Rhea was ready for staging before the billing schema issue was found.",
+        "tags": ["task", "history"]
+      }
+    ],
+    "question": "What is blocking Migration Rhea?",
+    "expectedAnswer": "security approval",
+    "mustContain": ["security approval"],
+    "mustNotContain": ["ready for staging"],
+    "expectedFragments": ["migration-rhea-status", "billing-schema-review-status"],
+    "tags": ["task"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-026",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "onboarding-next-step",
+        "content": "The partner onboarding checklist is waiting for the KYC packet.",
+        "tags": ["task", "onboarding"]
+      },
+      {
+        "fragmentId": "kyc-packet-owner",
+        "content": "Luis owns the KYC packet.",
+        "tags": ["task", "ownership"]
+      },
+      {
+        "fragmentId": "contract-owner",
+        "content": "Chen owns the partner contract redlines.",
+        "tags": ["task", "legal"]
+      }
+    ],
+    "question": "Who owns the next blocker for partner onboarding?",
+    "expectedAnswer": "Luis",
+    "mustContain": ["Luis"],
+    "mustNotContain": ["Chen"],
+    "expectedFragments": ["onboarding-next-step", "kyc-packet-owner"],
+    "tags": ["task"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-027",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "monday-standup-output",
+        "content": "Monday standup decided that the dashboard beta should ship only after accessibility signoff.",
+        "tags": ["task", "decision"]
+      },
+      {
+        "fragmentId": "accessibility-signoff-state",
+        "content": "Accessibility signoff for the dashboard beta is complete.",
+        "tags": ["task", "status"]
+      },
+      {
+        "fragmentId": "old-dashboard-beta-state",
+        "content": "Last week the dashboard beta was blocked on copy review.",
+        "tags": ["task", "history"]
+      }
+    ],
+    "question": "Can the dashboard beta ship according to the latest remembered status?",
+    "expectedAnswer": "yes",
+    "mustContain": ["yes"],
+    "mustNotContain": ["blocked on copy review"],
+    "expectedFragments": ["monday-standup-output", "accessibility-signoff-state"],
+    "tags": ["task"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v2-028",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "slo-review-owner-policy",
+        "content": "The SLO review owner is the person currently assigned to reliability triage.",
+        "tags": ["ops", "ownership"]
+      },
+      {
+        "fragmentId": "reliability-triage-current",
+        "content": "Noor is currently assigned to reliability triage.",
+        "tags": ["ops", "team"]
+      },
+      {
+        "fragmentId": "reliability-triage-next",
+        "content": "Pavel takes over reliability triage next month.",
+        "tags": ["ops", "future"]
+      }
+    ],
+    "question": "Who owns the SLO review now?",
+    "expectedAnswer": "Noor",
+    "mustContain": ["Noor"],
+    "mustNotContain": ["Pavel"],
+    "expectedFragments": ["slo-review-owner-policy", "reliability-triage-current"],
+    "tags": ["ops"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-029",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "tablet-release-region-policy",
+        "content": "Tablet releases use the same rollout region as the Nova search cluster.",
+        "tags": ["release", "region"]
+      },
+      {
+        "fragmentId": "nova-search-region",
+        "content": "The Nova search cluster rollout region for linked tablet release policies is ca-central-1.",
+        "tags": ["infra", "release", "region"]
+      },
+      {
+        "fragmentId": "nova-indexer-region",
+        "content": "The Nova indexer batch runs in us-east-2.",
+        "tags": ["infra", "batch"]
+      }
+    ],
+    "question": "Which region should tablet releases use?",
+    "expectedAnswer": "ca-central-1",
+    "mustContain": ["ca-central-1"],
+    "mustNotContain": ["us-east-2"],
+    "expectedFragments": ["tablet-release-region-policy", "nova-search-region"],
+    "tags": ["release", "region"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v2-030",
+    "namespace": "llm-eval-v2",
+    "memoryFragments": [
+      {
+        "fragmentId": "design-review-format-current",
+        "content": "Current design review notes for the mobile wallet project must be written in ADR format.",
+        "tags": ["preference", "design"]
+      },
+      {
+        "fragmentId": "design-review-format-legacy",
+        "content": "The mobile wallet project used slide decks for design reviews before the architecture reset.",
+        "tags": ["preference", "history"]
+      },
+      {
+        "fragmentId": "adr-template-owner",
+        "content": "The ADR template is maintained by the architecture enablement team.",
+        "tags": ["design", "template"]
+      }
+    ],
+    "question": "Which format should current mobile wallet design review notes use?",
+    "expectedAnswer": "ADR",
+    "mustContain": ["ADR"],
+    "mustNotContain": ["slide decks"],
+    "expectedFragments": ["design-review-format-current"],
+    "tags": ["preference", "design"],
+    "difficulty": "medium"
+  }
+]

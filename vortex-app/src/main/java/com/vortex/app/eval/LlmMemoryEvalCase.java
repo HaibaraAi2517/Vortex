@@ -23,7 +23,16 @@ public class LlmMemoryEvalCase {
     private String expectedAnswer;
 
     @Builder.Default
+    private List<String> mustContain = List.of();
+
+    @Builder.Default
+    private List<String> mustNotContain = List.of();
+
+    @Builder.Default
     private List<String> expectedFragments = List.of();
+
+    @Builder.Default
+    private List<String> failureCategories = List.of();
 
     @Builder.Default
     private List<String> tags = List.of();

@@ -20,7 +20,9 @@ param(
 
     [switch]$SkipComposeUp,
 
-    [switch]$SkipPackage
+    [switch]$SkipPackage,
+
+    [switch]$SkipGenerationPreflight
 )
 
 $ErrorActionPreference = "Stop"
@@ -58,6 +60,54 @@ function Assert-LastExitCodeZero {
     }
 }
 
+function Test-GenerationEndpoint {
+    param(
+        [string]$BaseUrl,
+        [string]$ApiKey,
+        [string]$Model
+    )
+    $uri = "$BaseUrl/chat/completions"
+    $headers = @{
+        Authorization = "Bearer $ApiKey"
+        "Content-Type" = "application/json"
+    }
+    $body = @{
+        model = $Model
+        messages = @(@{
+            role = "user"
+            content = "Return exactly OK."
+        })
+        temperature = 0
+        max_tokens = 8
+    } | ConvertTo-Json -Depth 8
+
+    try {
+        Invoke-WebRequest -Uri $uri -Method Post -Headers $headers -Body $body -TimeoutSec 30 | Out-Null
+    } catch {
+        $statusCode = $null
+        $responseBody = ""
+        if ($_.Exception.Response) {
+            $statusCode = [int]$_.Exception.Response.StatusCode
+            $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+            try {
+                $responseBody = $reader.ReadToEnd()
+            } finally {
+                $reader.Dispose()
+            }
+        }
+        $message = "Generation preflight failed"
+        if ($null -ne $statusCode) {
+            $message += " status=$statusCode"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($responseBody)) {
+            $message += " body=$responseBody"
+        } else {
+            $message += ": $($_.Exception.Message)"
+        }
+        throw $message
+    }
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $repoRoot
 
@@ -86,6 +136,10 @@ if (-not $SkipPackage) {
     Assert-LastExitCodeZero -Label "mvn package"
 }
 Assert-PathExists -Path $evalCliJar -Label "eval CLI jar"
+
+if (-not $SkipGenerationPreflight) {
+    Test-GenerationEndpoint -BaseUrl $normalizedBaseUrl -ApiKey $ApiKey -Model $Model
+}
 
 $env:BGE_MODEL_PATH = $modelDir
 Remove-Item Env:VORTEX_KERNEL_EMBEDDING_BGE_SAFE_HASH_MODE -ErrorAction SilentlyContinue

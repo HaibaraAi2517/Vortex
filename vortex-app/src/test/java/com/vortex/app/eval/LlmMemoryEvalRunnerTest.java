@@ -303,6 +303,33 @@ class LlmMemoryEvalRunnerTest {
     }
 
     @Test
+    void loadV21ExtendedCaseSetShouldBroadenMemoryCoverageWithoutReplacingOfficialV21() {
+        List<LlmMemoryEvalCase> cases = runner.loadCaseSet("classpath:llm-memory-eval-set-v2-1-extended.json");
+
+        assertThat(cases).hasSize(30);
+        assertThat(cases.subList(0, 15))
+                .extracting(LlmMemoryEvalCase::getCaseId)
+                .containsExactly("v2-001", "v2-002", "v2-003", "v2-004", "v2-005",
+                        "v2-006", "v2-007", "v2-008", "v2-009", "v2-010",
+                        "v2-011", "v2-012", "v2-013", "v2-014", "v2-015");
+        assertThat(cases)
+                .extracting(LlmMemoryEvalCase::getCaseId)
+                .contains("v2-016", "v2-018", "v2-023", "v2-025", "v2-030");
+        assertThat(cases)
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v2-016");
+                    assertThat(evalCase.getQuestion()).contains("Avery");
+                    assertThat(evalCase.getExpectedAnswer()).isEqualTo("avery-deploy@example.com");
+                })
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v2-025");
+                    assertThat(evalCase.getExpectedFragments())
+                            .containsExactly("migration-rhea-status", "billing-schema-review-status");
+                    assertThat(evalCase.getExpectedAnswer()).isEqualTo("security approval");
+                });
+    }
+
+    @Test
     void runConfiguredModesShouldUseConfiguredDatasetLocation(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
         Path datasetPath = tempDir.resolve("custom-eval-set.json");
         Files.writeString(datasetPath, """
@@ -396,6 +423,69 @@ class LlmMemoryEvalRunnerTest {
         assertThat(result.getFeedbackLatencyMs()).isGreaterThanOrEqualTo(0L);
         assertThat(report.getModeSummaries().get("Vortex-Memory").getFeedbackSubmitted()).isEqualTo(1);
         assertThat(report.getModeSummaries().get("Vortex-Memory").getLearningUpdateCountDelta()).isEqualTo(1L);
+    }
+
+    @Test
+    void runMemoryModeShouldClassifyRecallMissEvenWhenAnswerWasGuessed() {
+        LlmMemoryEvalCase evalCase = LlmMemoryEvalCase.builder()
+                .caseId("judge-001")
+                .namespace("llm-eval-judge")
+                .memoryFragments(List.of(
+                        LlmMemoryEvalCase.EvalMemoryFragment.builder()
+                                .fragmentId("actual-owner")
+                                .content("The review owner is Mira.")
+                                .tags(List.of("judge"))
+                                .build(),
+                        LlmMemoryEvalCase.EvalMemoryFragment.builder()
+                                .fragmentId("hidden-policy")
+                                .content("The review owner must also be confirmed by the hidden policy.")
+                                .tags(List.of("hidden"))
+                                .build()))
+                .question("Who owns the review?")
+                .expectedAnswer("Mira")
+                .expectedFragments(List.of("actual-owner", "hidden-policy"))
+                .tags(List.of("judge"))
+                .build();
+        expectedAnswers.put("judge-001", "Mira");
+
+        LlmMemoryEvalReport report = runner.run(List.of(evalCase), List.of(LlmMemoryEvalMode.VORTEX_MEMORY));
+
+        LlmMemoryEvalResult result = report.getResults().getFirst();
+        assertThat(result.isRecallHit()).isTrue();
+        assertThat(result.isCorrect()).isFalse();
+        assertThat(result.getFailureReason()).isEqualTo(LlmMemoryEvalRunner.FAILURE_RECALL_MISS);
+        assertThat(result.getMissingMustContain()).isEmpty();
+        assertThat(result.getMatchedForbiddenTerms()).isEmpty();
+    }
+
+    @Test
+    void runMemoryModeShouldClassifyInsufficientAnswerWhenExpectedMemoryWasReturned() {
+        LlmMemoryEvalCase evalCase = LlmMemoryEvalCase.builder()
+                .caseId("judge-002")
+                .namespace("llm-eval-judge")
+                .memoryFragments(List.of(LlmMemoryEvalCase.EvalMemoryFragment.builder()
+                        .fragmentId("warehouse")
+                        .content("The Zephyr risk dashboard uses Redshift.")
+                        .tags(List.of("judge"))
+                        .build()))
+                .question("Which warehouse does Zephyr use?")
+                .expectedAnswer("Redshift")
+                .mustContain(List.of("Zephyr risk dashboard"))
+                .expectedFragments(List.of("warehouse"))
+                .tags(List.of("judge"))
+                .build();
+        when(generationServiceProvider.getIfAvailable()).thenReturn(request -> GenerationResult.builder()
+                .content("The provided memory is insufficient to determine the warehouse.")
+                .latencyMs(1L)
+                .build());
+
+        LlmMemoryEvalReport report = runner.run(List.of(evalCase), List.of(LlmMemoryEvalMode.VORTEX_MEMORY));
+
+        LlmMemoryEvalResult result = report.getResults().getFirst();
+        assertThat(result.isRecallHit()).isTrue();
+        assertThat(result.isCorrect()).isFalse();
+        assertThat(result.getFailureReason()).isEqualTo(LlmMemoryEvalRunner.FAILURE_INSUFFICIENT_WHEN_MEMORY_AVAILABLE);
+        assertThat(result.getMissingMustContain()).containsExactly("Zephyr risk dashboard");
     }
 
     @Test

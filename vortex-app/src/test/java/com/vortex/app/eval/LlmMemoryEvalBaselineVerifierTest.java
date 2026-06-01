@@ -98,6 +98,20 @@ class LlmMemoryEvalBaselineVerifierTest {
                 .contains("environment.datasetLocation");
     }
 
+    @Test
+    void v21ExtendedDatasetShouldInferCandidateAuditProfileWithoutStrictVerifier() {
+        String datasetLocation = "classpath:llm-memory-eval-set-v2-1-extended.json";
+
+        assertThat(LlmMemoryEvalBaselineProfile.inferDatasetVersion(datasetLocation))
+                .isEqualTo("v2.1-extended");
+        assertThat(LlmMemoryEvalBaselineProfile.inferAuditProfileId(datasetLocation))
+                .isEqualTo("candidate-v2.1-extended");
+        assertThat(LlmMemoryEvalBaselineProfile.inferStrictVerifierProfileId(datasetLocation))
+                .isEmpty();
+        assertThat(LlmMemoryEvalBaselineProfile.CANDIDATE_V2_1_EXTENDED.strictReportProfile())
+                .isFalse();
+    }
+
     private LlmMemoryEvalReport officialBaselineReport() {
         return LlmMemoryEvalReport.builder()
                 .generatedAt(Instant.parse("2026-05-29T14:00:02.368131900Z"))

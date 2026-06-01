@@ -31,6 +31,14 @@ public class LlmMemoryEvalResult {
     @JsonProperty("isCorrect")
     private boolean correct;
 
+    private String failureReason;
+
+    @Builder.Default
+    private List<String> missingMustContain = List.of();
+
+    @Builder.Default
+    private List<String> matchedForbiddenTerms = List.of();
+
     private long latencyMs;
     private long storeLatencyMs;
     private long recoveryTargetWaitLatencyMs;

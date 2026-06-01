@@ -50,6 +50,9 @@ public class LlmMemoryEvalRunner {
     private static final TypeReference<List<LlmMemoryEvalCase>> CASE_SET_TYPE = new TypeReference<>() {};
     private static final String EVAL_MEMORY_TAG = "llm-memory-eval-memory";
     private static final String EVAL_EVICTION_FILLER_TAG = "llm-memory-eval-eviction-filler";
+    static final String FAILURE_RECALL_MISS = "recall_miss";
+    static final String FAILURE_INSUFFICIENT_WHEN_MEMORY_AVAILABLE = "insufficient_when_memory_available";
+    static final String FAILURE_RUNTIME_ERROR = "runtime_error";
 
     private final HierarchicalMemoryController hmc;
     private final PromptAssembler promptAssembler;
@@ -203,9 +206,15 @@ public class LlmMemoryEvalRunner {
 
             List<String> returnedFragmentIds = mapReturnedFragmentIds(recallResult, actualToLogicalIds);
             List<String> recalledFromTiers = mapReturnedTiers(recallResult);
-            boolean correct = answerJudge.isCorrect(evalCase.getExpectedAnswer(), generationResult.getContent());
             boolean recallHit = !returnedFragmentIds.isEmpty()
                     && returnedFragmentIds.stream().anyMatch(expectedFragments::contains);
+            RuleBasedAnswerJudge.Judgment judgment = answerJudge.evaluate(
+                    evalCase.getExpectedAnswer(),
+                    evalCase.getMustContain(),
+                    evalCase.getMustNotContain(),
+                    generationResult.getContent());
+            String failureReason = classifyFailureReason(mode, expectedFragments, returnedFragmentIds, recallHit, judgment);
+            boolean correct = judgment.correct() && isBlank(failureReason);
             long feedbackStartedAt = System.nanoTime();
             FeedbackObservation feedbackObservation =
                     maybeSubmitFeedback(mode, recallResult, expectedFragments, returnedFragmentIds, correct);
@@ -221,6 +230,9 @@ public class LlmMemoryEvalRunner {
                     .recalledFromTiers(recalledFromTiers)
                     .generatedAnswer(generationResult.getContent())
                     .correct(correct)
+                    .failureReason(failureReason)
+                    .missingMustContain(judgment.missingMustContain())
+                    .matchedForbiddenTerms(judgment.matchedForbiddenTerms())
                     .latencyMs(elapsedMillis(startedAt))
                     .promptTokens(generationResult.getPromptTokens() != null
                             ? generationResult.getPromptTokens()
@@ -256,6 +268,7 @@ public class LlmMemoryEvalRunner {
                     .recalledFromTiers(recalledFromTiers)
                     .generatedAnswer("")
                     .correct(false)
+                    .failureReason(FAILURE_RUNTIME_ERROR)
                     .latencyMs(elapsedMillis(startedAt))
                     .promptTokens(null)
                     .completionTokens(null)
@@ -335,6 +348,35 @@ public class LlmMemoryEvalRunner {
 
     private RecallDiagnostics extractRecallDiagnostics(RecallResult recallResult) {
         return recallResult == null ? null : recallResult.getDiagnostics();
+    }
+
+    private String classifyFailureReason(
+            LlmMemoryEvalMode mode,
+            List<String> expectedFragments,
+            List<String> returnedFragmentIds,
+            boolean recallHit,
+            RuleBasedAnswerJudge.Judgment judgment) {
+        if (isRecallMiss(mode, expectedFragments, returnedFragmentIds)) {
+            return FAILURE_RECALL_MISS;
+        }
+        if (judgment.correct()) {
+            return null;
+        }
+        if (RuleBasedAnswerJudge.FAILURE_INSUFFICIENT_ANSWER.equals(judgment.failureReason())
+                && mode.usesMemory()
+                && recallHit) {
+            return FAILURE_INSUFFICIENT_WHEN_MEMORY_AVAILABLE;
+        }
+        return judgment.failureReason();
+    }
+
+    private boolean isRecallMiss(
+            LlmMemoryEvalMode mode,
+            List<String> expectedFragments,
+            List<String> returnedFragmentIds) {
+        return mode.usesMemory()
+                && !safeList(expectedFragments).isEmpty()
+                && !safeList(returnedFragmentIds).containsAll(expectedFragments);
     }
 
     private Map<String, LlmMemoryEvalReport.ModeSummary> buildModeSummaries(List<LlmMemoryEvalResult> results) {

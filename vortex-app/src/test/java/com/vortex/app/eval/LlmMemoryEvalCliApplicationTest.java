@@ -78,7 +78,8 @@ class LlmMemoryEvalCliApplicationTest {
                 .contains("official-v2-strict [strict-report]")
                 .contains("audit-v2-stability [audit-only]")
                 .contains("official-v2.1-strict [strict-report]")
-                .contains("contract-v2.1-candidate [strict-report]");
+                .contains("contract-v2.1-candidate [strict-report]")
+                .contains("candidate-v2.1-extended [audit-only]");
     }
 
     @Test
@@ -116,6 +117,24 @@ class LlmMemoryEvalCliApplicationTest {
                 .contains("Dataset version: v2.1")
                 .contains("Dataset location: classpath:llm-memory-eval-set-v2-1.json")
                 .contains("Vortex-RecoveredMemory correct=15/15 accuracy=1.0 recoveredAccuracy=1.0 recoveredL2HitRate=1.0");
+    }
+
+    @Test
+    void verifyCommandShouldDescribeV21ExtendedCandidateProfile(CapturedOutput output) {
+        int exitCode = LlmMemoryEvalCliApplication.execute(new String[] {
+                "verify",
+                "--profile",
+                "candidate-v2.1-extended",
+                "--describe"
+        });
+
+        assertThat(exitCode).isZero();
+        assertThat(output.getOut())
+                .contains("Profile: candidate-v2.1-extended")
+                .contains("Type: audit-only")
+                .contains("Dataset version: v2.1-extended")
+                .contains("Dataset location: classpath:llm-memory-eval-set-v2-1-extended.json")
+                .contains("Strict verify expectations: none");
     }
 
     private LlmMemoryEvalReport strictReport(

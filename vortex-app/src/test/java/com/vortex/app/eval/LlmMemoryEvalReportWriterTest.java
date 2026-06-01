@@ -30,6 +30,9 @@ class LlmMemoryEvalReportWriterTest {
                         .question("q")
                         .generatedAnswer("a")
                         .correct(true)
+                        .failureReason("answer_missing_fact")
+                        .missingMustContain(List.of("CSV"))
+                        .matchedForbiddenTerms(List.of("XLSX"))
                         .latencyMs(123L)
                         .generationLatencyMs(100L)
                         .generationLatencyNanos(100_000_000L)
@@ -96,11 +99,16 @@ class LlmMemoryEvalReportWriterTest {
         assertThat(markdown).contains("Eval System Prompt SHA-256: 7f6d9c7d4f0cbe4f6c2c0e1b97c7b0f5b91f0d7d31ef9d0620d7f3c56f7f5a01");
         assertThat(markdown).contains("Eval System Prompt Chars: 512");
         assertThat(markdown).contains("## Recall Diagnostics");
+        assertThat(markdown).contains("Failure Reason | Missing Must Contain | Matched Forbidden");
+        assertThat(markdown).contains("profile-001 | Vortex-Memory | true | answer_missing_fact | CSV | XLSX");
         assertThat(markdown).contains("profile-001 | Vortex-Memory |  | 1 | llm-memory-eval-memory | 1 | 1 | 1");
         assertThat(markdown).contains("## Generation Telemetry");
         assertThat(markdown).contains("profile-001 | Vortex-Memory | 200 | 1 | 321 | 654");
         assertThat(json).contains("\"environment\"");
         assertThat(json).contains("\"recallDiagnostics\"");
+        assertThat(json).contains("\"failureReason\" : \"answer_missing_fact\"");
+        assertThat(json).contains("\"missingMustContain\" : [ \"CSV\" ]");
+        assertThat(json).contains("\"matchedForbiddenTerms\" : [ \"XLSX\" ]");
         assertThat(json).contains("\"generationLatencyNanos\" : 100000000");
         assertThat(json).contains("\"generationBaseUrl\" : \"https://sub2.congmingai.com/v1\"");
         assertThat(json).contains("\"evalSystemPromptSha256\" : \"7f6d9c7d4f0cbe4f6c2c0e1b97c7b0f5b91f0d7d31ef9d0620d7f3c56f7f5a01\"");

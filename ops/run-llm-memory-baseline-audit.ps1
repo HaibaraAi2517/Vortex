@@ -31,7 +31,7 @@ param(
 
     [switch]$ForceRerunExisting,
 
-    [ValidateRange(0, 15)]
+    [ValidateRange(0, 50)]
     [int]$BaselineNoMemoryMaxCorrect = 0,
 
     [ValidateRange(0.0, 1.0)]
@@ -89,6 +89,9 @@ function New-VerifyResult {
 
 function Get-DatasetVersion {
     param([string]$Location)
+    if ($Location -eq "classpath:llm-memory-eval-set-v2-1-extended.json") {
+        return "v2.1-extended"
+    }
     if ($Location -eq "classpath:llm-memory-eval-set-v2-1.json") {
         return "v2.1"
     }
@@ -103,6 +106,9 @@ function Get-DatasetVersion {
 
 function Get-AuditBaselineProfile {
     param([string]$Location)
+    if ($Location -eq "classpath:llm-memory-eval-set-v2-1-extended.json") {
+        return "candidate-v2.1-extended"
+    }
     if ($Location -eq "classpath:llm-memory-eval-set-v2-1.json") {
         return "official-v2.1-strict"
     }
@@ -114,6 +120,9 @@ function Get-AuditBaselineProfile {
 
 function Get-StrictVerifierProfile {
     param([string]$Location)
+    if ($Location -eq "classpath:llm-memory-eval-set-v2-1-extended.json") {
+        return ""
+    }
     if ($Location -eq "classpath:llm-memory-eval-set-v2-1.json") {
         return "official-v2.1-strict"
     }
@@ -125,6 +134,9 @@ function Get-StrictVerifierProfile {
 
 function Get-BaselineIdForProfile {
     param([string]$Profile)
+    if ($Profile -eq "candidate-v2.1-extended") {
+        return "candidate-v2.1-extended"
+    }
     if ($Profile -eq "official-v2.1-strict") {
         return "20260601-v2-009-contract-audit-5x-net"
     }
@@ -177,6 +189,15 @@ function Get-BaselineProfileDefinition {
             DatasetVersion = "v2.1"
             DatasetLocation = "classpath:llm-memory-eval-set-v2-1.json"
             StrictReportProfile = $true
+        }
+    }
+    if ($normalized -eq "candidate-v2.1-extended") {
+        return [pscustomobject]@{
+            Id = "candidate-v2.1-extended"
+            BaselineId = "candidate-v2.1-extended"
+            DatasetVersion = "v2.1-extended"
+            DatasetLocation = "classpath:llm-memory-eval-set-v2-1-extended.json"
+            StrictReportProfile = $false
         }
     }
     return $null
@@ -349,7 +370,9 @@ function New-ProfileGateResult {
     }
     $customDataset = $expectedDatasetVersion -eq "custom"
     $baselineProfileKnownOrCustom = $null -ne $baselineDefinition -or ($customDataset -and $BaselineProfile -eq "custom")
-    $strictProfileKnownOrCustom = $null -ne $strictDefinition -or ($customDataset -and [string]::IsNullOrWhiteSpace($StrictVerifierProfile))
+    $strictProfileKnownOrCustom = $null -ne $strictDefinition `
+        -or ($customDataset -and [string]::IsNullOrWhiteSpace($StrictVerifierProfile)) `
+        -or ([string]::IsNullOrWhiteSpace($expectedStrictVerifierProfile) -and [string]::IsNullOrWhiteSpace($StrictVerifierProfile))
     $baselineProfileDatasetMatches = if ($null -ne $baselineDefinition) {
         $baselineDefinition.DatasetLocation -eq $DatasetLocation -and $baselineDefinition.DatasetVersion -eq $DatasetVersion
     } else {
@@ -379,6 +402,11 @@ function New-ProfileGateResult {
     $runVerifyProfileMatches = $completedRuns.Count -eq $RequestedRounds -and @($completedRuns | Where-Object {
         $null -eq $_.Verify -or [string]$_.Verify.Profile -ne $StrictVerifierProfile
     }).Count -eq 0
+    $strictProfileDefinitionExpected = if ([string]::IsNullOrWhiteSpace($expectedStrictVerifierProfile)) {
+        "no strict verifier profile for {0}/{1}" -f $DatasetVersion, $DatasetLocation
+    } else {
+        "strict-report profile for {0}/{1}" -f $DatasetVersion, $DatasetLocation
+    }
 
     $checks = @(
         New-ProfileGateCheck `
@@ -404,7 +432,7 @@ function New-ProfileGateResult {
         New-ProfileGateCheck `
             -Name "strictVerifierProfileDefinition" `
             -Passed ($strictProfileKnownOrCustom -and $strictProfileDatasetMatches) `
-            -Expected ("strict-report profile for {0}/{1}" -f $DatasetVersion, $DatasetLocation) `
+            -Expected $strictProfileDefinitionExpected `
             -Actual $StrictVerifierProfile
         New-ProfileGateCheck `
             -Name "runDatasetLocation" `
@@ -638,6 +666,9 @@ function Get-CaseFailureDetails {
                 MissingExpectedFragments = $missingExpectedFragments
                 RecalledFromTiers = @($result.recalledFromTiers | ForEach-Object { [string]$_ })
                 RecallHit = $result.recallHit
+                FailureReason = [string]$result.failureReason
+                MissingMustContain = @($result.missingMustContain | ForEach-Object { [string]$_ })
+                MatchedForbiddenTerms = @($result.matchedForbiddenTerms | ForEach-Object { [string]$_ })
                 EvictedBeforeAnswer = $result.evictedBeforeAnswer
                 GeneratedAnswer = [string]$result.generatedAnswer
                 ErrorMessage = $result.errorMessage
@@ -658,6 +689,9 @@ function Get-CaseFailureSummary {
     foreach ($group in ($items | Group-Object -Property CaseId, Mode)) {
         $first = $group.Group[0]
         $missing = @($group.Group | ForEach-Object { $_.MissingExpectedFragments } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+        $failureReasons = @($group.Group | ForEach-Object { $_.FailureReason } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+        $missingMustContain = @($group.Group | ForEach-Object { $_.MissingMustContain } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+        $matchedForbiddenTerms = @($group.Group | ForEach-Object { $_.MatchedForbiddenTerms } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
         $returnedSets = @($group.Group | ForEach-Object { ($_.ReturnedFragmentIds -join ",") } | Sort-Object -Unique)
         $summary.Add([pscustomobject]@{
             CaseId = $first.CaseId
@@ -665,9 +699,12 @@ function Get-CaseFailureSummary {
             FailureCount = @($group.Group).Count
             RoundCount = $RoundCount
             FailureRounds = @($group.Group | Sort-Object RoundIndex | ForEach-Object { $_.RoundIndex })
+            FailureReasons = $failureReasons
             RecallHitFailureCount = @($group.Group | Where-Object { $_.RecallHit -eq $true }).Count
             RecallMissFailureCount = @($group.Group | Where-Object { $_.RecallHit -eq $false }).Count
             MissingExpectedFragments = $missing
+            MissingMustContain = $missingMustContain
+            MatchedForbiddenTerms = $matchedForbiddenTerms
             ReturnedFragmentSets = $returnedSets
             ExpectedAnswer = $first.ExpectedAnswer
             ExpectedFragments = $first.ExpectedFragments
@@ -708,10 +745,10 @@ function Get-CaseFailureSummaryMarkdown {
         return "No Vortex case failures."
     }
     $builder = New-Object System.Text.StringBuilder
-    [void]$builder.AppendLine("| Case | Mode | Failures | Rounds | Recall Hit | Recall Miss | Missing Expected Fragments | Expected Answer | Question |")
-    [void]$builder.AppendLine("| --- | --- | ---: | --- | ---: | ---: | --- | --- | --- |")
+    [void]$builder.AppendLine("| Case | Mode | Failures | Reasons | Rounds | Recall Hit | Recall Miss | Missing Expected Fragments | Missing Must Contain | Forbidden Terms | Expected Answer | Question |")
+    [void]$builder.AppendLine("| --- | --- | ---: | --- | --- | ---: | ---: | --- | --- | --- | --- | --- |")
     foreach ($item in $items) {
-        [void]$builder.AppendLine("| $(Format-MarkdownCell $item.CaseId) | $(Format-MarkdownCell $item.Mode) | $($item.FailureCount)/$($item.RoundCount) | $(Format-MarkdownCell $item.FailureRounds) | $($item.RecallHitFailureCount) | $($item.RecallMissFailureCount) | $(Format-MarkdownCell $item.MissingExpectedFragments) | $(Format-MarkdownCell $item.ExpectedAnswer) | $(Format-MarkdownCell $item.Question) |")
+        [void]$builder.AppendLine("| $(Format-MarkdownCell $item.CaseId) | $(Format-MarkdownCell $item.Mode) | $($item.FailureCount)/$($item.RoundCount) | $(Format-MarkdownCell $item.FailureReasons) | $(Format-MarkdownCell $item.FailureRounds) | $($item.RecallHitFailureCount) | $($item.RecallMissFailureCount) | $(Format-MarkdownCell $item.MissingExpectedFragments) | $(Format-MarkdownCell $item.MissingMustContain) | $(Format-MarkdownCell $item.MatchedForbiddenTerms) | $(Format-MarkdownCell $item.ExpectedAnswer) | $(Format-MarkdownCell $item.Question) |")
     }
     return $builder.ToString()
 }
@@ -723,11 +760,11 @@ function Get-CaseFailureDetailsMarkdown {
         return "No Vortex case failures."
     }
     $builder = New-Object System.Text.StringBuilder
-    [void]$builder.AppendLine("| Round | Case | Mode | Recall Hit | Returned Fragments | Missing Expected Fragments | Generated Answer |")
-    [void]$builder.AppendLine("| ---: | --- | --- | --- | --- | --- | --- |")
+    [void]$builder.AppendLine("| Round | Case | Mode | Reason | Recall Hit | Returned Fragments | Missing Expected Fragments | Missing Must Contain | Forbidden Terms | Generated Answer |")
+    [void]$builder.AppendLine("| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     foreach ($item in ($items | Sort-Object RoundIndex, CaseId, Mode)) {
         $answerPreview = Limit-Text -Value $item.GeneratedAnswer
-        [void]$builder.AppendLine("| $($item.RoundIndex) | $(Format-MarkdownCell $item.CaseId) | $(Format-MarkdownCell $item.Mode) | $(Format-MarkdownCell $item.RecallHit) | $(Format-MarkdownCell $item.ReturnedFragmentIds) | $(Format-MarkdownCell $item.MissingExpectedFragments) | $(Format-MarkdownCell $answerPreview) |")
+        [void]$builder.AppendLine("| $($item.RoundIndex) | $(Format-MarkdownCell $item.CaseId) | $(Format-MarkdownCell $item.Mode) | $(Format-MarkdownCell $item.FailureReason) | $(Format-MarkdownCell $item.RecallHit) | $(Format-MarkdownCell $item.ReturnedFragmentIds) | $(Format-MarkdownCell $item.MissingExpectedFragments) | $(Format-MarkdownCell $item.MissingMustContain) | $(Format-MarkdownCell $item.MatchedForbiddenTerms) | $(Format-MarkdownCell $answerPreview) |")
     }
     return $builder.ToString()
 }

@@ -59,6 +59,14 @@
 
 v2.1 只显式化 `v2-009` 的 same-weekday 时间偏移 contract。它有独立的 `official-v2.1-strict` strict profile，因此不会再被误判为相对正式 v2 数据集漂移。`contract-v2.1-candidate` 保留为过渡 alias。
 
+当前 v2.1 扩展候选评测集是：
+
+- 数据集：`classpath:llm-memory-eval-set-v2-1-extended.json`
+- case 数量：30
+- baseline profile：`candidate-v2.1-extended`
+- strict verifier profile：无
+- 定位：在保留 v2.1 前 15 条 contract 的基础上，新增多轮偏好、时间约束、跨片段组合、干扰记忆、命名实体和任务状态恢复场景。它用于候选 audit，不替代 `official-v2.1-strict`。
+
 v2.1 正式升级提案见：
 
 - [llm-memory-eval-v2-1-upgrade-proposal.md](E:/1projects/claude/Vortex/ops/runbooks/llm-memory-eval-v2-1-upgrade-proposal.md:1)
@@ -78,6 +86,30 @@ v2.1 正式升级提案见：
 - 需要多跳时必须走完多跳，再在首句直接回答
 
 从现在开始，任何真实评测结论都必须绑定这版 prompt contract；如果 prompt 文本变化，必须刷新基线报告。
+
+## 规则判分字段
+
+评测 case 支持以下可选判分字段：
+
+1. `mustContain`：生成答案必须包含的事实短语。
+2. `mustNotContain`：生成答案不能包含的干扰或过期事实短语。
+3. `expectedFragments`：该题预期召回的 logical fragment id。
+4. `failureCategories`：预留的人工分类字段，用于后续按场景聚合。
+
+报告中的每条 result 会输出：
+
+1. `failureReason`
+2. `missingMustContain`
+3. `matchedForbiddenTerms`
+
+当前 failure reason：
+
+1. `recall_miss`：memory mode 下没有召回全部 `expectedFragments`。
+2. `answer_missing_fact`：召回条件满足，但答案缺少 `expectedAnswer` 或 `mustContain` 事实。
+3. `hallucinated_forbidden_fact`：答案命中 `mustNotContain`。
+4. `insufficient_when_memory_available`：已召回预期 memory，但模型仍回答 memory insufficient。
+5. `insufficient_answer`：答案表示信息不足，但当前场景没有可归因为 memory 已可用。
+6. `runtime_error`：eval case 执行阶段抛出异常。
 
 ## 适用场景
 
@@ -121,6 +153,7 @@ v2.1 正式升级提案见：
 - 确认 BGE 模型文件存在
 - 启动并等待 `docker compose` 依赖健康
 - 执行 `mvn -pl vortex-app -am -DskipTests package`
+- 执行一次最小 generation preflight，提前发现鉴权、余额或模型权限错误
 - 运行独立的 `eval-cli` Spring Boot jar
 - 为本次运行生成独立 report / Milvus collection / MinIO prefix
 
@@ -149,12 +182,13 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-real-llm-memory-eval.ps1 `
 
 ## Baseline Profile
 
-真实 eval 的 baseline governance 分为四个 profile：
+真实 eval 的 baseline governance 分为五个 profile：
 
 1. `official-v2-strict`：正式 v2 单轮 strict baseline，默认用于 `verify <report>`。
 2. `audit-v2-stability`：v2 多轮稳定性 audit gate，不用于单个报告 strict verify。
 3. `official-v2.1-strict`：正式 v2.1 单轮 strict baseline，用于 v2.1 单轮 strict verify 和多轮 audit。
 4. `contract-v2.1-candidate`：`official-v2.1-strict` 的过渡 alias。
+5. `candidate-v2.1-extended`：30-case v2.1 扩展候选集，用于多轮真实 LLM audit，尚无 strict 单轮 verifier。
 
 列出当前 jar 支持的 profile：
 
@@ -193,6 +227,22 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
   -SkipComposeUp `
   -SkipPackage
 ```
+
+v2.1 extended candidate audit 示例：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1 `
+  -ApiKey '...' `
+  -BaseUrl 'https://sub2.congmingai.com' `
+  -Model 'gpt-5.2' `
+  -Rounds 5 `
+  -DatasetLocation 'classpath:llm-memory-eval-set-v2-1-extended.json' `
+  -AuditStamp '20260601-v2-1-extended-candidate-audit' `
+  -SkipComposeUp `
+  -SkipPackage
+```
+
+这个候选集没有 strict verifier profile，脚本会跳过单轮 strict verify，但仍执行 `ProfileGate` 和 `AuditGate`。如果候选集稳定通过，再用生成的 audit stamp 决定是否晋升为新的 official strict profile。
 
 ## 手动运行方式
 
@@ -233,6 +283,12 @@ java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar
 
 - 必须带 `/v1`。
 - 已验证根路径 `https://sub2.congmingai.com` 返回 HTML，不是 JSON API。
+
+`-SkipGenerationPreflight`
+
+- 默认不建议使用。
+- 只有在网关不支持最小 smoke 请求、或明确要复用已有报告时才跳过。
+- 如果 preflight 返回 `INSUFFICIENT_BALANCE`、鉴权失败或模型权限错误，不要继续跑完整 eval；先修复 generation 账户状态。
 
 `VORTEX_STORAGE_L2_MILVUS_COLLECTION`
 
