@@ -26,6 +26,11 @@ public class RuleBasedAnswerJudge {
     private static final Pattern NEGATED_FORBIDDEN_PREFIX_PATTERN = Pattern.compile(
             "(?:^|[^\\p{Alnum}])(?:not\\s+(?!only\\b)|instead\\s+of\\s+|rather\\s+than\\s+)"
                     + "(?:[\\p{Alnum}'-]+\\s+){0,6}$");
+    private static final Pattern OBSOLETE_FORBIDDEN_SUFFIX_PATTERN = Pattern.compile(
+            "^\\s*(?:(?:was|were|is|are)\\s+)?(?:only\\s+)?(?:a\\s+|an\\s+|the\\s+)?"
+                    + "(?:previous|prior|old|former|outdated|deprecated|obsolete)\\b"
+                    + "|^\\s*(?:was|were|is|are)\\s+no\\s+longer\\b"
+                    + "|^\\s*(?:was|were)\\s+(?:previously|formerly)\\b");
 
     public boolean isCorrect(String expectedAnswer, String generatedAnswer) {
         return evaluate(expectedAnswer, List.of(), List.of(), generatedAnswer).correct();
@@ -98,17 +103,28 @@ public class RuleBasedAnswerJudge {
         }
         Matcher matcher = termPattern(normalizedTerm).matcher(normalizedGenerated);
         while (matcher.find()) {
-            if (!hasNegatedForbiddenContext(normalizedGenerated, matcher.start(2))) {
+            if (!hasSafeForbiddenContext(normalizedGenerated, matcher.start(2), matcher.end(2))) {
                 return true;
             }
         }
         return false;
     }
 
+    private boolean hasSafeForbiddenContext(String normalizedGenerated, int termStart, int termEnd) {
+        return hasNegatedForbiddenContext(normalizedGenerated, termStart)
+                || hasObsoleteForbiddenContext(normalizedGenerated, termEnd);
+    }
+
     private boolean hasNegatedForbiddenContext(String normalizedGenerated, int termStart) {
         int contextStart = Math.max(0, termStart - 80);
         String prefix = normalizedGenerated.substring(contextStart, termStart);
         return NEGATED_FORBIDDEN_PREFIX_PATTERN.matcher(prefix).find();
+    }
+
+    private boolean hasObsoleteForbiddenContext(String normalizedGenerated, int termEnd) {
+        int contextEnd = Math.min(normalizedGenerated.length(), termEnd + 80);
+        String suffix = normalizedGenerated.substring(termEnd, contextEnd);
+        return OBSOLETE_FORBIDDEN_SUFFIX_PATTERN.matcher(suffix).find();
     }
 
     private Pattern termPattern(String normalizedTerm) {
@@ -138,6 +154,7 @@ public class RuleBasedAnswerJudge {
         }
         return value
                 .toLowerCase(Locale.ROOT)
+                .replaceAll("[\\u2018\\u2019\\u201B\\u2032]", "'")
                 .replaceAll("\\s+", " ")
                 .trim();
     }

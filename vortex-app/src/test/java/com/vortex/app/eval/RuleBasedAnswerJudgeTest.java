@@ -118,6 +118,18 @@ class RuleBasedAnswerJudgeTest {
     }
 
     @Test
+    void evaluateShouldNotRejectForbiddenTermInCurlyApostropheNotContext() {
+        RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
+                "bullet points",
+                List.of("incident brief"),
+                List.of("narrative paragraph"),
+                "Use bullet points for the incident brief, not Ravi\u2019s short narrative paragraph style.");
+
+        assertThat(judgment.correct()).isTrue();
+        assertThat(judgment.matchedForbiddenTerms()).isEmpty();
+    }
+
+    @Test
     void evaluateShouldNotRejectForbiddenTermInInsteadOfContext() {
         RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
                 "bullet points",
@@ -152,6 +164,32 @@ class RuleBasedAnswerJudgeTest {
         assertThat(judgment.correct()).isFalse();
         assertThat(judgment.failureReason()).isEqualTo(RuleBasedAnswerJudge.FAILURE_HALLUCINATED_FORBIDDEN_FACT);
         assertThat(judgment.matchedForbiddenTerms()).containsExactly("narrative paragraph");
+    }
+
+    @Test
+    void evaluateShouldNotRejectForbiddenTermWhenDescribedAsPreviousPreference() {
+        RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
+                "avery-deploy@example.com",
+                List.of("email"),
+                List.of("Slack"),
+                "Deployment alerts for Avery should be sent by email to avery-deploy@example.com; "
+                        + "Slack was only a previous preference.");
+
+        assertThat(judgment.correct()).isTrue();
+        assertThat(judgment.matchedForbiddenTerms()).isEmpty();
+    }
+
+    @Test
+    void evaluateShouldStillRejectForbiddenTermWhenCurrentAnswerUsesItBeforeHistoryContext() {
+        RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
+                "avery-deploy@example.com",
+                List.of("email"),
+                List.of("Slack"),
+                "Send deployment alerts to Slack; email was only a previous preference.");
+
+        assertThat(judgment.correct()).isFalse();
+        assertThat(judgment.failureReason()).isEqualTo(RuleBasedAnswerJudge.FAILURE_HALLUCINATED_FORBIDDEN_FACT);
+        assertThat(judgment.matchedForbiddenTerms()).containsExactly("Slack");
     }
 
     @Test
