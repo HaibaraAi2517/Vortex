@@ -1,6 +1,7 @@
 package com.vortex.kernel.hmc;
 
 import com.vortex.common.dto.MemoryScenario;
+import com.vortex.common.dto.RecallDiagnostics;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
 import com.vortex.common.exception.EmbeddingException;
@@ -89,6 +90,7 @@ public class RecallOrchestrator {
     public RecallResult recall(RecallQuery query) {
         long startedAt = System.nanoTime();
         List<String> requiredTags = normalizeTags(query.getTags());
+        RecallDiagnosticsAccumulator diagnostics = new RecallDiagnosticsAccumulator(requiredTags);
         MemoryScenario scenario = query.getScenario() == null ? MemoryScenario.CHAT : query.getScenario();
         AdaptiveWeightLearner.ProfileSelection profileSelection = adaptiveWeightLearner.selectProfiles(scenario);
         AdaptiveWeightProfile baselineProfile = evictionPolicy.defaultProfile();
@@ -101,9 +103,11 @@ public class RecallOrchestrator {
         int tokensSoFar = 0;
 
         List<MemoryFragment> l1Candidates = l1.getAll(query.getNamespace());
+        diagnostics.setL1CandidateCount(l1Candidates.size());
         List<MemoryFragment> filteredL1Candidates = l1Candidates.stream()
                 .filter(fragment -> matchesAllTags(fragment, requiredTags))
                 .toList();
+        diagnostics.setL1TagMatchedCount(filteredL1Candidates.size());
         List<RankedRecallCandidate> activeSelected = new ArrayList<>();
         Set<String> selectedIds = new HashSet<>();
         for (ScoredCandidate candidate : rankForRecall(filteredL1Candidates, l1QueryEmbedding, profileSelection.active())) {
@@ -111,11 +115,13 @@ public class RecallOrchestrator {
                 break;
             }
             if (tokensSoFar + candidate.fragment().getTokenCount() > query.getTokenBudget()) {
+                diagnostics.incrementL1TokenBudgetRejectedCount();
                 continue;
             }
             activeSelected.add(new RankedRecallCandidate(candidate.fragment(), candidate.score(), "L1"));
             selectedIds.add(candidate.fragment().getId());
             tokensSoFar += candidate.fragment().getTokenCount();
+            diagnostics.incrementL1SelectedCount();
         }
 
         List<MemoryFragment> evaluationPool = new ArrayList<>(filteredL1Candidates);
@@ -124,39 +130,38 @@ public class RecallOrchestrator {
             int l2SearchLimit = Math.max(
                     needed * 4,
                     query.getTopK() * 4);
-            List<MemoryFragment> l2Hits = l2.search(l2QueryEmbedding, query.getNamespace(), l2SearchLimit);
             RedundancyAnalyzer.IncrementalRedundancyState redundancyState = RedundancyAnalyzer.IncrementalRedundancyState.from(filteredL1Candidates);
-            for (MemoryFragment hit : l2Hits) {
-                if (activeSelected.size() >= query.getTopK()) {
-                    break;
-                }
-                if (selectedIds.contains(hit.getId())) {
-                    continue;
-                }
-                MemoryFragment candidate = enrichForRecall(hit, requiredTags);
-                if (candidate == null) {
-                    continue;
-                }
-                if (candidate.getEmbedding() == null) {
-                    ensureL1Embedding(candidate);
-                }
-                candidate.reinforceImportanceOnRecall();
-                if (tokensSoFar + candidate.getTokenCount() > query.getTokenBudget()) {
-                    continue;
-                }
-                redundancyState.add(candidate);
-                activeSelected.add(new RankedRecallCandidate(
-                        candidate,
-                        scoreForRecall(candidate, l1QueryEmbedding, profileSelection.active(), redundancyState.snapshot()),
-                        "L2"));
-                selectedIds.add(candidate.getId());
-                tokensSoFar += candidate.getTokenCount();
-                evaluationPool.add(candidate);
-
-                // Trigger page fault for this L2 fragment (async, best-effort)
-                if (pagingManager != null) {
-                    pagingManager.handlePageFault(candidate.getId(), query.getNamespace());
-                }
+            Set<String> attemptedL2Ids = new HashSet<>();
+            tokensSoFar = appendL2Candidates(
+                    l2.search(l2QueryEmbedding, query.getNamespace(), l2SearchLimit),
+                    RecallCandidateSource.L2_SEARCH,
+                    query,
+                    requiredTags,
+                    l1QueryEmbedding,
+                    profileSelection.active(),
+                    activeSelected,
+                    selectedIds,
+                    evaluationPool,
+                    redundancyState,
+                    attemptedL2Ids,
+                    tokensSoFar,
+                    diagnostics);
+            if (activeSelected.size() < query.getTopK()) {
+                int fallbackLimit = Math.max(l2SearchLimit, query.getTopK() * 8);
+                tokensSoFar = appendL2Candidates(
+                        l2.listByNamespace(query.getNamespace(), fallbackLimit),
+                        RecallCandidateSource.L2_NAMESPACE_FALLBACK,
+                        query,
+                        requiredTags,
+                        l1QueryEmbedding,
+                        profileSelection.active(),
+                        activeSelected,
+                        selectedIds,
+                        evaluationPool,
+                        redundancyState,
+                        attemptedL2Ids,
+                        tokensSoFar,
+                        diagnostics);
             }
         }
 
@@ -182,6 +187,8 @@ public class RecallOrchestrator {
         }
 
         List<String> trace = results.stream().map(RecallResult.ScoredFragment::getTier).toList();
+        diagnostics.setFinalReturnedCount(results.size());
+        diagnostics.resolveEmptyRecallReason();
         String recallSessionId = adaptiveWeightLearner.recordRecallSession(RecallSessionRecord.builder()
                 .namespace(query.getNamespace())
                 .scenario(scenario)
@@ -222,6 +229,7 @@ public class RecallOrchestrator {
                 .recallSessionId(recallSessionId)
                 .activeProfileName(profileSelection.active().getProfileName())
                 .shadowProfileName(profileSelection.shadow().getProfileName())
+                .diagnostics(diagnostics.toDiagnostics())
                 .build();
     }
 
@@ -265,6 +273,63 @@ public class RecallOrchestrator {
                 .toList();
     }
 
+    private int appendL2Candidates(
+            List<MemoryFragment> l2Hits,
+            RecallCandidateSource candidateSource,
+            RecallQuery query,
+            List<String> requiredTags,
+            float[] l1QueryEmbedding,
+            AdaptiveWeightProfile profile,
+            List<RankedRecallCandidate> activeSelected,
+            Set<String> selectedIds,
+            List<MemoryFragment> evaluationPool,
+            RedundancyAnalyzer.IncrementalRedundancyState redundancyState,
+            Set<String> attemptedL2Ids,
+            int tokensSoFar,
+            RecallDiagnosticsAccumulator diagnostics) {
+        diagnostics.recordCandidateCount(candidateSource, l2Hits == null ? 0 : l2Hits.size());
+        for (MemoryFragment hit : l2Hits == null ? List.<MemoryFragment>of() : l2Hits) {
+            if (activeSelected.size() >= query.getTopK()) {
+                break;
+            }
+            if (hit == null) {
+                continue;
+            }
+            if (!attemptedL2Ids.add(hit.getId()) || selectedIds.contains(hit.getId())) {
+                diagnostics.incrementDuplicateRejectedCount(candidateSource);
+                continue;
+            }
+            MemoryFragment candidate = enrichForRecall(hit, requiredTags, diagnostics);
+            if (candidate == null) {
+                diagnostics.incrementTagRejectedCount(candidateSource);
+                continue;
+            }
+            if (candidate.getEmbedding() == null) {
+                ensureL1Embedding(candidate);
+            }
+            candidate.reinforceImportanceOnRecall();
+            if (tokensSoFar + candidate.getTokenCount() > query.getTokenBudget()) {
+                diagnostics.incrementTokenBudgetRejectedCount(candidateSource);
+                continue;
+            }
+            redundancyState.add(candidate);
+            activeSelected.add(new RankedRecallCandidate(
+                    candidate,
+                    scoreForRecall(candidate, l1QueryEmbedding, profile, redundancyState.snapshot()),
+                    "L2"));
+            diagnostics.incrementAcceptedCount(candidateSource);
+            selectedIds.add(candidate.getId());
+            tokensSoFar += candidate.getTokenCount();
+            evaluationPool.add(candidate);
+
+            // Trigger page fault for this L2 fragment (async, best-effort)
+            if (pagingManager != null) {
+                pagingManager.handlePageFault(candidate.getId(), query.getNamespace());
+            }
+        }
+        return tokensSoFar;
+    }
+
     private double scoreForRecall(
             MemoryFragment fragment,
             float[] queryEmbedding,
@@ -298,17 +363,46 @@ public class RecallOrchestrator {
         return denom == 0 ? 0.0 : dot / denom;
     }
 
-    private MemoryFragment enrichForRecall(MemoryFragment candidate, List<String> requiredTags) {
-        MemoryFragment fragment = findFragment(candidate.getId()).orElse(candidate);
-        return matchesAllTags(fragment, requiredTags) ? fragment : null;
+    private MemoryFragment enrichForRecall(
+            MemoryFragment candidate,
+            List<String> requiredTags,
+            RecallDiagnosticsAccumulator diagnostics) {
+        MemoryFragment fragment = findFragment(candidate.getId(), diagnostics).orElse(candidate);
+        if (matchesAllTags(fragment, requiredTags)) {
+            diagnostics.incrementEnrichFragmentTagMatchedCount();
+            return fragment;
+        }
+        if (matchesAllTags(candidate, requiredTags)) {
+            diagnostics.incrementEnrichCandidateTagMatchedCount();
+            return candidate;
+        }
+        Optional<MemoryFragment> l2Fragment = l2.get(candidate.getId());
+        if (l2Fragment.isPresent() && matchesAllTags(l2Fragment.get(), requiredTags)) {
+            diagnostics.incrementEnrichL2TagFallbackMatchedCount();
+            return l2Fragment.get();
+        }
+        diagnostics.incrementEnrichTagRejectedCount();
+        return null;
     }
 
-    private Optional<MemoryFragment> findFragment(String fragmentId) {
+    private Optional<MemoryFragment> findFragment(String fragmentId, RecallDiagnosticsAccumulator diagnostics) {
         Optional<MemoryFragment> l1Fragment = l1.peek(fragmentId);
         if (l1Fragment.isPresent()) {
+            diagnostics.incrementFindFragmentL1HitCount();
             return l1Fragment;
         }
-        return l3.retrieveFragment(fragmentId);
+        Optional<MemoryFragment> archivedFragment = l3.retrieveFragment(fragmentId);
+        if (archivedFragment.isPresent()) {
+            diagnostics.incrementFindFragmentL3HitCount();
+            return archivedFragment;
+        }
+        Optional<MemoryFragment> l2Fragment = l2.get(fragmentId);
+        if (l2Fragment.isPresent()) {
+            diagnostics.incrementFindFragmentL2HitCount();
+        } else {
+            diagnostics.incrementFindFragmentMissCount();
+        }
+        return l2Fragment;
     }
 
     // ---- Embedding helpers ----
@@ -408,4 +502,207 @@ public class RecallOrchestrator {
     record ScoredCandidate(MemoryFragment fragment, double score) {}
 
     record RankedRecallCandidate(MemoryFragment fragment, double score, String tier) {}
+
+    private enum RecallCandidateSource {
+        L2_SEARCH,
+        L2_NAMESPACE_FALLBACK
+    }
+
+    private static final class RecallDiagnosticsAccumulator {
+        private final List<String> requiredTags;
+        private int l1CandidateCount;
+        private int l1TagMatchedCount;
+        private int l1SelectedCount;
+        private int l1TokenBudgetRejectedCount;
+        private int l2SearchCandidateCount;
+        private int l2SearchAcceptedCount;
+        private int l2SearchDuplicateRejectedCount;
+        private int l2SearchTagRejectedCount;
+        private int l2SearchTokenBudgetRejectedCount;
+        private int l2NamespaceFallbackCandidateCount;
+        private int l2NamespaceFallbackAcceptedCount;
+        private int l2NamespaceFallbackDuplicateRejectedCount;
+        private int l2NamespaceFallbackTagRejectedCount;
+        private int l2NamespaceFallbackTokenBudgetRejectedCount;
+        private int findFragmentL1HitCount;
+        private int findFragmentL3HitCount;
+        private int findFragmentL2HitCount;
+        private int findFragmentMissCount;
+        private int enrichFragmentTagMatchedCount;
+        private int enrichCandidateTagMatchedCount;
+        private int enrichL2TagFallbackMatchedCount;
+        private int enrichTagRejectedCount;
+        private int finalReturnedCount;
+        private String emptyRecallReason;
+
+        private RecallDiagnosticsAccumulator(List<String> requiredTags) {
+            this.requiredTags = requiredTags == null ? List.of() : List.copyOf(requiredTags);
+        }
+
+        private void setL1CandidateCount(int l1CandidateCount) {
+            this.l1CandidateCount = l1CandidateCount;
+        }
+
+        private void setL1TagMatchedCount(int l1TagMatchedCount) {
+            this.l1TagMatchedCount = l1TagMatchedCount;
+        }
+
+        private void incrementL1SelectedCount() {
+            l1SelectedCount++;
+        }
+
+        private void incrementL1TokenBudgetRejectedCount() {
+            l1TokenBudgetRejectedCount++;
+        }
+
+        private void recordCandidateCount(RecallCandidateSource source, int count) {
+            if (source == RecallCandidateSource.L2_SEARCH) {
+                l2SearchCandidateCount = count;
+                return;
+            }
+            l2NamespaceFallbackCandidateCount = count;
+        }
+
+        private void incrementAcceptedCount(RecallCandidateSource source) {
+            if (source == RecallCandidateSource.L2_SEARCH) {
+                l2SearchAcceptedCount++;
+                return;
+            }
+            l2NamespaceFallbackAcceptedCount++;
+        }
+
+        private void incrementDuplicateRejectedCount(RecallCandidateSource source) {
+            if (source == RecallCandidateSource.L2_SEARCH) {
+                l2SearchDuplicateRejectedCount++;
+                return;
+            }
+            l2NamespaceFallbackDuplicateRejectedCount++;
+        }
+
+        private void incrementTagRejectedCount(RecallCandidateSource source) {
+            if (source == RecallCandidateSource.L2_SEARCH) {
+                l2SearchTagRejectedCount++;
+                return;
+            }
+            l2NamespaceFallbackTagRejectedCount++;
+        }
+
+        private void incrementTokenBudgetRejectedCount(RecallCandidateSource source) {
+            if (source == RecallCandidateSource.L2_SEARCH) {
+                l2SearchTokenBudgetRejectedCount++;
+                return;
+            }
+            l2NamespaceFallbackTokenBudgetRejectedCount++;
+        }
+
+        private void incrementFindFragmentL1HitCount() {
+            findFragmentL1HitCount++;
+        }
+
+        private void incrementFindFragmentL3HitCount() {
+            findFragmentL3HitCount++;
+        }
+
+        private void incrementFindFragmentL2HitCount() {
+            findFragmentL2HitCount++;
+        }
+
+        private void incrementFindFragmentMissCount() {
+            findFragmentMissCount++;
+        }
+
+        private void incrementEnrichFragmentTagMatchedCount() {
+            enrichFragmentTagMatchedCount++;
+        }
+
+        private void incrementEnrichCandidateTagMatchedCount() {
+            enrichCandidateTagMatchedCount++;
+        }
+
+        private void incrementEnrichL2TagFallbackMatchedCount() {
+            enrichL2TagFallbackMatchedCount++;
+        }
+
+        private void incrementEnrichTagRejectedCount() {
+            enrichTagRejectedCount++;
+        }
+
+        private void setFinalReturnedCount(int finalReturnedCount) {
+            this.finalReturnedCount = finalReturnedCount;
+        }
+
+        private void resolveEmptyRecallReason() {
+            if (finalReturnedCount > 0) {
+                emptyRecallReason = null;
+                return;
+            }
+            if (l1CandidateCount == 0 && l2SearchCandidateCount == 0 && l2NamespaceFallbackCandidateCount == 0) {
+                emptyRecallReason = "NO_CANDIDATES_FOUND";
+                return;
+            }
+            if (totalTokenBudgetRejectedCount() > 0
+                    && totalAcceptedCount() == 0
+                    && totalTagRejectedCount() == 0) {
+                emptyRecallReason = "TOKEN_BUDGET_EXHAUSTED";
+                return;
+            }
+            if (totalTagRejectedCount() > 0 && totalAcceptedCount() == 0) {
+                emptyRecallReason = "TAG_FILTER_REJECTED";
+                return;
+            }
+            if (l2SearchCandidateCount > 0 || l2NamespaceFallbackCandidateCount > 0) {
+                emptyRecallReason = "L2_ENRICHMENT_EMPTY";
+                return;
+            }
+            if (l1TagMatchedCount > 0 && l1SelectedCount == 0) {
+                emptyRecallReason = "L1_SELECTION_EMPTY";
+                return;
+            }
+            emptyRecallReason = "NO_SELECTION";
+        }
+
+        private int totalAcceptedCount() {
+            return l1SelectedCount + l2SearchAcceptedCount + l2NamespaceFallbackAcceptedCount;
+        }
+
+        private int totalTagRejectedCount() {
+            return l2SearchTagRejectedCount + l2NamespaceFallbackTagRejectedCount;
+        }
+
+        private int totalTokenBudgetRejectedCount() {
+            return l1TokenBudgetRejectedCount
+                    + l2SearchTokenBudgetRejectedCount
+                    + l2NamespaceFallbackTokenBudgetRejectedCount;
+        }
+
+        private RecallDiagnostics toDiagnostics() {
+            return RecallDiagnostics.builder()
+                    .requiredTags(requiredTags)
+                    .l1CandidateCount(l1CandidateCount)
+                    .l1TagMatchedCount(l1TagMatchedCount)
+                    .l1SelectedCount(l1SelectedCount)
+                    .l1TokenBudgetRejectedCount(l1TokenBudgetRejectedCount)
+                    .l2SearchCandidateCount(l2SearchCandidateCount)
+                    .l2SearchAcceptedCount(l2SearchAcceptedCount)
+                    .l2SearchDuplicateRejectedCount(l2SearchDuplicateRejectedCount)
+                    .l2SearchTagRejectedCount(l2SearchTagRejectedCount)
+                    .l2SearchTokenBudgetRejectedCount(l2SearchTokenBudgetRejectedCount)
+                    .l2NamespaceFallbackCandidateCount(l2NamespaceFallbackCandidateCount)
+                    .l2NamespaceFallbackAcceptedCount(l2NamespaceFallbackAcceptedCount)
+                    .l2NamespaceFallbackDuplicateRejectedCount(l2NamespaceFallbackDuplicateRejectedCount)
+                    .l2NamespaceFallbackTagRejectedCount(l2NamespaceFallbackTagRejectedCount)
+                    .l2NamespaceFallbackTokenBudgetRejectedCount(l2NamespaceFallbackTokenBudgetRejectedCount)
+                    .findFragmentL1HitCount(findFragmentL1HitCount)
+                    .findFragmentL3HitCount(findFragmentL3HitCount)
+                    .findFragmentL2HitCount(findFragmentL2HitCount)
+                    .findFragmentMissCount(findFragmentMissCount)
+                    .enrichFragmentTagMatchedCount(enrichFragmentTagMatchedCount)
+                    .enrichCandidateTagMatchedCount(enrichCandidateTagMatchedCount)
+                    .enrichL2TagFallbackMatchedCount(enrichL2TagFallbackMatchedCount)
+                    .enrichTagRejectedCount(enrichTagRejectedCount)
+                    .finalReturnedCount(finalReturnedCount)
+                    .emptyRecallReason(emptyRecallReason)
+                    .build();
+        }
+    }
 }

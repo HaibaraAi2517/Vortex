@@ -32,6 +32,9 @@ public class RecallResult {
     /** Shadow profile name evaluated alongside this recall. */
     private String shadowProfileName;
 
+    /** Structured recall diagnostics for observability and eval reporting. */
+    private RecallDiagnostics diagnostics;
+
     @Data
     @Builder
     @NoArgsConstructor

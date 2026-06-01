@@ -165,6 +165,89 @@ class RecallOrchestratorTest {
     }
 
     // ========================================================================
+    // recall: L2 fallback robustness
+    // ========================================================================
+
+    @Test
+    void recallFallsBackToNamespaceListingWhenL2SearchMisses() {
+        MemoryFragment l2Stored = fragment("l2-fallback", "ns", "fallback content", List.of("role:user"), 4);
+        l2.seedSearchResults(List.of());
+        l2.seedNamespaceResults(List.of(l2Stored));
+
+        RecallResult result = orchestrator.recall(RecallQuery.builder()
+                .query("query")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .tags(List.of("role:user"))
+                .build());
+
+        assertThat(result.getFragments()).hasSize(1);
+        assertThat(result.getFragments().getFirst().getFragment().getId()).isEqualTo("l2-fallback");
+        assertThat(result.getFragments().getFirst().getTier()).isEqualTo("L2");
+        assertThat(result.getDiagnostics()).isNotNull();
+        assertThat(result.getDiagnostics().getL2SearchCandidateCount()).isZero();
+        assertThat(result.getDiagnostics().getL2NamespaceFallbackCandidateCount()).isEqualTo(1);
+        assertThat(result.getDiagnostics().getL2NamespaceFallbackAcceptedCount()).isEqualTo(1);
+        assertThat(result.getDiagnostics().getFindFragmentL2HitCount()).isEqualTo(1);
+        assertThat(result.getDiagnostics().getEnrichFragmentTagMatchedCount()).isEqualTo(1);
+        assertThat(result.getDiagnostics().getEmptyRecallReason()).isNull();
+    }
+
+    @Test
+    void recallFallsBackToL2MetadataWhenArchivedFragmentMissesRequiredTags() {
+        MemoryFragment l2Shell = fragment("l2-rich", "ns", "shell content", List.of(), 4);
+        MemoryFragment l2Stored = fragment("l2-rich", "ns", "full content", List.of("role:user"), 4);
+        l2.seedSearchResults(List.of(l2Shell));
+        l2.seedNamespaceResults(List.of(l2Stored));
+
+        MemoryFragment archived = fragment("l2-rich", "ns", "archived content", List.of(), 4);
+        l3.archiveFragment(archived);
+
+        RecallResult result = orchestrator.recall(RecallQuery.builder()
+                .query("query")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .tags(List.of("role:user"))
+                .build());
+
+        assertThat(result.getFragments()).hasSize(1);
+        assertThat(result.getFragments().getFirst().getFragment().getTags()).contains("role:user");
+        assertThat(result.getFragments().getFirst().getFragment().getContent()).isEqualTo("full content");
+        assertThat(result.getDiagnostics()).isNotNull();
+        assertThat(result.getDiagnostics().getL2SearchCandidateCount()).isEqualTo(1);
+        assertThat(result.getDiagnostics().getL2SearchAcceptedCount()).isEqualTo(1);
+        assertThat(result.getDiagnostics().getFindFragmentL3HitCount()).isEqualTo(1);
+        assertThat(result.getDiagnostics().getEnrichL2TagFallbackMatchedCount()).isEqualTo(1);
+    }
+
+    @Test
+    void recallRecordsDiagnosticsWhenTagFilteringRejectsAllL2Candidates() {
+        MemoryFragment l2Untagged = fragment("l2-untagged", "ns", "untagged content", List.of(), 4);
+        l2.seedSearchResults(List.of(l2Untagged));
+        l2.seedNamespaceResults(List.of());
+
+        RecallResult result = orchestrator.recall(RecallQuery.builder()
+                .query("query")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .tags(List.of("role:user"))
+                .build());
+
+        assertThat(result.getFragments()).isEmpty();
+        assertThat(result.getDiagnostics()).isNotNull();
+        assertThat(result.getDiagnostics().getRequiredTags()).containsExactly("role:user");
+        assertThat(result.getDiagnostics().getL2SearchCandidateCount()).isEqualTo(1);
+        assertThat(result.getDiagnostics().getL2SearchAcceptedCount()).isZero();
+        assertThat(result.getDiagnostics().getL2SearchTagRejectedCount()).isEqualTo(1);
+        assertThat(result.getDiagnostics().getEnrichTagRejectedCount()).isEqualTo(1);
+        assertThat(result.getDiagnostics().getFinalReturnedCount()).isZero();
+        assertThat(result.getDiagnostics().getEmptyRecallReason()).isEqualTo("TAG_FILTER_REJECTED");
+    }
+
+    // ========================================================================
     // recall: L3 enrichment
     // ========================================================================
 
@@ -558,6 +641,8 @@ class RecallOrchestratorTest {
     private static class FakeL2WarmStore implements L2WarmStore {
         private final int dimension;
         private final List<MemoryFragment> searchResults = new ArrayList<>();
+        private final List<MemoryFragment> namespaceResults = new ArrayList<>();
+        private final Map<String, MemoryFragment> fragmentsById = new LinkedHashMap<>();
 
         private FakeL2WarmStore(int dimension) {
             this.dimension = dimension;
@@ -566,10 +651,19 @@ class RecallOrchestratorTest {
         void seedSearchResults(List<MemoryFragment> fragments) {
             searchResults.clear();
             searchResults.addAll(fragments);
+            fragments.forEach(fragment -> fragmentsById.put(fragment.getId(), fragment));
+        }
+
+        void seedNamespaceResults(List<MemoryFragment> fragments) {
+            namespaceResults.clear();
+            namespaceResults.addAll(fragments);
+            fragments.forEach(fragment -> fragmentsById.put(fragment.getId(), fragment));
         }
 
         @Override
-        public void upsert(MemoryFragment fragment) {}
+        public void upsert(MemoryFragment fragment) {
+            fragmentsById.put(fragment.getId(), fragment);
+        }
 
         @Override
         public List<MemoryFragment> search(float[] queryEmbedding, String namespace, int topK) {
@@ -581,7 +675,15 @@ class RecallOrchestratorTest {
 
         @Override
         public Optional<MemoryFragment> get(String id) {
-            return searchResults.stream().filter(f -> f.getId().equals(id)).findFirst();
+            return Optional.ofNullable(fragmentsById.get(id));
+        }
+
+        @Override
+        public List<MemoryFragment> listByNamespace(String namespace, int limit) {
+            return namespaceResults.stream()
+                    .filter(f -> namespace.equals(f.getNamespace()))
+                    .limit(limit)
+                    .toList();
         }
 
         @Override

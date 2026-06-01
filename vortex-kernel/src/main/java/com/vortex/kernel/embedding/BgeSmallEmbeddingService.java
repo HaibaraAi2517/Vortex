@@ -2,29 +2,27 @@ package com.vortex.kernel.embedding;
 
 import ai.djl.huggingface.tokenizers.Encoding;
 import ai.djl.huggingface.tokenizers.HuggingFaceTokenizer;
-import ai.djl.inference.Predictor;
-import ai.djl.ndarray.NDArray;
-import ai.djl.ndarray.NDList;
-import ai.djl.ndarray.NDManager;
-import ai.djl.ndarray.types.DataType;
-import ai.djl.ndarray.types.Shape;
-import ai.djl.repository.zoo.Criteria;
-import ai.djl.repository.zoo.ZooModel;
-import ai.djl.translate.Batchifier;
-import ai.djl.translate.Translator;
-import ai.djl.translate.TranslatorContext;
+import ai.onnxruntime.OnnxTensor;
+import ai.onnxruntime.OnnxValue;
+import ai.onnxruntime.OrtEnvironment;
+import ai.onnxruntime.OrtException;
+import ai.onnxruntime.OrtSession;
 import com.vortex.common.exception.EmbeddingException;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -33,17 +31,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 /**
  * Local embedding service using BGE-Small-ZH (BAAI/bge-small-zh-v1.5).
  *
- * Model: BAAI/bge-small-zh-v1.5
- * Dimension: 512
- * Inference: ONNX Runtime via DJL — no GPU required, ~5-15 ms per call on CPU
- *
- * First-run model download:
- *   DJL will automatically download the ONNX model from HuggingFace Hub
- *   into the DJL cache directory (~/.djl.ai/cache/).
- *   Requires internet access on first startup only.
- *
- * Alternatively, set vortex.kernel.embedding.bge.model-path to a local
- * directory containing model.onnx + tokenizer.json to run fully offline.
+ * This implementation intentionally avoids DJL Predictor/Translator on Windows
+ * and uses the ONNX Runtime Java API directly.
  */
 @Slf4j
 @Service("bgeSmallEmbeddingService")
@@ -51,17 +40,27 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
 
     private static final int DIMENSION = 512;
     private static final int MAX_SEQ_LEN = 512;
+    private static final String RETRIEVAL_PREFIX = "为这个句子生成表示以用于检索相关文章：";
+    private static final int BATCH_SIZE = 32;
 
     private final String modelPath;
+    private final boolean safeHashMode;
     private final ExecutorService jniPool;
 
-    private ZooModel<String, float[]> model;
-    private Predictor<String, float[]> predictor;
+    private OrtEnvironment environment;
+    private OrtSession session;
     private HuggingFaceTokenizer tokenizer;
 
+    public BgeSmallEmbeddingService(String modelPath) {
+        this(modelPath, false);
+    }
+
+    @Autowired
     public BgeSmallEmbeddingService(
-            @Value("${vortex.kernel.embedding.bge.model-path:}") String modelPath) {
+            @Value("${vortex.kernel.embedding.bge.model-path:}") String modelPath,
+            @Value("${vortex.kernel.embedding.bge.safe-hash-mode:false}") boolean safeHashMode) {
         this.modelPath = modelPath;
+        this.safeHashMode = safeHashMode;
         this.jniPool = Executors.newFixedThreadPool(
                 Runtime.getRuntime().availableProcessors(),
                 Thread.ofPlatform().name("onnx-jni-", 0).factory());
@@ -71,63 +70,41 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
     public void init() throws Exception {
         log.info("Loading BGE-Small embedding model (dim={})...", DIMENSION);
 
-        if (modelPath == null || modelPath.isBlank()) {
-            throw new IllegalStateException(
-                    "BGE model path not configured. " +
-                    "Download tokenizer.json and model.onnx from " +
-                    "https://hf-mirror.com/BAAI/bge-small-zh-v1.5 " +
-                    "and set vortex.kernel.embedding.bge.model-path=<dir> in application.yml");
-        }
-
-        Path base = Paths.get(modelPath);
-
-        // Load tokenizer from local file
+        Path base = requireModelBase();
         Path tokenizerPath = base.resolve("tokenizer.json");
-        if (!tokenizerPath.toFile().exists()) {
-            throw new IllegalStateException("tokenizer.json not found at: " + tokenizerPath);
-        }
         tokenizer = HuggingFaceTokenizer.newInstance(tokenizerPath);
         log.info("Tokenizer loaded from: {}", tokenizerPath);
 
-        // Resolve model.onnx — support both flat and onnx/ subdirectory layouts
-        Path modelFile = base.resolve("model.onnx");
-        if (!modelFile.toFile().exists()) {
-            modelFile = base.resolve("onnx/model.onnx");
+        if (safeHashMode) {
+            log.warn("BGE safe-hash mode enabled: using tokenizer-based hashed embeddings instead of ONNX inference");
+            return;
         }
-        if (!modelFile.toFile().exists()) {
-            throw new IllegalStateException(
-                    "model.onnx not found. Expected at: " + base.resolve("model.onnx") +
-                    " or " + base.resolve("onnx/model.onnx"));
-        }
-        // DJL needs the directory containing the .onnx file
-        Path modelDir = modelFile.getParent();
 
-        Criteria<String, float[]> criteria = Criteria.builder()
-                .setTypes(String.class, float[].class)
-                .optModelPath(modelDir)
-                .optModelName("model")   // loads model.onnx
-                .optTranslator(new BgeTranslator(tokenizer))
-                .optEngine("OnnxRuntime")
-                .build();
-
-        model = criteria.loadModel();
-        predictor = model.newPredictor();
-        log.info("BGE-Small model loaded successfully from: {}", modelDir);
+        Path modelFile = resolveModelFile(base);
+        environment = OrtEnvironment.getEnvironment();
+        session = environment.createSession(modelFile.toString(), createSessionOptions());
+        log.info("BGE-Small model loaded successfully from: {}", modelFile);
     }
 
     @PreDestroy
     public void close() {
         jniPool.shutdown();
-        if (predictor != null) predictor.close();
-        if (model != null) model.close();
-        if (tokenizer != null) tokenizer.close();
+        closeQuietly(session, "session");
+        session = null;
+        // OrtEnvironment is a process-global singleton in the Java binding. Do not close it here.
+        if (tokenizer != null) {
+            tokenizer.close();
+            tokenizer = null;
+        }
     }
 
     @Override
     public float[] embed(String text) {
         try {
-            // BGE models perform better with the instruction prefix for retrieval
-            String input = "为这个句子生成表示以用于检索相关文章：" + text;
+            if (safeHashMode) {
+                return normalizeAndValidateEmbedding(hashEmbedding(text), "BGE safe-hash embed");
+            }
+            String input = buildRetrievalInput(text);
             return normalizeAndValidateEmbedding(predictSingle(input), "BGE embed");
         } catch (EmbeddingException e) {
             throw e;
@@ -137,20 +114,14 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
         }
     }
 
-    /**
-     * Batch embedding using DJL batch predict with Batchifier.STACK.
-     * Groups inputs into sub-batches of {@link #BATCH_SIZE} to bound memory usage.
-     * Falls back to sequential embed() if batch predict fails.
-     */
     @Override
     public List<float[]> embedBatch(List<String> texts) {
         if (texts == null || texts.isEmpty()) {
             return List.of();
         }
         List<float[]> results = new ArrayList<>(texts.size());
-        // Prepend instruction prefix
         List<String> prefixedTexts = texts.stream()
-                .map(t -> "为这个句子生成表示以用于检索相关文章：" + t)
+                .map(BgeSmallEmbeddingService::buildRetrievalInput)
                 .toList();
 
         for (int offset = 0; offset < prefixedTexts.size(); offset += BATCH_SIZE) {
@@ -162,7 +133,6 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
             } catch (Exception e) {
                 log.warn("Batch predict failed for sub-batch size={}, falling back to sequential: {}",
                         subBatch.size(), e.getMessage());
-                // Fallback: sequential
                 for (String text : subBatch) {
                     try {
                         results.add(normalizeAndValidateEmbedding(predictSingle(text), "BGE sequential fallback"));
@@ -211,9 +181,6 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
         return tokenizer.encode(text).getIds().length;
     }
 
-    /**
-     * Compute the centroid (mean vector, L2-normalized) of a list of embeddings.
-     */
     public static float[] computeCentroid(List<float[]> embeddings) {
         if (embeddings == null || embeddings.isEmpty()) {
             return new float[DIMENSION];
@@ -222,25 +189,41 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
         float[] centroid = new float[dim];
         int count = 0;
         for (float[] emb : embeddings) {
-            if (emb == null) continue;
+            if (emb == null) {
+                continue;
+            }
             for (int i = 0; i < dim; i++) {
                 centroid[i] += emb[i];
             }
             count++;
         }
-        if (count == 0) return centroid;
+        if (count == 0) {
+            return centroid;
+        }
         for (int i = 0; i < dim; i++) {
             centroid[i] /= count;
         }
         return l2Normalize(centroid);
     }
 
+    public static String buildRetrievalInput(String text) {
+        return RETRIEVAL_PREFIX + (text == null ? "" : text);
+    }
+
     List<float[]> predictBatch(List<String> texts) throws Exception {
-        return predictor.batchPredict(texts);
+        if (texts == null || texts.isEmpty()) {
+            return List.of();
+        }
+        List<Encoding> encodings = texts.stream().map(tokenizer::encode).toList();
+        return runOrt(encodings);
     }
 
     float[] predictSingle(String input) throws Exception {
-        return predictor.predict(input);
+        List<float[]> result = runOrt(List.of(tokenizer.encode(input)));
+        if (result.isEmpty()) {
+            throw new IllegalStateException("BGE single predict returned no outputs");
+        }
+        return result.getFirst();
     }
 
     static boolean isZeroVector(float[] vector) {
@@ -266,94 +249,135 @@ public class BgeSmallEmbeddingService implements EmbeddingService, TokenCounter 
         return normalized;
     }
 
-    /** L2-normalise a vector so cosine similarity == dot product. */
-    private static float[] l2Normalize(float[] v) {
+    private static float[] l2Normalize(float[] vector) {
         double norm = 0;
-        for (float x : v) norm += (double) x * x;
+        for (float value : vector) {
+            norm += (double) value * value;
+        }
         norm = Math.sqrt(norm);
-        if (norm == 0) return v;
-        float[] out = new float[v.length];
-        for (int i = 0; i < v.length; i++) out[i] = (float) (v[i] / norm);
+        if (norm == 0) {
+            return vector;
+        }
+        float[] out = new float[vector.length];
+        for (int i = 0; i < vector.length; i++) {
+            out[i] = (float) (vector[i] / norm);
+        }
         return out;
     }
 
-    private static final int BATCH_SIZE = 32;
+    private float[] hashEmbedding(String text) {
+        Encoding encoding = tokenizer.encode(text == null ? "" : text);
+        long[] tokenIds = encoding.getIds();
+        if (tokenIds.length == 0) {
+            throw new EmbeddingException("BGE safe-hash embed returned no tokens");
+        }
+        float[] vector = new float[DIMENSION];
+        for (int i = 0; i < tokenIds.length; i++) {
+            long tokenId = tokenIds[i];
+            int primary = Math.floorMod(Long.hashCode(tokenId), DIMENSION);
+            int secondary = Math.floorMod(Long.hashCode((tokenId * 31L) + i), DIMENSION);
+            vector[primary] += 1.0f;
+            vector[secondary] += 0.5f;
+        }
+        return vector;
+    }
 
-    // ---- DJL Translator ----
-
-    /**
-     * Translates String → ONNX input tensors → float[] embedding.
-     * BGE-Small uses the [CLS] token representation as the sentence embedding.
-     *
-     * Batch mode: inputs are padded to MAX_SEQ_LEN so Batchifier.STACK can stack
-     * them along dim 0. DJL splits the output before calling processOutput, so
-     * each call still sees a single [1, MAX_SEQ_LEN, hidden] tensor.
-     */
-    private static final class BgeTranslator implements Translator<String, float[]> {
-
-        private final HuggingFaceTokenizer tokenizer;
-
-        BgeTranslator(HuggingFaceTokenizer tokenizer) {
-            this.tokenizer = tokenizer;
+    private List<float[]> runOrt(List<Encoding> encodings) throws Exception {
+        if (session == null || environment == null) {
+            throw new IllegalStateException("BGE ONNX session is not initialized");
+        }
+        long[][] inputIds = new long[encodings.size()][MAX_SEQ_LEN];
+        long[][] attentionMask = new long[encodings.size()][MAX_SEQ_LEN];
+        long[][] tokenTypeIds = new long[encodings.size()][MAX_SEQ_LEN];
+        for (int i = 0; i < encodings.size(); i++) {
+            fillPadded(encodings.get(i).getIds(), inputIds[i]);
+            fillPadded(encodings.get(i).getAttentionMask(), attentionMask[i]);
+            fillPadded(encodings.get(i).getTypeIds(), tokenTypeIds[i]);
         }
 
-        @Override
-        public NDList processInput(TranslatorContext ctx, String input) {
-            Encoding encoding = tokenizer.encode(input);
-            NDManager manager = ctx.getNDManager();
-
-            long[] rawIds = encoding.getIds();
-            long[] rawMask = encoding.getAttentionMask();
-            long[] rawTypeIds = encoding.getTypeIds();
-
-            // Pad to exactly MAX_SEQ_LEN for batch stacking compatibility.
-            // Zero-padding: pad token = 0, attention mask = 0.
-            long[] inputIds = new long[MAX_SEQ_LEN];
-            long[] attentionMask = new long[MAX_SEQ_LEN];
-            long[] tokenTypeIds = new long[MAX_SEQ_LEN];
-
-            int len = Math.min(rawIds.length, MAX_SEQ_LEN);
-            System.arraycopy(rawIds, 0, inputIds, 0, len);
-            System.arraycopy(rawMask, 0, attentionMask, 0, len);
-            System.arraycopy(rawTypeIds, 0, tokenTypeIds, 0, len);
-
-            Shape shape = new Shape(1, MAX_SEQ_LEN);
-            NDArray ids = manager.create(inputIds, shape).toType(DataType.INT64, false);
-            NDArray mask = manager.create(attentionMask, shape).toType(DataType.INT64, false);
-            NDArray typeIds = manager.create(tokenTypeIds, shape).toType(DataType.INT64, false);
-
-            ids.setName("input_ids");
-            mask.setName("attention_mask");
-            typeIds.setName("token_type_ids");
-
-            return new NDList(ids, mask, typeIds);
-        }
-
-        @Override
-        public float[] processOutput(TranslatorContext ctx, NDList list) {
-            // Avoid NDArray slicing here: on Windows the cross-engine fallback path
-            // can jump into Rust-native tensor conversion and crash the JVM.
-            // Read the dense output once and slice the CLS token in plain Java.
-            // DJL splits batch output before this call, so shape is always [1, N, hidden].
-            NDArray lastHiddenState = list.get(0);
-            long[] dims = lastHiddenState.getShape().getShape();
-            if (dims.length != 3 || dims[0] != 1L) {
-                throw new IllegalStateException(
-                        "Unexpected BGE output shape: " + lastHiddenState.getShape());
+        try (OnnxTensor idsTensor = OnnxTensor.createTensor(environment, inputIds);
+             OnnxTensor maskTensor = OnnxTensor.createTensor(environment, attentionMask);
+             OnnxTensor typeIdsTensor = OnnxTensor.createTensor(environment, tokenTypeIds)) {
+            Map<String, OnnxTensor> inputs = new LinkedHashMap<>();
+            inputs.put("input_ids", idsTensor);
+            inputs.put("attention_mask", maskTensor);
+            inputs.put("token_type_ids", typeIdsTensor);
+            try (OrtSession.Result result = session.run(inputs)) {
+                return extractEmbeddings(result, encodings.size());
             }
-
-            int hiddenSize = Math.toIntExact(dims[2]);
-            float[] flat = lastHiddenState.toFloatArray();
-            if (flat.length < hiddenSize) {
-                throw new IllegalStateException(
-                        "BGE output tensor too small: " + flat.length + " < " + hiddenSize);
-            }
-            return Arrays.copyOf(flat, hiddenSize);
         }
+    }
 
-        @Override
-        public Batchifier getBatchifier() {
-            return Batchifier.STACK;
+    private static List<float[]> extractEmbeddings(OrtSession.Result result, int expectedBatchSize) throws OrtException {
+        OnnxValue output = result.get(0);
+        Object value = output.getValue();
+        if (!(value instanceof float[][][] tensor)) {
+            throw new IllegalStateException("Unexpected ORT output type: " + value.getClass());
+        }
+        if (tensor.length != expectedBatchSize) {
+            throw new IllegalStateException(
+                    "Unexpected ORT batch size: " + tensor.length + " != " + expectedBatchSize);
+        }
+        List<float[]> embeddings = new ArrayList<>(tensor.length);
+        for (float[][] batchItem : tensor) {
+            if (batchItem.length == 0 || batchItem[0].length == 0) {
+                throw new IllegalStateException("BGE output tensor is empty");
+            }
+            embeddings.add(Arrays.copyOf(batchItem[0], batchItem[0].length));
+        }
+        return embeddings;
+    }
+
+    private static void fillPadded(long[] raw, long[] target) {
+        if (raw == null || raw.length == 0) {
+            return;
+        }
+        System.arraycopy(raw, 0, target, 0, Math.min(raw.length, target.length));
+    }
+
+    private Path requireModelBase() {
+        if (modelPath == null || modelPath.isBlank()) {
+            throw new IllegalStateException(
+                    "BGE model path not configured. " +
+                    "Download tokenizer.json and model.onnx from " +
+                    "https://hf-mirror.com/BAAI/bge-small-zh-v1.5 " +
+                    "and set vortex.kernel.embedding.bge.model-path=<dir> in application.yml");
+        }
+        return Paths.get(modelPath);
+    }
+
+    private static Path resolveModelFile(Path base) {
+        List<Path> candidates = List.of(
+                base.resolve("model.onnx"),
+                base.resolve("onnx").resolve("model.onnx"));
+        for (Path candidate : candidates) {
+            if (Files.exists(candidate)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException(
+                "model.onnx not found. Expected at: " + base.resolve("model.onnx") +
+                        " or " + base.resolve("onnx/model.onnx"));
+    }
+
+    private static OrtSession.SessionOptions createSessionOptions() throws OrtException {
+        OrtSession.SessionOptions options = new OrtSession.SessionOptions();
+        options.setInterOpNumThreads(1);
+        options.setIntraOpNumThreads(1);
+        options.setMemoryPatternOptimization(false);
+        options.setCPUArenaAllocator(true);
+        options.addCPU(true);
+        return options;
+    }
+
+    private static void closeQuietly(AutoCloseable closeable, String label) {
+        if (closeable == null) {
+            return;
+        }
+        try {
+            closeable.close();
+        } catch (Exception e) {
+            log.warn("Failed to close BGE {} cleanly: {}", label, e.getMessage());
         }
     }
 }

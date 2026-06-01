@@ -103,6 +103,16 @@ vortex:
         enabled: ${CLOUD_EMBEDDING_ENABLED:false}
         api-key: ${DEEPSEEK_API_KEY:}
         provider: deepseek
+    generation:
+      enabled: ${VORTEX_GENERATION_ENABLED:false}
+      base-url: ${VORTEX_GENERATION_BASE_URL:https://api.openai.com/v1}
+      api-key: ${VORTEX_GENERATION_API_KEY:}
+      model: ${VORTEX_GENERATION_MODEL:}
+      temperature: ${VORTEX_GENERATION_TEMPERATURE:0}
+      max-tokens: ${VORTEX_GENERATION_MAX_TOKENS:512}
+      timeout: ${VORTEX_GENERATION_TIMEOUT:30s}
+      prompt:
+        max-tokens: ${VORTEX_GENERATION_PROMPT_MAX_TOKENS:2048}
     paging:
       enabled: ${VORTEX_PAGING_ENABLED:true}
       page-size: 10
@@ -125,6 +135,23 @@ vortex:
         semantic-distance-weight: 0.25
       initial-build:
         max-fragments: 1000
+  eval:
+    dataset-location: ${VORTEX_EVAL_DATASET_LOCATION:classpath:llm-memory-eval-set.json}
+    modes: ${VORTEX_EVAL_MODES:BASELINE_NO_MEMORY,VORTEX_MEMORY,VORTEX_RECOVERED_MEMORY}
+    run-on-startup: ${VORTEX_EVAL_RUN_ON_STARTUP:false}
+    fail-on-startup-error: ${VORTEX_EVAL_FAIL_ON_STARTUP_ERROR:true}
+    write-report: ${VORTEX_EVAL_WRITE_REPORT:true}
+    report-output-dir: ${VORTEX_EVAL_REPORT_OUTPUT_DIR:ops/eval-reports}
+    recall-top-k: ${VORTEX_EVAL_RECALL_TOP_K:5}
+    recall-token-budget: ${VORTEX_EVAL_RECALL_TOKEN_BUDGET:1024}
+    max-prompt-tokens: ${VORTEX_EVAL_MAX_PROMPT_TOKENS:2048}
+    feedback-enabled: ${VORTEX_EVAL_FEEDBACK_ENABLED:true}
+    learning-scenario: ${VORTEX_EVAL_LEARNING_SCENARIO:CHAT}
+    recovery-poll-timeout: ${VORTEX_EVAL_RECOVERY_POLL_TIMEOUT:10s}
+    recovery-poll-interval: ${VORTEX_EVAL_RECOVERY_POLL_INTERVAL:250ms}
+    eviction-filler-fragments: ${VORTEX_EVAL_EVICTION_FILLER_FRAGMENTS:6}
+    eviction-filler-tokens: ${VORTEX_EVAL_EVICTION_FILLER_TOKENS:0}
+    eviction-filler-importance: ${VORTEX_EVAL_EVICTION_FILLER_IMPORTANCE:0.95}
 
 logging:
   level:

@@ -84,6 +84,16 @@
                             <goal>repackage</goal>
                         </goals>
                     </execution>
+                    <execution>
+                        <id>repackage-eval-cli</id>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>eval-cli</classifier>
+                            <mainClass>com.vortex.app.eval.LlmMemoryEvalCliApplication</mainClass>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>

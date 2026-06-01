@@ -54,12 +54,15 @@ public class MilvusWarmStore implements L2WarmStore {
     private static final String FIELD_EMBEDDING = "embedding";
     private static final String FIELD_IMPORTANCE = "importance";
     private static final String FIELD_TOKEN_COUNT = "token_count";
+    private static final String FIELD_TAGS = "tags";
+    private static final String TAG_DELIMITER = "\u001F";
 
     private final MilvusServiceClient client;
     private final int embeddingDim;
     private final String collectionName;
     private final boolean dropCollectionOnStartup;
     private final String dropCollectionConfirmToken;
+    private volatile boolean tagsFieldAvailable;
 
     public MilvusWarmStore(
             @Value("${vortex.storage.l2.milvus.host:localhost}") String host,
@@ -97,6 +100,7 @@ public class MilvusWarmStore implements L2WarmStore {
 
         if (!exists) {
             createCollection();
+            tagsFieldAvailable = true;
             createIndex();
             loadCollection();
             log.info("Milvus collection '{}' created with dim={}", collectionName, embeddingDim);
@@ -125,6 +129,8 @@ public class MilvusWarmStore implements L2WarmStore {
                 .withDimension(embeddingDim).build());
         builder.addFieldType(FieldType.newBuilder().withName(FIELD_IMPORTANCE).withDataType(DataType.Float).build());
         builder.addFieldType(FieldType.newBuilder().withName(FIELD_TOKEN_COUNT).withDataType(DataType.Int32).build());
+        builder.addFieldType(FieldType.newBuilder().withName(FIELD_TAGS).withDataType(DataType.VarChar)
+                .withMaxLength(4096).build());
         client.createCollection(builder.build());
     }
 
@@ -155,14 +161,17 @@ public class MilvusWarmStore implements L2WarmStore {
             log.warn("Skipping L2 upsert for fragment id={}: no embedding", fragment.getId());
             return;
         }
-        List<UpsertParam.Field> fields = List.of(
+        List<UpsertParam.Field> fields = new ArrayList<>(List.of(
                 new UpsertParam.Field(FIELD_ID, List.of(fragment.getId())),
                 new UpsertParam.Field(FIELD_NS, List.of(nullToEmpty(fragment.getNamespace()))),
                 new UpsertParam.Field(FIELD_CONTENT, List.of(fragment.getContent())),
                 new UpsertParam.Field(FIELD_EMBEDDING, List.of(toFloatList(embeddingToStore))),
                 new UpsertParam.Field(FIELD_IMPORTANCE, List.of((float) fragment.getImportance())),
                 new UpsertParam.Field(FIELD_TOKEN_COUNT, List.of(fragment.getTokenCount()))
-        );
+        ));
+        if (tagsFieldAvailable) {
+            fields.add(new UpsertParam.Field(FIELD_TAGS, List.of(serializeTags(fragment.getTags()))));
+        }
         R<MutationResult> result = client.upsert(
                 UpsertParam.newBuilder().withCollectionName(collectionName).withFields(fields).build());
         if (result.getStatus() != 0) {
@@ -186,8 +195,7 @@ public class MilvusWarmStore implements L2WarmStore {
                 .withFloatVectors(List.of(toFloatList(queryEmbedding)))
                 .withVectorFieldName(FIELD_EMBEDDING)
                 .withExpr(expr)
-                .withOutFields(List.of(FIELD_ID, FIELD_NS, FIELD_CONTENT,
-                        FIELD_IMPORTANCE, FIELD_TOKEN_COUNT))
+                .withOutFields(outFields())
                 .build());
 
         if (result.getStatus() != 0 || result.getData() == null) {
@@ -205,6 +213,7 @@ public class MilvusWarmStore implements L2WarmStore {
                     .content((String) wrapper.getFieldWrapper(FIELD_CONTENT).getFieldData().get(i))
                     .importance(((Number) wrapper.getFieldWrapper(FIELD_IMPORTANCE).getFieldData().get(i)).doubleValue())
                     .tokenCount(((Number) wrapper.getFieldWrapper(FIELD_TOKEN_COUNT).getFieldData().get(i)).intValue())
+                    .tags(readTags(wrapper, i))
                     .lastAccessTime(System.currentTimeMillis())
                     .build();
             fragments.add(f);
@@ -217,8 +226,7 @@ public class MilvusWarmStore implements L2WarmStore {
         R<QueryResults> result = client.query(QueryParam.newBuilder()
                 .withCollectionName(collectionName)
                 .withExpr(FIELD_ID + " in [\"" + id + "\"]")
-                .withOutFields(List.of(FIELD_ID, FIELD_NS, FIELD_CONTENT,
-                        FIELD_IMPORTANCE, FIELD_TOKEN_COUNT))
+                .withOutFields(outFields())
                 .build());
         if (result.getStatus() != 0 || result.getData() == null) {
             log.warn("Milvus get failed for id={}: {}", id, result.getMessage());
@@ -235,6 +243,7 @@ public class MilvusWarmStore implements L2WarmStore {
                 .content((String) wrapper.getFieldWrapper(FIELD_CONTENT).getFieldData().get(0))
                 .importance(((Number) wrapper.getFieldWrapper(FIELD_IMPORTANCE).getFieldData().get(0)).doubleValue())
                 .tokenCount(((Number) wrapper.getFieldWrapper(FIELD_TOKEN_COUNT).getFieldData().get(0)).intValue())
+                .tags(readTags(wrapper, 0))
                 .lastAccessTime(System.currentTimeMillis())
                 .build();
         return Optional.of(f);
@@ -246,7 +255,7 @@ public class MilvusWarmStore implements L2WarmStore {
         R<QueryResults> result = client.query(QueryParam.newBuilder()
                 .withCollectionName(collectionName)
                 .withExpr(FIELD_NS + " == \"" + nullToEmpty(namespace) + "\"")
-                .withOutFields(List.of(FIELD_ID, FIELD_NS, FIELD_CONTENT, FIELD_IMPORTANCE, FIELD_TOKEN_COUNT))
+                .withOutFields(outFields())
                 .withLimit((long) boundedLimit)
                 .build());
         if (result.getStatus() != 0 || result.getData() == null) {
@@ -266,6 +275,7 @@ public class MilvusWarmStore implements L2WarmStore {
                     .content((String) wrapper.getFieldWrapper(FIELD_CONTENT).getFieldData().get(i))
                     .importance(((Number) wrapper.getFieldWrapper(FIELD_IMPORTANCE).getFieldData().get(i)).doubleValue())
                     .tokenCount(((Number) wrapper.getFieldWrapper(FIELD_TOKEN_COUNT).getFieldData().get(i)).intValue())
+                    .tags(readTags(wrapper, i))
                     .lastAccessTime(System.currentTimeMillis())
                     .build());
         }
@@ -303,7 +313,10 @@ public class MilvusWarmStore implements L2WarmStore {
                     "Failed to describe Milvus collection '" + collectionName + "': " + result.getMessage());
         }
 
-        int actualDim = result.getData().getSchema().getFieldsList().stream()
+        List<FieldSchema> fields = result.getData().getSchema().getFieldsList();
+        tagsFieldAvailable = fields.stream().anyMatch(field -> FIELD_TAGS.equals(field.getName()));
+
+        int actualDim = fields.stream()
                 .filter(field -> FIELD_EMBEDDING.equals(field.getName()))
                 .findFirst()
                 .map(this::extractDimension)
@@ -327,5 +340,54 @@ public class MilvusWarmStore implements L2WarmStore {
                 .map(Integer::parseInt)
                 .orElseThrow(() -> new IllegalStateException(
                         "Milvus field '" + FIELD_EMBEDDING + "' is missing type param 'dim'"));
+    }
+
+    private List<String> outFields() {
+        List<String> fields = new ArrayList<>(List.of(
+                FIELD_ID,
+                FIELD_NS,
+                FIELD_CONTENT,
+                FIELD_IMPORTANCE,
+                FIELD_TOKEN_COUNT));
+        if (tagsFieldAvailable) {
+            fields.add(FIELD_TAGS);
+        }
+        return fields;
+    }
+
+    private String serializeTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return "";
+        }
+        return tags.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(tag -> !tag.isEmpty())
+                .reduce((left, right) -> left + TAG_DELIMITER + right)
+                .orElse("");
+    }
+
+    private List<String> readTags(QueryResultsWrapper wrapper, int index) {
+        if (!tagsFieldAvailable) {
+            return List.of();
+        }
+        return deserializeTags(wrapper.getFieldWrapper(FIELD_TAGS).getFieldData().get(index));
+    }
+
+    private List<String> readTags(SearchResultsWrapper wrapper, int index) {
+        if (!tagsFieldAvailable) {
+            return List.of();
+        }
+        return deserializeTags(wrapper.getFieldWrapper(FIELD_TAGS).getFieldData().get(index));
+    }
+
+    private List<String> deserializeTags(Object raw) {
+        if (!(raw instanceof String value) || value.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(value.split(TAG_DELIMITER))
+                .map(String::trim)
+                .filter(tag -> !tag.isEmpty())
+                .toList();
     }
 }

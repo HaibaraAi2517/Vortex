@@ -1,0 +1,322 @@
+[
+  {
+    "caseId": "profile-001",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "favorite-language",
+        "content": "Avery's favorite programming language is Rust.",
+        "tags": ["profile", "preference"]
+      }
+    ],
+    "question": "What is Avery's favorite programming language?",
+    "expectedAnswer": "Rust",
+    "expectedFragments": ["favorite-language"],
+    "tags": ["profile"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-002",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "home-city",
+        "content": "Nora currently lives in Lisbon.",
+        "tags": ["profile", "location"]
+      }
+    ],
+    "question": "Which city does Nora live in?",
+    "expectedAnswer": "Lisbon",
+    "expectedFragments": ["home-city"],
+    "tags": ["profile"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-003",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "preferred-editor",
+        "content": "Mateo prefers using Neovim for daily development.",
+        "tags": ["profile", "tooling"]
+      }
+    ],
+    "question": "Which editor does Mateo prefer for daily development?",
+    "expectedAnswer": "Neovim",
+    "expectedFragments": ["preferred-editor"],
+    "tags": ["profile"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-004",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "database-choice",
+        "content": "Priya selected PostgreSQL as the primary database for Project Atlas.",
+        "tags": ["project", "database"]
+      }
+    ],
+    "question": "What primary database did Priya choose for Project Atlas?",
+    "expectedAnswer": "PostgreSQL",
+    "expectedFragments": ["database-choice"],
+    "tags": ["project"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-005",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "deployment-region",
+        "content": "The production deployment region for Service Orion is us-east-1.",
+        "tags": ["project", "ops"]
+      }
+    ],
+    "question": "Which production region is Service Orion deployed to?",
+    "expectedAnswer": "us-east-1",
+    "expectedFragments": ["deployment-region"],
+    "tags": ["project"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-006",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "incident-commander",
+        "content": "Elena serves as the primary incident commander for the payments platform.",
+        "tags": ["team", "incident"]
+      }
+    ],
+    "question": "Who is the primary incident commander for the payments platform?",
+    "expectedAnswer": "Elena",
+    "expectedFragments": ["incident-commander"],
+    "tags": ["team"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-007",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "message-bus",
+        "content": "Project Beacon standardizes on Kafka for asynchronous messaging.",
+        "tags": ["project", "architecture"]
+      }
+    ],
+    "question": "Which messaging system does Project Beacon standardize on?",
+    "expectedAnswer": "Kafka",
+    "expectedFragments": ["message-bus"],
+    "tags": ["project"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-008",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "analytics-owner",
+        "content": "The analytics dashboard is owned by Jordan.",
+        "tags": ["project", "ownership"]
+      }
+    ],
+    "question": "Who owns the analytics dashboard?",
+    "expectedAnswer": "Jordan",
+    "expectedFragments": ["analytics-owner"],
+    "tags": ["project"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-009",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "release-day",
+        "content": "The mobile app releases every Thursday morning.",
+        "tags": ["project", "release"]
+      }
+    ],
+    "question": "When does the mobile app release?",
+    "expectedAnswer": "Thursday morning",
+    "expectedFragments": ["release-day"],
+    "tags": ["project"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-010",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "auth-provider",
+        "content": "Helios uses Auth0 as its authentication provider.",
+        "tags": ["project", "security"]
+      }
+    ],
+    "question": "Which authentication provider does Helios use?",
+    "expectedAnswer": "Auth0",
+    "expectedFragments": ["auth-provider"],
+    "tags": ["project"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-011",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "runbook-owner",
+        "content": "Sofia maintains the disaster recovery runbook.",
+        "tags": ["team", "ops"]
+      }
+    ],
+    "question": "Who maintains the disaster recovery runbook?",
+    "expectedAnswer": "Sofia",
+    "expectedFragments": ["runbook-owner"],
+    "tags": ["team"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-012",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "cache-ttl",
+        "content": "The session cache TTL is set to 45 minutes.",
+        "tags": ["project", "cache"]
+      }
+    ],
+    "question": "What is the session cache TTL?",
+    "expectedAnswer": "45 minutes",
+    "expectedFragments": ["cache-ttl"],
+    "tags": ["project"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-013",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "report-format",
+        "content": "Quarterly finance exports must be generated in CSV format.",
+        "tags": ["reporting", "format"]
+      }
+    ],
+    "question": "Which format must quarterly finance exports use?",
+    "expectedAnswer": "CSV",
+    "expectedFragments": ["report-format"],
+    "tags": ["reporting"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-014",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "retention-window",
+        "content": "Audit logs are retained for 180 days.",
+        "tags": ["compliance", "retention"]
+      }
+    ],
+    "question": "How long are audit logs retained?",
+    "expectedAnswer": "180 days",
+    "expectedFragments": ["retention-window"],
+    "tags": ["compliance"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-015",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "preferred-cloud",
+        "content": "The research sandbox runs on Google Cloud.",
+        "tags": ["infra", "cloud"]
+      }
+    ],
+    "question": "Which cloud runs the research sandbox?",
+    "expectedAnswer": "Google Cloud",
+    "expectedFragments": ["preferred-cloud"],
+    "tags": ["infra"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-016",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "pager-duty",
+        "content": "Marcus is on pager duty this weekend.",
+        "tags": ["team", "oncall"]
+      }
+    ],
+    "question": "Who is on pager duty this weekend?",
+    "expectedAnswer": "Marcus",
+    "expectedFragments": ["pager-duty"],
+    "tags": ["team"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-017",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "preferred-testing",
+        "content": "Lin's preferred testing framework for Java services is JUnit 5.",
+        "tags": ["profile", "testing"]
+      }
+    ],
+    "question": "Which Java testing framework does Lin prefer?",
+    "expectedAnswer": "JUnit 5",
+    "expectedFragments": ["preferred-testing"],
+    "tags": ["profile"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-018",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "api-gateway",
+        "content": "The public API gateway listens on port 8443.",
+        "tags": ["infra", "network"]
+      }
+    ],
+    "question": "Which port does the public API gateway listen on?",
+    "expectedAnswer": "8443",
+    "expectedFragments": ["api-gateway"],
+    "tags": ["infra"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-019",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "preferred-queue",
+        "content": "The billing workflow relies on RabbitMQ for delayed retries.",
+        "tags": ["project", "messaging"]
+      }
+    ],
+    "question": "Which queue system does the billing workflow rely on for delayed retries?",
+    "expectedAnswer": "RabbitMQ",
+    "expectedFragments": ["preferred-queue"],
+    "tags": ["project"],
+    "difficulty": "easy"
+  },
+  {
+    "caseId": "profile-020",
+    "namespace": "llm-eval-profile",
+    "memoryFragments": [
+      {
+        "fragmentId": "l10n-owner",
+        "content": "Harper leads localization for the consumer web app.",
+        "tags": ["team", "ownership"]
+      }
+    ],
+    "question": "Who leads localization for the consumer web app?",
+    "expectedAnswer": "Harper",
+    "expectedFragments": ["l10n-owner"],
+    "tags": ["team"],
+    "difficulty": "easy"
+  }
+]
