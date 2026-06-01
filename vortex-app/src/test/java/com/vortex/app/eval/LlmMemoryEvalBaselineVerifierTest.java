@@ -47,7 +47,25 @@ class LlmMemoryEvalBaselineVerifierTest {
     }
 
     @Test
-    void verifyShouldPassForContractV21Profile(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+    void verifyShouldPassForOfficialV21Profile(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+        Path reportPath = tempDir.resolve("llm-memory-eval-v2-1.json");
+        LlmMemoryEvalReport report = officialBaselineReport();
+        report.getEnvironment().setDatasetLocation("classpath:llm-memory-eval-set-v2-1.json");
+        JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
+
+        LlmMemoryEvalBaselineVerifier verifier = new LlmMemoryEvalBaselineVerifier(JsonMapperFactory.create());
+        LlmMemoryEvalBaselineVerificationResult result =
+                verifier.verify(reportPath, LlmMemoryEvalBaselineProfile.OFFICIAL_V2_1_STRICT);
+
+        assertThat(result.isPassed()).isTrue();
+        assertThat(result.getBaselineProfileId()).isEqualTo("official-v2.1-strict");
+        assertThat(result.getDatasetVersion()).isEqualTo("v2.1");
+        assertThat(result.getDrifts()).isEmpty();
+    }
+
+    @Test
+    void verifyShouldKeepContractV21CandidateAsTransitionAlias(@org.junit.jupiter.api.io.TempDir Path tempDir)
+            throws Exception {
         Path reportPath = tempDir.resolve("llm-memory-eval-v2-1.json");
         LlmMemoryEvalReport report = officialBaselineReport();
         report.getEnvironment().setDatasetLocation("classpath:llm-memory-eval-set-v2-1.json");

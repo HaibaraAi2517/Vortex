@@ -104,7 +104,7 @@ function Get-DatasetVersion {
 function Get-AuditBaselineProfile {
     param([string]$Location)
     if ($Location -eq "classpath:llm-memory-eval-set-v2-1.json") {
-        return "contract-v2.1-candidate"
+        return "official-v2.1-strict"
     }
     if ($Location -eq "classpath:llm-memory-eval-set-v2.json") {
         return "audit-v2-stability"
@@ -115,7 +115,7 @@ function Get-AuditBaselineProfile {
 function Get-StrictVerifierProfile {
     param([string]$Location)
     if ($Location -eq "classpath:llm-memory-eval-set-v2-1.json") {
-        return "contract-v2.1-candidate"
+        return "official-v2.1-strict"
     }
     if ($Location -eq "classpath:llm-memory-eval-set-v2.json") {
         return "official-v2-strict"
@@ -125,6 +125,9 @@ function Get-StrictVerifierProfile {
 
 function Get-BaselineIdForProfile {
     param([string]$Profile)
+    if ($Profile -eq "official-v2.1-strict") {
+        return "20260601-v2-009-contract-audit-5x-net"
+    }
     if ($Profile -eq "contract-v2.1-candidate") {
         return "20260601-v2-009-contract-audit-5x-net"
     }
@@ -135,6 +138,48 @@ function Get-BaselineIdForProfile {
         return "20260529-real-bge-v2-006"
     }
     return $Profile
+}
+
+function Get-BaselineProfileDefinition {
+    param([string]$Profile)
+    $normalized = if ([string]::IsNullOrWhiteSpace($Profile)) { "" } else { $Profile.Trim().ToLowerInvariant() }
+    if ($normalized -eq "official-v2-strict") {
+        return [pscustomobject]@{
+            Id = "official-v2-strict"
+            BaselineId = "20260529-real-bge-v2-006"
+            DatasetVersion = "v2"
+            DatasetLocation = "classpath:llm-memory-eval-set-v2.json"
+            StrictReportProfile = $true
+        }
+    }
+    if ($normalized -eq "audit-v2-stability") {
+        return [pscustomobject]@{
+            Id = "audit-v2-stability"
+            BaselineId = "20260601-mode-scoped-l2-wait-audit-5x-net"
+            DatasetVersion = "v2"
+            DatasetLocation = "classpath:llm-memory-eval-set-v2.json"
+            StrictReportProfile = $false
+        }
+    }
+    if ($normalized -eq "official-v2.1-strict") {
+        return [pscustomobject]@{
+            Id = "official-v2.1-strict"
+            BaselineId = "20260601-v2-009-contract-audit-5x-net"
+            DatasetVersion = "v2.1"
+            DatasetLocation = "classpath:llm-memory-eval-set-v2-1.json"
+            StrictReportProfile = $true
+        }
+    }
+    if ($normalized -eq "contract-v2.1-candidate") {
+        return [pscustomobject]@{
+            Id = "contract-v2.1-candidate"
+            BaselineId = "20260601-v2-009-contract-audit-5x-net"
+            DatasetVersion = "v2.1"
+            DatasetLocation = "classpath:llm-memory-eval-set-v2-1.json"
+            StrictReportProfile = $true
+        }
+    }
+    return $null
 }
 
 function Assert-LastExitCodeZero {
@@ -190,6 +235,17 @@ function New-AuditGateCheck {
     }
 }
 
+function New-ProfileGateCheck {
+    param(
+        [string]$Name,
+        [bool]$Passed,
+        [string]$Expected,
+        [string]$Actual,
+        [string]$Details = ""
+    )
+    return New-AuditGateCheck -Name $Name -Passed $Passed -Expected $Expected -Actual $Actual -Details $Details
+}
+
 function Get-DistinctRunValueCount {
     param(
         [System.Collections.IEnumerable]$Runs,
@@ -203,6 +259,201 @@ function Get-DistinctRunValueCount {
             [string]$value
         }
     } | Sort-Object -Unique).Count
+}
+
+function Get-RunMismatchDetails {
+    param(
+        [System.Collections.IEnumerable]$Runs,
+        [string]$PropertyName,
+        [string]$ExpectedValue
+    )
+    $mismatches = @($Runs | Where-Object {
+        [string]$_.PSObject.Properties[$PropertyName].Value -ne $ExpectedValue
+    } | ForEach-Object {
+        "round {0}: {1}" -f $_.RoundIndex, ([string]$_.PSObject.Properties[$PropertyName].Value)
+    })
+    return ($mismatches -join "; ")
+}
+
+function Test-BaselineProfileIdMatches {
+    param(
+        [string]$Actual,
+        [string]$Expected,
+        [string]$DatasetLocation
+    )
+    if ($Actual -eq $Expected) {
+        return $true
+    }
+    if ($DatasetLocation -eq "classpath:llm-memory-eval-set-v2-1.json" `
+            -and $Expected -eq "official-v2.1-strict" `
+            -and $Actual -eq "contract-v2.1-candidate") {
+        return $true
+    }
+    return $false
+}
+
+function Get-RunProfileMismatchDetails {
+    param(
+        [System.Collections.IEnumerable]$Runs,
+        [string]$PropertyName,
+        [string]$ExpectedValue,
+        [string]$DatasetLocation
+    )
+    $mismatches = @($Runs | Where-Object {
+        -not (Test-BaselineProfileIdMatches `
+            -Actual ([string]$_.PSObject.Properties[$PropertyName].Value) `
+            -Expected $ExpectedValue `
+            -DatasetLocation $DatasetLocation)
+    } | ForEach-Object {
+        "round {0}: {1}" -f $_.RoundIndex, ([string]$_.PSObject.Properties[$PropertyName].Value)
+    })
+    return ($mismatches -join "; ")
+}
+
+function Get-VerifyProfileMismatchDetails {
+    param(
+        [System.Collections.IEnumerable]$Runs,
+        [string]$ExpectedValue
+    )
+    $mismatches = @($Runs | Where-Object {
+        if ($null -eq $_.Verify) {
+            $true
+        } else {
+            [string]$_.Verify.Profile -ne $ExpectedValue
+        }
+    } | ForEach-Object {
+        $actual = if ($null -eq $_.Verify) { "" } else { [string]$_.Verify.Profile }
+        "round {0}: {1}" -f $_.RoundIndex, $actual
+    })
+    return ($mismatches -join "; ")
+}
+
+function New-ProfileGateResult {
+    param(
+        [System.Collections.IEnumerable]$Runs,
+        [int]$RequestedRounds,
+        [string]$DatasetLocation,
+        [string]$DatasetVersion,
+        [string]$BaselineProfile,
+        [string]$StrictVerifierProfile
+    )
+    $completedRuns = @($Runs | Where-Object { $_.Status -eq "completed" })
+    $expectedDatasetVersion = Get-DatasetVersion -Location $DatasetLocation
+    $expectedBaselineProfile = Get-AuditBaselineProfile -Location $DatasetLocation
+    $expectedStrictVerifierProfile = Get-StrictVerifierProfile -Location $DatasetLocation
+    $baselineDefinition = Get-BaselineProfileDefinition -Profile $BaselineProfile
+    $strictDefinition = if ([string]::IsNullOrWhiteSpace($StrictVerifierProfile)) {
+        $null
+    } else {
+        Get-BaselineProfileDefinition -Profile $StrictVerifierProfile
+    }
+    $customDataset = $expectedDatasetVersion -eq "custom"
+    $baselineProfileKnownOrCustom = $null -ne $baselineDefinition -or ($customDataset -and $BaselineProfile -eq "custom")
+    $strictProfileKnownOrCustom = $null -ne $strictDefinition -or ($customDataset -and [string]::IsNullOrWhiteSpace($StrictVerifierProfile))
+    $baselineProfileDatasetMatches = if ($null -ne $baselineDefinition) {
+        $baselineDefinition.DatasetLocation -eq $DatasetLocation -and $baselineDefinition.DatasetVersion -eq $DatasetVersion
+    } else {
+        $customDataset -and $BaselineProfile -eq "custom"
+    }
+    $strictProfileDatasetMatches = if ([string]::IsNullOrWhiteSpace($StrictVerifierProfile)) {
+        [string]::IsNullOrWhiteSpace($expectedStrictVerifierProfile)
+    } elseif ($null -ne $strictDefinition) {
+        $strictDefinition.StrictReportProfile -and $strictDefinition.DatasetLocation -eq $DatasetLocation -and $strictDefinition.DatasetVersion -eq $DatasetVersion
+    } else {
+        $false
+    }
+    $runDatasetLocationMatches = $completedRuns.Count -eq $RequestedRounds -and @($completedRuns | Where-Object { [string]$_.DatasetLocation -ne $DatasetLocation }).Count -eq 0
+    $runDatasetVersionMatches = $completedRuns.Count -eq $RequestedRounds -and @($completedRuns | Where-Object { [string]$_.DatasetVersion -ne $DatasetVersion }).Count -eq 0
+    $runBaselineProfileMatches = $completedRuns.Count -eq $RequestedRounds -and @($completedRuns | Where-Object {
+        -not (Test-BaselineProfileIdMatches `
+            -Actual ([string]$_.BaselineProfileId) `
+            -Expected $BaselineProfile `
+            -DatasetLocation $DatasetLocation)
+    }).Count -eq 0
+    $runStrictProfileMatches = $completedRuns.Count -eq $RequestedRounds -and @($completedRuns | Where-Object {
+        -not (Test-BaselineProfileIdMatches `
+            -Actual ([string]$_.StrictVerifierProfileId) `
+            -Expected $StrictVerifierProfile `
+            -DatasetLocation $DatasetLocation)
+    }).Count -eq 0
+    $runVerifyProfileMatches = $completedRuns.Count -eq $RequestedRounds -and @($completedRuns | Where-Object {
+        $null -eq $_.Verify -or [string]$_.Verify.Profile -ne $StrictVerifierProfile
+    }).Count -eq 0
+
+    $checks = @(
+        New-ProfileGateCheck `
+            -Name "datasetVersion" `
+            -Passed ($DatasetVersion -eq $expectedDatasetVersion) `
+            -Expected $expectedDatasetVersion `
+            -Actual $DatasetVersion
+        New-ProfileGateCheck `
+            -Name "baselineProfileForDataset" `
+            -Passed (Test-BaselineProfileIdMatches -Actual $BaselineProfile -Expected $expectedBaselineProfile -DatasetLocation $DatasetLocation) `
+            -Expected $expectedBaselineProfile `
+            -Actual $BaselineProfile
+        New-ProfileGateCheck `
+            -Name "strictVerifierProfileForDataset" `
+            -Passed (Test-BaselineProfileIdMatches -Actual $StrictVerifierProfile -Expected $expectedStrictVerifierProfile -DatasetLocation $DatasetLocation) `
+            -Expected $expectedStrictVerifierProfile `
+            -Actual $StrictVerifierProfile
+        New-ProfileGateCheck `
+            -Name "baselineProfileDefinition" `
+            -Passed ($baselineProfileKnownOrCustom -and $baselineProfileDatasetMatches) `
+            -Expected ("known profile for {0}/{1}" -f $DatasetVersion, $DatasetLocation) `
+            -Actual $BaselineProfile
+        New-ProfileGateCheck `
+            -Name "strictVerifierProfileDefinition" `
+            -Passed ($strictProfileKnownOrCustom -and $strictProfileDatasetMatches) `
+            -Expected ("strict-report profile for {0}/{1}" -f $DatasetVersion, $DatasetLocation) `
+            -Actual $StrictVerifierProfile
+        New-ProfileGateCheck `
+            -Name "runDatasetLocation" `
+            -Passed $runDatasetLocationMatches `
+            -Expected $DatasetLocation `
+            -Actual ("completedRuns={0}" -f $completedRuns.Count) `
+            -Details (Get-RunMismatchDetails -Runs $completedRuns -PropertyName "DatasetLocation" -ExpectedValue $DatasetLocation)
+        New-ProfileGateCheck `
+            -Name "runDatasetVersion" `
+            -Passed $runDatasetVersionMatches `
+            -Expected $DatasetVersion `
+            -Actual ("completedRuns={0}" -f $completedRuns.Count) `
+            -Details (Get-RunMismatchDetails -Runs $completedRuns -PropertyName "DatasetVersion" -ExpectedValue $DatasetVersion)
+        New-ProfileGateCheck `
+            -Name "runBaselineProfileId" `
+            -Passed $runBaselineProfileMatches `
+            -Expected $BaselineProfile `
+            -Actual ("completedRuns={0}" -f $completedRuns.Count) `
+            -Details (Get-RunProfileMismatchDetails -Runs $completedRuns -PropertyName "BaselineProfileId" -ExpectedValue $BaselineProfile -DatasetLocation $DatasetLocation)
+        New-ProfileGateCheck `
+            -Name "runStrictVerifierProfileId" `
+            -Passed $runStrictProfileMatches `
+            -Expected $StrictVerifierProfile `
+            -Actual ("completedRuns={0}" -f $completedRuns.Count) `
+            -Details (Get-RunProfileMismatchDetails -Runs $completedRuns -PropertyName "StrictVerifierProfileId" -ExpectedValue $StrictVerifierProfile -DatasetLocation $DatasetLocation)
+        New-ProfileGateCheck `
+            -Name "runVerifyProfile" `
+            -Passed $runVerifyProfileMatches `
+            -Expected $StrictVerifierProfile `
+            -Actual ("completedRuns={0}" -f $completedRuns.Count) `
+            -Details (Get-VerifyProfileMismatchDetails -Runs $completedRuns -ExpectedValue $StrictVerifierProfile)
+    )
+    return [pscustomobject]@{
+        Passed = @($checks | Where-Object { -not $_.Passed }).Count -eq 0
+        Expected = [pscustomobject]@{
+            DatasetLocation = $DatasetLocation
+            DatasetVersion = $expectedDatasetVersion
+            BaselineProfile = $expectedBaselineProfile
+            StrictVerifierProfile = $expectedStrictVerifierProfile
+        }
+        Actual = [pscustomobject]@{
+            DatasetLocation = $DatasetLocation
+            DatasetVersion = $DatasetVersion
+            BaselineProfile = $BaselineProfile
+            StrictVerifierProfile = $StrictVerifierProfile
+            CompletedRuns = $completedRuns.Count
+        }
+        Checks = $checks
+    }
 }
 
 function New-AuditGateResult {
@@ -849,7 +1100,14 @@ try {
         -MinVortexMemoryMeanAccuracy $MinVortexMemoryMeanAccuracy `
         -MinRecoveredMeanAccuracy $MinRecoveredMeanAccuracy `
         -MinRecoveredL2MeanHitRate $MinRecoveredL2MeanHitRate
-    $overallPassed = $auditGate.Passed
+    $profileGate = New-ProfileGateResult `
+        -Runs $completedRuns `
+        -RequestedRounds $Rounds `
+        -DatasetLocation $DatasetLocation `
+        -DatasetVersion $datasetVersion `
+        -BaselineProfile $BaselineProfile `
+        -StrictVerifierProfile $StrictVerifierProfile
+    $overallPassed = $auditGate.Passed -and $profileGate.Passed
 
     Write-Host "Building audit summary object"
     $summary = [pscustomobject]@{
@@ -895,6 +1153,7 @@ try {
             CaseFailureGroupCount = @($caseFailureSummary).Count
         }
         AuditGate = $auditGate
+        ProfileGate = $profileGate
         CaseFailureSummary = $caseFailureSummary
         CaseFailureDetails = $caseFailureDetails
         Runs = $completedRuns
@@ -915,6 +1174,7 @@ try {
         "- Strict Verifier Profile: $($summary.StrictVerifierProfile)"
         "- Overall Passed: $($summary.OverallPassed)"
         "- Audit Gate Passed: $($summary.AuditGate.Passed)"
+        "- Profile Gate Passed: $($summary.ProfileGate.Passed)"
         "- Strict Verifier Passed: $($summary.StrictVerifierPassed)"
         "- Requested Rounds: $Rounds"
         "- Eval Success Count: $evalSuccessCount"
@@ -937,6 +1197,10 @@ try {
         "## Audit Gate"
         ""
         (Get-AuditGateMarkdown -AuditGate $auditGate)
+        ""
+        "## Profile Gate"
+        ""
+        (Get-AuditGateMarkdown -AuditGate $profileGate)
         ""
         "## Case Failure Summary"
         ""
@@ -970,9 +1234,10 @@ Write-Host "  Summary JSON : $auditJsonPath"
 Write-Host "  Summary MD   : $auditMarkdownPath"
 Write-Host "  Overall Pass : $overallPassed"
 Write-Host "  Audit Gate   : $($auditGate.Passed)"
+Write-Host "  Profile Gate : $($profileGate.Passed)"
 Write-Host "  Verify Passes: $verifierPassCount/$Rounds"
 
-if ($FailOnAuditGateFailure -and -not $auditGate.Passed) {
+if ($FailOnAuditGateFailure -and -not $overallPassed) {
     exit 2
 }
 
@@ -985,6 +1250,7 @@ if ($FailOnAuditGateFailure -and -not $auditGate.Passed) {
     StrictVerifierProfile = $StrictVerifierProfile
     OverallPassed = $overallPassed
     AuditGatePassed = $auditGate.Passed
+    ProfileGatePassed = $profileGate.Passed
     StrictVerifierPassed = $strictVerifierPassed
     VerifierPassCount = $verifierPassCount
     RequestedRounds = $Rounds

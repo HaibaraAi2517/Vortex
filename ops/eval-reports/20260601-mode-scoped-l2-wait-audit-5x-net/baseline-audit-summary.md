@@ -1,13 +1,14 @@
 ﻿# LLM Memory Baseline Audit
 
 - Audit Stamp: 20260601-mode-scoped-l2-wait-audit-5x-net
-- GeneratedAt: 2026-06-01T09:40:10.4376120Z
+- GeneratedAt: 2026-06-01T11:35:20.6346179Z
 - Baseline Id: 20260601-mode-scoped-l2-wait-audit-5x-net
 - Baseline Profile: audit-v2-stability
 - Dataset Version: v2
 - Strict Verifier Profile: official-v2-strict
 - Overall Passed: True
 - Audit Gate Passed: True
+- Profile Gate Passed: True
 - Strict Verifier Passed: False
 - Requested Rounds: 5
 - Eval Success Count: 5
@@ -16,7 +17,7 @@
 - Base URL: https://sub2.congmingai.com
 - Model: gpt-5.2
 - L1 Max Tokens: 96
-- Total Duration Seconds: 5.261
+- Total Duration Seconds: 5.296
 
 ## Aggregate
 
@@ -37,6 +38,22 @@
 | vortexMemoryMeanAccuracy | True | >= 0.8500 | 0.9867 |  |
 | recoveredMeanAccuracy | True | >= 0.9500 | 1.0000 |  |
 | recoveredL2MeanHitRate | True | >= 0.9500 | 1.0000 |  |
+
+
+## Profile Gate
+
+| Check | Passed | Expected | Actual | Details |
+| --- | --- | --- | --- | --- |
+| datasetVersion | True | v2 | v2 |  |
+| baselineProfileForDataset | True | audit-v2-stability | audit-v2-stability |  |
+| strictVerifierProfileForDataset | True | official-v2-strict | official-v2-strict |  |
+| baselineProfileDefinition | True | known profile for v2/classpath:llm-memory-eval-set-v2.json | audit-v2-stability |  |
+| strictVerifierProfileDefinition | True | strict-report profile for v2/classpath:llm-memory-eval-set-v2.json | official-v2-strict |  |
+| runDatasetLocation | True | classpath:llm-memory-eval-set-v2.json | completedRuns=5 |  |
+| runDatasetVersion | True | v2 | completedRuns=5 |  |
+| runBaselineProfileId | True | audit-v2-stability | completedRuns=5 |  |
+| runStrictVerifierProfileId | True | official-v2-strict | completedRuns=5 |  |
+| runVerifyProfile | True | official-v2-strict | completedRuns=5 |  |
 
 
 ## Case Failure Summary

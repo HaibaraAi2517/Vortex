@@ -69,16 +69,28 @@ Do not fabricate hidden facts or fragment identifiers.
    - 数据集：`classpath:llm-memory-eval-set-v2.json`
    - baseline id：`20260601-mode-scoped-l2-wait-audit-5x-net`
    - 语义：v2 多轮稳定性 audit gate，不用于单个报告 strict verify
-3. `contract-v2.1-candidate`
+3. `official-v2.1-strict`
    - 数据集：`classpath:llm-memory-eval-set-v2-1.json`
    - baseline id：`20260601-v2-009-contract-audit-5x-net`
-   - 语义：v2.1 contract 候选 profile，支持单轮 strict verify 和多轮 audit
+   - 语义：正式 v2.1 单轮 strict baseline，要求 `0/15, 15/15, 15/15`
+4. `contract-v2.1-candidate`
+   - 数据集：`classpath:llm-memory-eval-set-v2-1.json`
+   - baseline id：`20260601-v2-009-contract-audit-5x-net`
+   - 语义：`official-v2.1-strict` 的过渡 alias
 
 `eval-cli verify` 默认使用 `official-v2-strict`。其它 strict profile 需要显式传入：
 
 ```powershell
+java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify --list-profiles
+
 java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
-  --profile contract-v2.1-candidate `
+  --profile official-v2.1-strict `
+  --describe
+```
+
+```powershell
+java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
+  --profile official-v2.1-strict `
   .\ops\eval-reports\20260601-v2-009-contract-audit-5x-net\runs\20260601-v2-009-contract-audit-5x-net-run01\llm-memory-eval-*.json
 ```
 
@@ -113,7 +125,7 @@ java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
 1. `v2-009`：片段齐全但模型偶发拒绝从 `Thursday 08:00 UTC` + `one hour after` 推出 `Thursday`。这是 generation contract / 样本文案问题，不是召回问题。
 2. `v2-007`：本批次未再出现 recovered miss；`Vortex-RecoveredMemory` 的 `RecoveredAccuracy` 和 `RecoveredL2HitRate` 均为 5/5。
 
-## 候选 Eval Contract v2.1
+## 正式 Eval Contract v2.1
 
 `v2-009` 的剩余波动来自样本文案没有显式说明 `one hour after` 是从 localization freeze start 起算且不跨 weekday。为避免把隐含时间推导 contract 混入 memory/recovery 能力评测，新增独立数据集：
 
@@ -122,17 +134,18 @@ java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
   - v2：`The mobile release happens one hour after the localization freeze.`
   - v2.1：`The mobile release happens one hour after the localization freeze starts, on the same weekday.`
 
-v2.1 候选多轮 audit baseline：
+v2.1 正式 strict profile：
 
 - 报告批次：`20260601-v2-009-contract-audit-5x-net`
-- baseline profile：`contract-v2.1-candidate`
-- strict verifier profile：`contract-v2.1-candidate`
+- baseline profile：`official-v2.1-strict`
+- strict verifier profile：`official-v2.1-strict`
 - 汇总报告：
   - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/baseline-audit-summary.json:1)
   - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/baseline-audit-summary.md:1)
 - 结果：
   - `OverallPassed = true`
   - `AuditGate.Passed = true`
+  - `ProfileGate.Passed = true`
   - `StrictVerifierPassed = true`
   - `VerifierPassCount = 5/5`
   - `Baseline-NoMemory correct values = 0, 0, 0, 0, 0`
@@ -142,7 +155,11 @@ v2.1 候选多轮 audit baseline：
   - `CaseFailureCount = 0`
   - `CaseFailureGroupCount = 0`
 
-`contract-v2.1-candidate` 已是独立 strict profile，因此该批次可以用 v2.1 数据集执行单轮 strict verify。它仍然是候选 contract profile，不自动替代 `official-v2-strict`。
+`official-v2.1-strict` 已是独立 strict profile，因此该批次可以用 v2.1 数据集执行单轮 strict verify。`contract-v2.1-candidate` 保留为过渡 alias；默认 `verify <report>` 仍然使用 `official-v2-strict`，不自动迁移到 v2.1。
+
+升级提案见：
+
+- [llm-memory-eval-v2-1-upgrade-proposal.md](E:/1projects/claude/Vortex/ops/runbooks/llm-memory-eval-v2-1-upgrade-proposal.md:1)
 
 ## 判定标准
 
@@ -159,7 +176,14 @@ v2.1 候选多轮 audit baseline：
 
 ## 可执行门禁
 
-当前推荐的真实 LLM 稳定性门禁是多轮 audit gate。它复用已有单轮报告，只补缺失轮次；加上 `-FailOnAuditGateFailure` 后，只有 `AuditGate.Passed = false` 才会让命令失败，单轮 strict verifier 漂移不会直接失败。
+当前推荐的真实 LLM 稳定性门禁是多轮 audit gate。它复用已有单轮报告，只补缺失轮次；加上 `-FailOnAuditGateFailure` 后，`AuditGate.Passed = false` 或 `ProfileGate.Passed = false` 都会让命令失败，单轮 strict verifier 漂移不会直接失败。
+
+`ProfileGate` 会检查：
+
+1. `DatasetLocation` 推断出的 `DatasetVersion`、`BaselineProfile`、`StrictVerifierProfile`
+2. 显式传入的 profile 是否属于该数据集
+3. 每轮 report environment 中的 `datasetVersion`、`baselineProfileId`、`strictVerifierProfileId`
+4. 每轮 verifier 实际使用的 profile
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1 `

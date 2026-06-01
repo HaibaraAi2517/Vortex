@@ -2,6 +2,9 @@ package com.vortex.app.eval;
 
 import com.vortex.common.serialization.JsonMapperFactory;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
@@ -12,6 +15,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@ExtendWith(OutputCaptureExtension.class)
 class LlmMemoryEvalCliApplicationTest {
 
     @Test
@@ -24,18 +28,19 @@ class LlmMemoryEvalCliApplicationTest {
     }
 
     @Test
-    void verifyCommandShouldAcceptExplicitContractProfile(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+    void verifyCommandShouldAcceptExplicitOfficialV21Profile(@org.junit.jupiter.api.io.TempDir Path tempDir)
+            throws Exception {
         Path reportPath = tempDir.resolve("llm-memory-eval-v2-1.json");
         JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), strictReport(
                 "classpath:llm-memory-eval-set-v2-1.json",
                 "v2.1",
-                "contract-v2.1-candidate",
-                "contract-v2.1-candidate"));
+                "official-v2.1-strict",
+                "official-v2.1-strict"));
 
         int exitCode = LlmMemoryEvalCliApplication.execute(new String[] {
                 "verify",
                 "--profile",
-                "contract-v2.1-candidate",
+                "official-v2.1-strict",
                 reportPath.toString()
         });
 
@@ -59,6 +64,58 @@ class LlmMemoryEvalCliApplicationTest {
         });
 
         assertThat(exitCode).isEqualTo(1);
+    }
+
+    @Test
+    void verifyCommandShouldListProfiles(CapturedOutput output) {
+        int exitCode = LlmMemoryEvalCliApplication.execute(new String[] {
+                "verify",
+                "--list-profiles"
+        });
+
+        assertThat(exitCode).isZero();
+        assertThat(output.getOut())
+                .contains("official-v2-strict [strict-report]")
+                .contains("audit-v2-stability [audit-only]")
+                .contains("official-v2.1-strict [strict-report]")
+                .contains("contract-v2.1-candidate [strict-report]");
+    }
+
+    @Test
+    void verifyCommandShouldDescribeSelectedProfile(CapturedOutput output) {
+        int exitCode = LlmMemoryEvalCliApplication.execute(new String[] {
+                "verify",
+                "--profile",
+                "audit-v2-stability",
+                "--describe"
+        });
+
+        assertThat(exitCode).isZero();
+        assertThat(output.getOut())
+                .contains("Profile: audit-v2-stability")
+                .contains("Type: audit-only")
+                .contains("Baseline ID: 20260601-mode-scoped-l2-wait-audit-5x-net")
+                .contains("Dataset location: classpath:llm-memory-eval-set-v2.json")
+                .contains("Strict verify expectations: none");
+    }
+
+    @Test
+    void verifyCommandShouldDescribeOfficialV21Profile(CapturedOutput output) {
+        int exitCode = LlmMemoryEvalCliApplication.execute(new String[] {
+                "verify",
+                "--profile",
+                "official-v2.1-strict",
+                "--describe"
+        });
+
+        assertThat(exitCode).isZero();
+        assertThat(output.getOut())
+                .contains("Profile: official-v2.1-strict")
+                .contains("Type: strict-report")
+                .contains("Baseline ID: 20260601-v2-009-contract-audit-5x-net")
+                .contains("Dataset version: v2.1")
+                .contains("Dataset location: classpath:llm-memory-eval-set-v2-1.json")
+                .contains("Vortex-RecoveredMemory correct=15/15 accuracy=1.0 recoveredAccuracy=1.0 recoveredL2HitRate=1.0");
     }
 
     private LlmMemoryEvalReport strictReport(

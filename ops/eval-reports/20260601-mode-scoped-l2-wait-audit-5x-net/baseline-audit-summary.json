@@ -1,6 +1,6 @@
 ﻿{
     "AuditStamp":  "20260601-mode-scoped-l2-wait-audit-5x-net",
-    "GeneratedAt":  "2026-06-01T09:40:10.4376120Z",
+    "GeneratedAt":  "2026-06-01T11:35:20.6346179Z",
     "BaselineId":  "20260601-mode-scoped-l2-wait-audit-5x-net",
     "BaselineProfile":  "audit-v2-stability",
     "DatasetVersion":  "v2",
@@ -25,9 +25,9 @@
                      "MinRecoveredL2MeanHitRate":  0.95
                  },
     "Aggregate":  {
-                      "StartedAt":  "2026-06-01T09:40:05.0463618Z",
-                      "CompletedAt":  "2026-06-01T09:40:10.3073131Z",
-                      "TotalDurationSeconds":  5.261,
+                      "StartedAt":  "2026-06-01T11:35:15.0943273Z",
+                      "CompletedAt":  "2026-06-01T11:35:20.3903105Z",
+                      "TotalDurationSeconds":  5.296,
                       "EvalSuccessCount":  5,
                       "EvalFailureCount":  0,
                       "VerifierPassCount":  4,
@@ -123,6 +123,94 @@
                                      }
                                  ]
                   },
+    "ProfileGate":  {
+                        "Passed":  true,
+                        "Expected":  {
+                                         "DatasetLocation":  "classpath:llm-memory-eval-set-v2.json",
+                                         "DatasetVersion":  "v2",
+                                         "BaselineProfile":  "audit-v2-stability",
+                                         "StrictVerifierProfile":  "official-v2-strict"
+                                     },
+                        "Actual":  {
+                                       "DatasetLocation":  "classpath:llm-memory-eval-set-v2.json",
+                                       "DatasetVersion":  "v2",
+                                       "BaselineProfile":  "audit-v2-stability",
+                                       "StrictVerifierProfile":  "official-v2-strict",
+                                       "CompletedRuns":  5
+                                   },
+                        "Checks":  [
+                                       {
+                                           "Name":  "datasetVersion",
+                                           "Passed":  true,
+                                           "Expected":  "v2",
+                                           "Actual":  "v2",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "baselineProfileForDataset",
+                                           "Passed":  true,
+                                           "Expected":  "audit-v2-stability",
+                                           "Actual":  "audit-v2-stability",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "strictVerifierProfileForDataset",
+                                           "Passed":  true,
+                                           "Expected":  "official-v2-strict",
+                                           "Actual":  "official-v2-strict",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "baselineProfileDefinition",
+                                           "Passed":  true,
+                                           "Expected":  "known profile for v2/classpath:llm-memory-eval-set-v2.json",
+                                           "Actual":  "audit-v2-stability",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "strictVerifierProfileDefinition",
+                                           "Passed":  true,
+                                           "Expected":  "strict-report profile for v2/classpath:llm-memory-eval-set-v2.json",
+                                           "Actual":  "official-v2-strict",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "runDatasetLocation",
+                                           "Passed":  true,
+                                           "Expected":  "classpath:llm-memory-eval-set-v2.json",
+                                           "Actual":  "completedRuns=5",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "runDatasetVersion",
+                                           "Passed":  true,
+                                           "Expected":  "v2",
+                                           "Actual":  "completedRuns=5",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "runBaselineProfileId",
+                                           "Passed":  true,
+                                           "Expected":  "audit-v2-stability",
+                                           "Actual":  "completedRuns=5",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "runStrictVerifierProfileId",
+                                           "Passed":  true,
+                                           "Expected":  "official-v2-strict",
+                                           "Actual":  "completedRuns=5",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "runVerifyProfile",
+                                           "Passed":  true,
+                                           "Expected":  "official-v2-strict",
+                                           "Actual":  "completedRuns=5",
+                                           "Details":  ""
+                                       }
+                                   ]
+                    },
     "CaseFailureSummary":  {
                                "CaseId":  "v2-009",
                                "Mode":  "Vortex-Memory",
@@ -181,7 +269,7 @@
                      "RoundIndex":  1,
                      "RoundStamp":  "20260601-mode-scoped-l2-wait-audit-5x-net-run01",
                      "Status":  "completed",
-                     "DurationSeconds":  1.087,
+                     "DurationSeconds":  1.088,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run01",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run01\\llm-memory-eval-20260601-081513.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run01\\llm-memory-eval-20260601-081513.md",
@@ -255,7 +343,7 @@
                      "RoundIndex":  2,
                      "RoundStamp":  "20260601-mode-scoped-l2-wait-audit-5x-net-run02",
                      "Status":  "completed",
-                     "DurationSeconds":  1.041,
+                     "DurationSeconds":  1.048,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run02",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run02\\llm-memory-eval-20260601-081730.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run02\\llm-memory-eval-20260601-081730.md",
@@ -329,7 +417,7 @@
                      "RoundIndex":  3,
                      "RoundStamp":  "20260601-mode-scoped-l2-wait-audit-5x-net-run03",
                      "Status":  "completed",
-                     "DurationSeconds":  1.034,
+                     "DurationSeconds":  1.036,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run03",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run03\\llm-memory-eval-20260601-082017.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run03\\llm-memory-eval-20260601-082017.md",
@@ -403,7 +491,7 @@
                      "RoundIndex":  4,
                      "RoundStamp":  "20260601-mode-scoped-l2-wait-audit-5x-net-run04",
                      "Status":  "completed",
-                     "DurationSeconds":  1.033,
+                     "DurationSeconds":  1.05,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run04",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run04\\llm-memory-eval-20260601-082238.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run04\\llm-memory-eval-20260601-082238.md",
@@ -477,7 +565,7 @@
                      "RoundIndex":  5,
                      "RoundStamp":  "20260601-mode-scoped-l2-wait-audit-5x-net-run05",
                      "Status":  "completed",
-                     "DurationSeconds":  1.033,
+                     "DurationSeconds":  1.038,
                      "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run05",
                      "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run05\\llm-memory-eval-20260601-082500.json",
                      "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-mode-scoped-l2-wait-audit-5x-net\\runs\\20260601-mode-scoped-l2-wait-audit-5x-net-run05\\llm-memory-eval-20260601-082500.md",

@@ -19,13 +19,25 @@ public enum LlmMemoryEvalBaselineProfile {
                     ModeExpectation.of("Vortex-Memory", 15, 15, 1.0d, null, null),
                     ModeExpectation.of("Vortex-RecoveredMemory", 15, 15, 1.0d, 1.0d, 1.0d))),
 
+    OFFICIAL_V2_1_STRICT(
+            "official-v2.1-strict",
+            "20260601-v2-009-contract-audit-5x-net",
+            "v2.1",
+            "classpath:llm-memory-eval-set-v2-1.json",
+            true,
+            "Official strict baseline for explicit v2.1 time-offset contract",
+            List.of(
+                    ModeExpectation.of("Baseline-NoMemory", 0, 15, null, null, null),
+                    ModeExpectation.of("Vortex-Memory", 15, 15, 1.0d, null, null),
+                    ModeExpectation.of("Vortex-RecoveredMemory", 15, 15, 1.0d, 1.0d, 1.0d))),
+
     CONTRACT_V2_1_CANDIDATE(
             "contract-v2.1-candidate",
             "20260601-v2-009-contract-audit-5x-net",
             "v2.1",
             "classpath:llm-memory-eval-set-v2-1.json",
             true,
-            "Candidate strict baseline for explicit v2.1 time-offset contract",
+            "Transition alias for official-v2.1-strict",
             List.of(
                     ModeExpectation.of("Baseline-NoMemory", 0, 15, null, null, null),
                     ModeExpectation.of("Vortex-Memory", 15, 15, 1.0d, null, null),
@@ -40,8 +52,15 @@ public enum LlmMemoryEvalBaselineProfile {
             "Multi-run stability gate profile for v2 memory/recovered audit",
             List.of());
 
+    private static final List<LlmMemoryEvalBaselineProfile> PROFILES = List.of(
+            OFFICIAL_V2_STRICT,
+            AUDIT_V2_STABILITY,
+            OFFICIAL_V2_1_STRICT,
+            CONTRACT_V2_1_CANDIDATE);
+
     private static final Map<String, LlmMemoryEvalBaselineProfile> BY_ID = Map.of(
             OFFICIAL_V2_STRICT.id, OFFICIAL_V2_STRICT,
+            OFFICIAL_V2_1_STRICT.id, OFFICIAL_V2_1_STRICT,
             CONTRACT_V2_1_CANDIDATE.id, CONTRACT_V2_1_CANDIDATE,
             AUDIT_V2_STABILITY.id, AUDIT_V2_STABILITY);
 
@@ -98,6 +117,10 @@ public enum LlmMemoryEvalBaselineProfile {
         return modeExpectations;
     }
 
+    public static List<LlmMemoryEvalBaselineProfile> allProfiles() {
+        return PROFILES;
+    }
+
     public static LlmMemoryEvalBaselineProfile require(String profileId) {
         String normalized = normalizeProfileId(profileId);
         LlmMemoryEvalBaselineProfile profile = BY_ID.get(normalized);
@@ -127,7 +150,7 @@ public enum LlmMemoryEvalBaselineProfile {
 
     public static String inferAuditProfileId(String datasetLocation) {
         if ("classpath:llm-memory-eval-set-v2-1.json".equals(datasetLocation)) {
-            return CONTRACT_V2_1_CANDIDATE.id();
+            return OFFICIAL_V2_1_STRICT.id();
         }
         if ("classpath:llm-memory-eval-set-v2.json".equals(datasetLocation)) {
             return AUDIT_V2_STABILITY.id();
@@ -137,7 +160,7 @@ public enum LlmMemoryEvalBaselineProfile {
 
     public static String inferStrictVerifierProfileId(String datasetLocation) {
         if ("classpath:llm-memory-eval-set-v2-1.json".equals(datasetLocation)) {
-            return CONTRACT_V2_1_CANDIDATE.id();
+            return OFFICIAL_V2_1_STRICT.id();
         }
         if ("classpath:llm-memory-eval-set-v2.json".equals(datasetLocation)) {
             return OFFICIAL_V2_STRICT.id();
