@@ -55,13 +55,34 @@ AI Agent 记忆与状态管理内核。为长时运行的 LLM Agent 提供三层
 
 ```bash
 # 1. 启动基础设施
-docker compose up -d
+bash ops/compose-up.sh
 
-# 2. 等待 Milvus 就绪（约 30 秒）
-docker compose ps
-
-# 3. 启动应用
+# 2. 启动应用
 mvn spring-boot:run -pl vortex-app
+```
+
+如果你在 Windows PowerShell 下运行，也可以使用：
+
+```powershell
+.\ops\compose-start.ps1
+```
+
+停止服务但保留容器（这样它们会继续显示在 Docker Desktop 的 Containers 里，后续可直接点 Start）：
+
+```bash
+bash ops/compose-stop.sh
+```
+
+或：
+
+```powershell
+.\ops\compose-stop.ps1
+```
+
+只有在你明确想删除容器、让它们从 Docker Desktop 列表中消失时，才运行：
+
+```bash
+docker compose down
 ```
 
 应用默认监听 `http://localhost:8080`。
