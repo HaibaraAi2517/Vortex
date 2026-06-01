@@ -17,7 +17,18 @@ Thumbs.db
 /ygk-log/
 /教与复盘/
 /评审与行动/
+/测试阶段/
 /项目实现问题模块划分/
 /日志.txt
 /构思.txt
 /项目构思评价.txt
+
+# Local/generated eval artifacts. Force-add intentionally promoted baselines.
+/ops/tmp/
+/ops/eval-reports/*
+!/ops/eval-reports/20260529-real-bge-v2-006/
+!/ops/eval-reports/20260529-real-bge-v2-006/**
+!/ops/eval-reports/20260601-mode-scoped-l2-wait-audit-5x-net/
+!/ops/eval-reports/20260601-mode-scoped-l2-wait-audit-5x-net/**
+!/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/
+!/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/**
