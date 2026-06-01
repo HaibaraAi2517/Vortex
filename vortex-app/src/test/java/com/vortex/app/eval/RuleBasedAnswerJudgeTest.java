@@ -2,6 +2,8 @@ package com.vortex.app.eval;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class RuleBasedAnswerJudgeTest {
@@ -39,8 +41,8 @@ class RuleBasedAnswerJudgeTest {
     void evaluateShouldRequireExpectedAnswerAndMustContainTerms() {
         RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
                 "CSV",
-                java.util.List.of("quarterly finance exports", "compliance handoff"),
-                java.util.List.of(),
+                List.of("quarterly finance exports", "compliance handoff"),
+                List.of(),
                 "Quarterly finance exports use CSV according to the reporting policy.");
 
         assertThat(judgment.correct()).isFalse();
@@ -52,8 +54,8 @@ class RuleBasedAnswerJudgeTest {
     void evaluateShouldPassWhenExpectedAnswerAndMustContainTermsArePresent() {
         RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
                 "CSV",
-                java.util.List.of("quarterly finance exports", "compliance handoff"),
-                java.util.List.of("XLSX"),
+                List.of("quarterly finance exports", "compliance handoff"),
+                List.of("XLSX"),
                 "Quarterly finance exports use CSV per the compliance handoff.");
 
         assertThat(judgment.correct()).isTrue();
@@ -66,8 +68,8 @@ class RuleBasedAnswerJudgeTest {
     void evaluateShouldRejectForbiddenTermsBeforeMissingFacts() {
         RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
                 "CSV",
-                java.util.List.of("compliance handoff"),
-                java.util.List.of("XLSX", "PDF"),
+                List.of("compliance handoff"),
+                List.of("XLSX", "PDF"),
                 "Quarterly finance exports use XLSX.");
 
         assertThat(judgment.correct()).isFalse();
@@ -80,8 +82,8 @@ class RuleBasedAnswerJudgeTest {
     void evaluateShouldRejectInsufficientAnswerWithStructuredReason() {
         RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
                 "Redshift",
-                java.util.List.of("Zephyr risk dashboard"),
-                java.util.List.of(),
+                List.of("Zephyr risk dashboard"),
+                List.of(),
                 "The provided memory is insufficient to determine the warehouse.");
 
         assertThat(judgment.correct()).isFalse();
@@ -93,13 +95,76 @@ class RuleBasedAnswerJudgeTest {
     void evaluateShouldUseWordBoundariesForMustContainAndForbiddenTerms() {
         RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
                 "Rust",
-                java.util.List.of("Rust"),
-                java.util.List.of("Ruby"),
+                List.of("Rust"),
+                List.of("Ruby"),
                 "You can trust this answer, but it does not state the language.");
 
         assertThat(judgment.correct()).isFalse();
         assertThat(judgment.failureReason()).isEqualTo(RuleBasedAnswerJudge.FAILURE_ANSWER_MISSING_FACT);
         assertThat(judgment.missingMustContain()).containsExactly("Rust");
+        assertThat(judgment.matchedForbiddenTerms()).isEmpty();
+    }
+
+    @Test
+    void evaluateShouldNotRejectForbiddenTermInNotContext() {
+        RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
+                "bullet points",
+                List.of("incident brief"),
+                List.of("narrative paragraph"),
+                "Use bullet points for the incident brief, not Ravi's short narrative paragraph.");
+
+        assertThat(judgment.correct()).isTrue();
+        assertThat(judgment.matchedForbiddenTerms()).isEmpty();
+    }
+
+    @Test
+    void evaluateShouldNotRejectForbiddenTermInInsteadOfContext() {
+        RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
+                "bullet points",
+                List.of("incident brief"),
+                List.of("narrative paragraph"),
+                "Use bullet points for the incident brief instead of narrative paragraph.");
+
+        assertThat(judgment.correct()).isTrue();
+        assertThat(judgment.matchedForbiddenTerms()).isEmpty();
+    }
+
+    @Test
+    void evaluateShouldNotRejectForbiddenTermInRatherThanContext() {
+        RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
+                "bullet points",
+                List.of("incident brief"),
+                List.of("narrative paragraph"),
+                "Use bullet points for the incident brief rather than narrative paragraph.");
+
+        assertThat(judgment.correct()).isTrue();
+        assertThat(judgment.matchedForbiddenTerms()).isEmpty();
+    }
+
+    @Test
+    void evaluateShouldStillRejectAffirmedForbiddenTerm() {
+        RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
+                "bullet points",
+                List.of("incident brief"),
+                List.of("narrative paragraph"),
+                "Use bullet points and a narrative paragraph for the incident brief.");
+
+        assertThat(judgment.correct()).isFalse();
+        assertThat(judgment.failureReason()).isEqualTo(RuleBasedAnswerJudge.FAILURE_HALLUCINATED_FORBIDDEN_FACT);
+        assertThat(judgment.matchedForbiddenTerms()).containsExactly("narrative paragraph");
+    }
+
+    @Test
+    void evaluateShouldStillRejectMissingMustContainWhenForbiddenTermIsNegated() {
+        RuleBasedAnswerJudge.Judgment judgment = judge.evaluate(
+                "CSV",
+                List.of("compliance handoff"),
+                List.of("PDF"),
+                "Use CSV, not PDF.");
+
+        assertThat(judgment.correct()).isFalse();
+        assertThat(judgment.failureReason()).isEqualTo(RuleBasedAnswerJudge.FAILURE_ANSWER_MISSING_FACT);
+        assertThat(judgment.missingMustContain()).containsExactly("compliance handoff");
         assertThat(judgment.matchedForbiddenTerms()).isEmpty();
     }
 }

@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
@@ -22,6 +23,9 @@ public class RuleBasedAnswerJudge {
                     + "|\\bno\\s+(?:memory|fragments|information|details|context)\\b"
                     + "|\\bnone\\s+were\\s+(?:supplied|provided|given)\\b"
                     + "|\\bwithout\\s+additional\\s+(?:context|information|memory)\\b");
+    private static final Pattern NEGATED_FORBIDDEN_PREFIX_PATTERN = Pattern.compile(
+            "(?:^|[^\\p{Alnum}])(?:not\\s+(?!only\\b)|instead\\s+of\\s+|rather\\s+than\\s+)"
+                    + "(?:[\\p{Alnum}'-]+\\s+){0,6}$");
 
     public boolean isCorrect(String expectedAnswer, String generatedAnswer) {
         return evaluate(expectedAnswer, List.of(), List.of(), generatedAnswer).correct();
@@ -44,7 +48,7 @@ public class RuleBasedAnswerJudge {
         String normalizedGenerated = normalize(generatedAnswer);
 
         List<String> matchedForbiddenTerms = safeMustNotContain.stream()
-                .filter(term -> containsTerm(normalize(term), normalizedGenerated))
+                .filter(term -> containsForbiddenTerm(normalize(term), normalizedGenerated))
                 .toList();
         if (!matchedForbiddenTerms.isEmpty()) {
             return Judgment.incorrect(
@@ -85,10 +89,32 @@ public class RuleBasedAnswerJudge {
         if (isBlank(normalizedTerm)) {
             return false;
         }
-        Pattern termPattern = Pattern.compile("(^|[^\\p{Alnum}])"
+        return termPattern(normalizedTerm).matcher(normalizedGenerated).find();
+    }
+
+    private boolean containsForbiddenTerm(String normalizedTerm, String normalizedGenerated) {
+        if (isBlank(normalizedTerm)) {
+            return false;
+        }
+        Matcher matcher = termPattern(normalizedTerm).matcher(normalizedGenerated);
+        while (matcher.find()) {
+            if (!hasNegatedForbiddenContext(normalizedGenerated, matcher.start(2))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasNegatedForbiddenContext(String normalizedGenerated, int termStart) {
+        int contextStart = Math.max(0, termStart - 80);
+        String prefix = normalizedGenerated.substring(contextStart, termStart);
+        return NEGATED_FORBIDDEN_PREFIX_PATTERN.matcher(prefix).find();
+    }
+
+    private Pattern termPattern(String normalizedTerm) {
+        return Pattern.compile("(^|[^\\p{Alnum}])("
                 + Pattern.quote(normalizedTerm)
-                + "([^\\p{Alnum}]|$)");
-        return termPattern.matcher(normalizedGenerated).find();
+                + ")([^\\p{Alnum}]|$)");
     }
 
     private List<String> missingRequiredTerms(List<String> mustContain, String normalizedGenerated) {
