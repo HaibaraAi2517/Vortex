@@ -5,7 +5,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
+import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import java.util.zip.GZIPOutputStream;
 
 import static org.assertj.core.api.Assertions.*;
@@ -90,6 +92,36 @@ class KryoSerializerTest {
         assertThat(restored.getGraph().nodeCount()).isEqualTo(3);
         assertThat(restored.getBranches()).hasSize(1);
         assertThat(restored.getContext()).containsEntry("totalSteps", "3");
+    }
+
+    @Test
+    void roundTrip_uuidWithoutReflectiveFieldAccess() {
+        UUID uuid = UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
+
+        byte[] data = kryo.serialize(uuid);
+        UUID restored = kryo.deserialize(data, UUID.class);
+
+        assertThat(restored).isEqualTo(uuid);
+    }
+
+    @Test
+    void roundTrip_instantWithoutReflectiveFieldAccess() {
+        Instant instant = Instant.parse("2026-05-28T12:31:06.123456789Z");
+
+        byte[] data = kryo.serialize(instant);
+        Instant restored = kryo.deserialize(data, Instant.class);
+
+        assertThat(restored).isEqualTo(instant);
+    }
+
+    @Test
+    void roundTrip_stringWithoutReflectiveFieldAccess() {
+        String value = "Recovered memory profiling should not depend on --add-opens";
+
+        byte[] data = kryo.serialize(value);
+        String restored = kryo.deserialize(data, String.class);
+
+        assertThat(restored).isEqualTo(value);
     }
 
     @Test

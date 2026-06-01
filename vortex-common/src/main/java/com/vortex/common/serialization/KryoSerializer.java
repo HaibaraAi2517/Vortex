@@ -1,6 +1,7 @@
 package com.vortex.common.serialization;
 
 import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.Serializer;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import com.esotericsoftware.kryo.util.Pool;
@@ -29,6 +30,41 @@ public class KryoSerializer {
     private static final byte[] MAGIC = new byte[]{'V', 'K', 'R', 'Y'};
     private static final int FORMAT_VERSION = 1;
     private static final int HEADER_SIZE = MAGIC.length + 1;
+    private static final Serializer<UUID> UUID_SERIALIZER = new Serializer<>() {
+        @Override
+        public void write(Kryo kryo, Output output, UUID uuid) {
+            output.writeLong(uuid.getMostSignificantBits());
+            output.writeLong(uuid.getLeastSignificantBits());
+        }
+
+        @Override
+        public UUID read(Kryo kryo, Input input, Class<? extends UUID> type) {
+            return new UUID(input.readLong(), input.readLong());
+        }
+    };
+    private static final Serializer<Instant> INSTANT_SERIALIZER = new Serializer<>() {
+        @Override
+        public void write(Kryo kryo, Output output, Instant instant) {
+            output.writeLong(instant.getEpochSecond());
+            output.writeInt(instant.getNano(), true);
+        }
+
+        @Override
+        public Instant read(Kryo kryo, Input input, Class<? extends Instant> type) {
+            return Instant.ofEpochSecond(input.readLong(), input.readInt(true));
+        }
+    };
+    private static final Serializer<String> STRING_SERIALIZER = new Serializer<>() {
+        @Override
+        public void write(Kryo kryo, Output output, String value) {
+            output.writeString(value);
+        }
+
+        @Override
+        public String read(Kryo kryo, Input input, Class<? extends String> type) {
+            return input.readString();
+        }
+    };
 
     // Numeric class IDs for maximum serialization performance
     private static final int ID_DAG_NODE = 1;
@@ -65,9 +101,9 @@ public class KryoSerializer {
         kryo.register(java.util.HashSet.class, 13);
         kryo.register(java.util.Collections.emptyList().getClass(), 14);
         // Java core types
-        kryo.register(UUID.class, 15);
-        kryo.register(Instant.class, 16);
-        kryo.register(String.class, 17);
+        kryo.register(UUID.class, UUID_SERIALIZER, 15);
+        kryo.register(Instant.class, INSTANT_SERIALIZER, 16);
+        kryo.register(String.class, STRING_SERIALIZER, 17);
         kryo.register(float[].class, 18);
         kryo.register(double[].class, 19);
         kryo.register(int[].class, 20);

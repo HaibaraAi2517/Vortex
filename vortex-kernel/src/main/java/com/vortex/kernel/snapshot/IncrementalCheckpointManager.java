@@ -459,7 +459,7 @@ public class IncrementalCheckpointManager {
         CheckpointRecoveryFailureReason reason = switch (e.getFailureType()) {
             case METADATA_READ_FAILED -> CheckpointRecoveryFailureReason.CHECKPOINT_METADATA_LOAD_FAILED;
             case PAYLOAD_INVALID -> defaultReason;
-            case READ_FAILED -> readFailureReason;
+            case READ_FAILED, DELETE_FAILED -> readFailureReason;
             case VERSION_MISMATCH -> CheckpointRecoveryFailureReason.CHECKPOINT_VERSION_MISMATCH;
         };
         return new CheckpointRecoveryException(reason, taskId, checkpointId, defaultMessage, e);

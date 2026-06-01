@@ -15,6 +15,7 @@ public class CheckpointStoreException extends IllegalStateException {
 
     public enum FailureType {
         READ_FAILED,
+        DELETE_FAILED,
         PAYLOAD_INVALID,
         METADATA_READ_FAILED,
         VERSION_MISMATCH

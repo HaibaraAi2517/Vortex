@@ -85,6 +85,7 @@ public class MinioColdStore implements L3ColdStore {
             }
         } catch (Exception e) {
             log.error("Failed to initialise MinIO bucket '{}': {}", bucket, e.getMessage());
+            throw new IllegalStateException("Failed to initialise MinIO bucket '" + bucket + "'", e);
         }
     }
 
@@ -102,13 +103,34 @@ public class MinioColdStore implements L3ColdStore {
 
     @Override
     public void deleteFragment(String id) {
+        String key = fragmentKey(id);
         try {
             minioClient.removeObject(RemoveObjectArgs.builder()
                     .bucket(bucket)
-                    .object(applyKeyPrefix(fragmentKey(id)))
+                    .object(applyKeyPrefix(key))
                     .build());
+        } catch (ErrorResponseException e) {
+            if (isNotFound(e)) {
+                log.debug("No fragment to delete for {}", id);
+                return;
+            }
+            log.error("MinIO delete failed key={}: {}", key, e.getMessage());
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.DELETE_FAILED,
+                    "MinIO delete failed for key " + key,
+                    e);
+        } catch (io.minio.errors.MinioException e) {
+            log.error("MinIO delete failed key={}: {}", key, e.getMessage());
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.DELETE_FAILED,
+                    "MinIO delete failed for key " + key,
+                    e);
         } catch (Exception e) {
-            log.debug("No fragment to delete for {}", id);
+            log.error("MinIO delete failed key={}: {}", key, e.getMessage());
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.DELETE_FAILED,
+                    "MinIO delete failed for key " + key,
+                    e);
         }
     }
 
@@ -405,8 +427,28 @@ public class MinioColdStore implements L3ColdStore {
             StatObjectResponse stat = minioClient.statObject(
                     StatObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(key)).build());
             return stat.size();
+        } catch (ErrorResponseException e) {
+            if (isNotFound(e)) {
+                log.debug("MinIO object not found during stat key={}", key);
+                return 0;
+            }
+            log.error("MinIO stat failed key={}: {}", key, e.getMessage());
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.METADATA_READ_FAILED,
+                    "MinIO stat failed for key " + key,
+                    e);
+        } catch (io.minio.errors.MinioException e) {
+            log.error("MinIO stat failed key={}: {}", key, e.getMessage());
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.METADATA_READ_FAILED,
+                    "MinIO stat failed for key " + key,
+                    e);
         } catch (Exception e) {
-            return 0;
+            log.error("MinIO stat failed key={}: {}", key, e.getMessage());
+            throw new CheckpointStoreException(
+                    CheckpointStoreException.FailureType.METADATA_READ_FAILED,
+                    "MinIO stat failed for key " + key,
+                    e);
         }
     }
 

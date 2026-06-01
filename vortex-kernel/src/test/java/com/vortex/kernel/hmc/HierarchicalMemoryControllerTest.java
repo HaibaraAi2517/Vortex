@@ -186,6 +186,25 @@ class HierarchicalMemoryControllerTest {
     }
 
     @Test
+    void deleteFragment_propagatesL3DeletionFailureInsteadOfReportingSuccess() {
+        CaffeineHotStore l1 = new CaffeineHotStore(256);
+        FakeL2WarmStore l2 = new FakeL2WarmStore(4);
+        FakeL3ColdStore l3 = new FakeL3ColdStore();
+        EmbeddingService localEmbedding = new FixedEmbeddingService(4);
+
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
+        MemoryFragment fragment = fragment("frag-delete", "ns", "payload", List.of(), 4);
+        l1.put(fragment);
+        l3.archiveFragment(fragment);
+        l3.setDeleteFailure(new IllegalStateException("simulated l3 delete failure"));
+
+        assertThatThrownBy(() -> hmc.deleteFragment("frag-delete"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("simulated l3 delete failure");
+        assertThat(hmc.getFragment("frag-delete")).isPresent();
+    }
+
+    @Test
     void maybeEvictOnlyUsesCandidatesFromTheTriggeringNamespace() {
         CaffeineHotStore l1 = new CaffeineHotStore(100);
         FakeL2WarmStore l2 = new FakeL2WarmStore(4);
@@ -1388,6 +1407,7 @@ class HierarchicalMemoryControllerTest {
     private static final class FakeL3ColdStore implements L3ColdStore {
 
         private final Map<String, MemoryFragment> fragments = new HashMap<>();
+        private RuntimeException deleteFailure;
 
         @Override
         public void archiveFragment(MemoryFragment fragment) {
@@ -1397,6 +1417,14 @@ class HierarchicalMemoryControllerTest {
         @Override
         public Optional<MemoryFragment> retrieveFragment(String id) {
             return Optional.ofNullable(fragments.get(id));
+        }
+
+        @Override
+        public void deleteFragment(String id) {
+            if (deleteFailure != null) {
+                throw deleteFailure;
+            }
+            fragments.remove(id);
         }
 
         @Override
@@ -1411,6 +1439,10 @@ class HierarchicalMemoryControllerTest {
 
         @Override
         public void deleteCheckpoint(String checkpointId) {
+        }
+
+        private void setDeleteFailure(RuntimeException deleteFailure) {
+            this.deleteFailure = deleteFailure;
         }
     }
 }

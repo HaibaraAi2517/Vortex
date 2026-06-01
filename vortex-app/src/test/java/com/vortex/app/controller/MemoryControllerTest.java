@@ -4,6 +4,7 @@ import com.vortex.app.health.MemorySloHealthIndicator;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.kernel.hmc.HierarchicalMemoryController;
 import com.vortex.storage.api.L1HotStore;
+import com.vortex.storage.api.CheckpointStoreException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.health.Health;
@@ -130,6 +131,19 @@ class MemoryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fragmentId").value("frag-1"))
                 .andExpect(jsonPath("$.status").value("DELETED"));
+    }
+
+    @Test
+    void deleteFragmentReturnsServerErrorWhenColdStoreDeletionFails() throws Exception {
+        when(hmc.deleteFragment("frag-1")).thenThrow(new CheckpointStoreException(
+                CheckpointStoreException.FailureType.DELETE_FAILED,
+                "MinIO delete failed for key fragments/frag-1.json",
+                new IllegalStateException("simulated delete failure")));
+
+        mockMvc.perform(delete("/api/v1/memory/fragment/frag-1"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.error").value("INTERNAL_SERVER_ERROR"))
+                .andExpect(jsonPath("$.detail").value("MinIO delete failed for key fragments/frag-1.json"));
     }
 
     @Test

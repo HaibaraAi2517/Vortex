@@ -6,6 +6,7 @@ import com.vortex.common.serialization.KryoSerializer;
 import com.vortex.storage.api.CheckpointStoreException;
 import io.minio.GetObjectArgs;
 import io.minio.GetObjectResponse;
+import io.minio.BucketExistsArgs;
 import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -13,7 +14,9 @@ import io.minio.RemoveObjectArgs;
 import io.minio.Result;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
+import io.minio.errors.ErrorResponseException;
 import io.minio.errors.ServerException;
+import io.minio.messages.ErrorResponse;
 import io.minio.messages.Item;
 import org.junit.jupiter.api.Test;
 import okhttp3.Headers;
@@ -28,6 +31,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -49,6 +53,52 @@ class MinioColdStoreTest {
         coldStore.archiveFragment(fragment);
 
         verify(minioClient).putObject(argThatPutObject("vortex-it", "run-123/fragments/frag-1.json"));
+    }
+
+    @Test
+    void init_failsFastWhenBucketInitializationFails() throws Exception {
+        MinioClient minioClient = mock(MinioClient.class);
+        MinioColdStore coldStore = new MinioColdStore(minioClient, "vortex-it", "run-123/");
+
+        when(minioClient.bucketExists(any(BucketExistsArgs.class)))
+                .thenThrow(new IOException("simulated bucket init failure"));
+
+        assertThatThrownBy(coldStore::init)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Failed to initialise MinIO bucket 'vortex-it'")
+                .hasCauseInstanceOf(IOException.class);
+    }
+
+    @Test
+    void deleteFragment_ignoresMissingObjectResponses() throws Exception {
+        MinioClient minioClient = mock(MinioClient.class);
+        MinioColdStore coldStore = new MinioColdStore(minioClient, "vortex-it", "run-123/");
+
+        ErrorResponseException notFound = mock(ErrorResponseException.class);
+        ErrorResponse errorResponse = mock(ErrorResponse.class);
+        when(notFound.errorResponse()).thenReturn(errorResponse);
+        when(errorResponse.code()).thenReturn("NoSuchKey");
+        doThrow(notFound).when(minioClient).removeObject(any(RemoveObjectArgs.class));
+
+        coldStore.deleteFragment("frag-1");
+
+        verify(minioClient).removeObject(argThatRemoveObject("vortex-it", "run-123/fragments/frag-1.json"));
+    }
+
+    @Test
+    void deleteFragment_propagatesMinioServerFailureInsteadOfPretendingSuccess() throws Exception {
+        MinioClient minioClient = mock(MinioClient.class);
+        MinioColdStore coldStore = new MinioColdStore(minioClient, "vortex-it", "run-123/");
+
+        doThrow(new ServerException("simulated delete failure", 500, "req-789"))
+                .when(minioClient)
+                .removeObject(any(RemoveObjectArgs.class));
+
+        assertThatThrownBy(() -> coldStore.deleteFragment("frag-1"))
+                .isInstanceOf(CheckpointStoreException.class)
+                .satisfies(ex -> assertThat(((CheckpointStoreException) ex).getFailureType())
+                        .isEqualTo(CheckpointStoreException.FailureType.DELETE_FAILED))
+                .hasMessageContaining("MinIO delete failed");
     }
 
     @Test
@@ -147,6 +197,35 @@ class MinioColdStoreTest {
                     assertThat(meta.getCheckpointId()).isEqualTo("cp-1");
                     assertThat(meta.getL3Key()).isEqualTo("checkpoints/task-1/cp-1.kryo");
                 });
+    }
+
+    @Test
+    void getObjectSize_returnsZeroOnlyWhenObjectIsMissing() throws Exception {
+        MinioClient minioClient = mock(MinioClient.class);
+        MinioColdStore coldStore = new MinioColdStore(minioClient, "vortex-it", "run-123/");
+
+        ErrorResponseException notFound = mock(ErrorResponseException.class);
+        ErrorResponse errorResponse = mock(ErrorResponse.class);
+        when(notFound.errorResponse()).thenReturn(errorResponse);
+        when(errorResponse.code()).thenReturn("NoSuchObject");
+        when(minioClient.statObject(any(StatObjectArgs.class))).thenThrow(notFound);
+
+        assertThat(coldStore.getObjectSize("checkpoints/task-1/cp-1.kryo")).isZero();
+    }
+
+    @Test
+    void getObjectSize_propagatesStatFailureInsteadOfPretendingMissing() throws Exception {
+        MinioClient minioClient = mock(MinioClient.class);
+        MinioColdStore coldStore = new MinioColdStore(minioClient, "vortex-it", "run-123/");
+
+        when(minioClient.statObject(any(StatObjectArgs.class)))
+                .thenThrow(new IOException("simulated stat transport failure"));
+
+        assertThatThrownBy(() -> coldStore.getObjectSize("checkpoints/task-1/cp-1.kryo"))
+                .isInstanceOf(CheckpointStoreException.class)
+                .satisfies(ex -> assertThat(((CheckpointStoreException) ex).getFailureType())
+                        .isEqualTo(CheckpointStoreException.FailureType.METADATA_READ_FAILED))
+                .hasMessageContaining("MinIO stat failed");
     }
 
     @Test
