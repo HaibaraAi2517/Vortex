@@ -285,6 +285,24 @@ class LlmMemoryEvalRunnerTest {
     }
 
     @Test
+    void loadV21CaseSetShouldMakeV2009SameWeekdayContractExplicit() {
+        List<LlmMemoryEvalCase> cases = runner.loadCaseSet("classpath:llm-memory-eval-set-v2-1.json");
+
+        assertThat(cases).hasSize(15);
+        LlmMemoryEvalCase v2009 = cases.stream()
+                .filter(evalCase -> "v2-009".equals(evalCase.getCaseId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(v2009.getExpectedAnswer()).isEqualTo("Thursday");
+        assertThat(v2009.getMemoryFragments())
+                .anySatisfy(fragment -> {
+                    assertThat(fragment.getFragmentId()).isEqualTo("mobile-cutoff");
+                    assertThat(fragment.getContent()).contains("starts, on the same weekday");
+                });
+    }
+
+    @Test
     void runConfiguredModesShouldUseConfiguredDatasetLocation(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
         Path datasetPath = tempDir.resolve("custom-eval-set.json");
         Files.writeString(datasetPath, """

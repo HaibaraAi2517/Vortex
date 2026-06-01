@@ -44,6 +44,17 @@
 
 它用于多轮稳定性门禁，不替代 `20260529-real-bge-v2-006` 的单轮 strict baseline。
 
+当前候选 eval contract v2.1 baseline 是：
+
+- 数据集：`classpath:llm-memory-eval-set-v2-1.json`
+- 报告批次：`20260601-v2-009-contract-audit-5x-net`
+- 汇总报告：
+  - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/baseline-audit-summary.json:1)
+  - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/baseline-audit-summary.md:1)
+- 结论：`AuditGate.Passed = true`，`CaseFailureCount = 0`，所有 memory/recovered 轮次均为 `15/15`
+
+v2.1 只显式化 `v2-009` 的 same-weekday 时间偏移 contract。现有 strict verifier 仍固定校验正式 v2 baseline，所以 v2.1 audit 的 `StrictVerifierPassed = false` 是预期结果。
+
 ## 评测 Prompt Contract
 
 当前正式评测 prompt 定义在：
@@ -127,6 +138,20 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-real-llm-memory-eval.ps1 `
 ```
 
 如果要切换到其它评测集，只改 `-Stamp` 和 `-DatasetLocation`，其它环境保持不变。
+
+v2.1 contract audit 示例：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1 `
+  -ApiKey '...' `
+  -BaseUrl 'https://sub2.congmingai.com' `
+  -Model 'gpt-5.2' `
+  -Rounds 5 `
+  -DatasetLocation 'classpath:llm-memory-eval-set-v2-1.json' `
+  -AuditStamp '20260601-v2-009-contract-audit-5x-net' `
+  -SkipComposeUp `
+  -SkipPackage
+```
 
 ## 手动运行方式
 

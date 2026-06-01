@@ -1,0 +1,472 @@
+﻿{
+    "AuditStamp":  "20260601-v2-009-contract-audit-5x-net",
+    "GeneratedAt":  "2026-06-01T08:57:58.6218491Z",
+    "BaselineId":  "20260529-real-bge-v2-006",
+    "OverallPassed":  true,
+    "StrictVerifierPassed":  false,
+    "Settings":  {
+                     "BaseUrl":  "https://sub2.congmingai.com",
+                     "Model":  "gpt-5.2",
+                     "DatasetLocation":  "classpath:llm-memory-eval-set-v2-1.json",
+                     "BgeModelPath":  "E:/1projects/claude/Vortex/models/bge-small-zh",
+                     "L1MaxTokens":  96,
+                     "Modes":  "BASELINE_NO_MEMORY,VORTEX_MEMORY,VORTEX_RECOVERED_MEMORY",
+                     "RequestedRounds":  5,
+                     "ReportRoot":  "ops/eval-reports",
+                     "BaselineNoMemoryMaxCorrect":  0,
+                     "MinVortexMemoryMeanAccuracy":  0.85,
+                     "MinRecoveredMeanAccuracy":  0.95,
+                     "MinRecoveredL2MeanHitRate":  0.95
+                 },
+    "Aggregate":  {
+                      "StartedAt":  "2026-06-01T08:46:47.7700391Z",
+                      "CompletedAt":  "2026-06-01T08:57:58.4397001Z",
+                      "TotalDurationSeconds":  670.67,
+                      "EvalSuccessCount":  5,
+                      "EvalFailureCount":  0,
+                      "VerifierPassCount":  0,
+                      "VerifierFailCount":  5,
+                      "BaselineNoMemoryCorrectValues":  [
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            0
+                                                        ],
+                      "VortexMemoryAccuracyValues":  [
+                                                         1,
+                                                         1,
+                                                         1,
+                                                         1,
+                                                         1
+                                                     ],
+                      "RecoveredAccuracyValues":  [
+                                                      1,
+                                                      1,
+                                                      1,
+                                                      1,
+                                                      1
+                                                  ],
+                      "RecoveredL2HitRateValues":  [
+                                                       1,
+                                                       1,
+                                                       1,
+                                                       1,
+                                                       1
+                                                   ],
+                      "CaseFailureCount":  0,
+                      "CaseFailureGroupCount":  0
+                  },
+    "AuditGate":  {
+                      "Passed":  true,
+                      "Thresholds":  {
+                                         "BaselineNoMemoryMaxCorrect":  0,
+                                         "MinVortexMemoryMeanAccuracy":  0.85,
+                                         "MinRecoveredMeanAccuracy":  0.95,
+                                         "MinRecoveredL2MeanHitRate":  0.95
+                                     },
+                      "Metrics":  {
+                                      "VortexMemoryMeanAccuracy":  1,
+                                      "RecoveredMeanAccuracy":  1,
+                                      "RecoveredL2MeanHitRate":  1,
+                                      "BaselineNoMemoryMaxCorrect":  0
+                                  },
+                      "Checks":  [
+                                     {
+                                         "Name":  "evalSuccessCount",
+                                         "Passed":  true,
+                                         "Expected":  "5/5",
+                                         "Actual":  "5/5",
+                                         "Details":  ""
+                                     },
+                                     {
+                                         "Name":  "environmentStable",
+                                         "Passed":  true,
+                                         "Expected":  "all completed runs share dataset/baseUrl/model/l1MaxTokens/promptSha/modes",
+                                         "Actual":  "completedRuns=5",
+                                         "Details":  ""
+                                     },
+                                     {
+                                         "Name":  "baselineNoMemoryMaxCorrect",
+                                         "Passed":  true,
+                                         "Expected":  "max \u003c= 0",
+                                         "Actual":  "values=[0, 0, 0, 0, 0]",
+                                         "Details":  ""
+                                     },
+                                     {
+                                         "Name":  "vortexMemoryMeanAccuracy",
+                                         "Passed":  true,
+                                         "Expected":  "\u003e= 0.8500",
+                                         "Actual":  "1.0000",
+                                         "Details":  ""
+                                     },
+                                     {
+                                         "Name":  "recoveredMeanAccuracy",
+                                         "Passed":  true,
+                                         "Expected":  "\u003e= 0.9500",
+                                         "Actual":  "1.0000",
+                                         "Details":  ""
+                                     },
+                                     {
+                                         "Name":  "recoveredL2MeanHitRate",
+                                         "Passed":  true,
+                                         "Expected":  "\u003e= 0.9500",
+                                         "Actual":  "1.0000",
+                                         "Details":  ""
+                                     }
+                                 ]
+                  },
+    "CaseFailureSummary":  {
+
+                           },
+    "CaseFailureDetails":  {
+
+                           },
+    "Runs":  [
+                 {
+                     "RoundIndex":  1,
+                     "RoundStamp":  "20260601-v2-009-contract-audit-5x-net-run01",
+                     "Status":  "completed",
+                     "DurationSeconds":  135.293,
+                     "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run01",
+                     "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run01\\llm-memory-eval-20260601-084900.json",
+                     "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run01\\llm-memory-eval-20260601-084900.md",
+                     "GeneratedAt":  "2026-06-01T08:49:00.327760Z",
+                     "TotalCases":  15,
+                     "TotalRuns":  45,
+                     "DatasetLocation":  "classpath:llm-memory-eval-set-v2-1.json",
+                     "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
+                     "GenerationModel":  "gpt-5.2",
+                     "L1MaxTokens":  96,
+                     "EvalSystemPromptSha256":  "e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3",
+                     "Modes":  [
+                                   "Baseline-NoMemory",
+                                   "Vortex-Memory",
+                                   "Vortex-RecoveredMemory"
+                               ],
+                     "ModeSummaries":  {
+                                           "Baseline-NoMemory":  {
+                                                                     "total":  15,
+                                                                     "correct":  0,
+                                                                     "accuracy":  0.0,
+                                                                     "recallHitRate":  0.0,
+                                                                     "averageLatencyMs":  1944.0666666666666,
+                                                                     "recoveredRuns":  0,
+                                                                     "recoveredAccuracy":  0.0,
+                                                                     "recoveredL2HitRate":  0.0,
+                                                                     "feedbackSubmitted":  0,
+                                                                     "learningSampleCountDelta":  0,
+                                                                     "learningUpdateCountDelta":  0
+                                                                 },
+                                           "Vortex-Memory":  {
+                                                                 "total":  15,
+                                                                 "correct":  15,
+                                                                 "accuracy":  1.0,
+                                                                 "recallHitRate":  1.0,
+                                                                 "averageLatencyMs":  2913.2,
+                                                                 "recoveredRuns":  0,
+                                                                 "recoveredAccuracy":  0.0,
+                                                                 "recoveredL2HitRate":  0.0,
+                                                                 "feedbackSubmitted":  15,
+                                                                 "learningSampleCountDelta":  15,
+                                                                 "learningUpdateCountDelta":  1
+                                                             },
+                                           "Vortex-RecoveredMemory":  {
+                                                                          "total":  15,
+                                                                          "correct":  15,
+                                                                          "accuracy":  1.0,
+                                                                          "recallHitRate":  1.0,
+                                                                          "averageLatencyMs":  3404.9333333333334,
+                                                                          "recoveredRuns":  15,
+                                                                          "recoveredAccuracy":  1.0,
+                                                                          "recoveredL2HitRate":  1.0,
+                                                                          "feedbackSubmitted":  15,
+                                                                          "learningSampleCountDelta":  15,
+                                                                          "learningUpdateCountDelta":  0
+                                                                      }
+                                       },
+                     "Verify":  {
+                                    "Passed":  false,
+                                    "ExitCode":  2,
+                                    "Output":  "FAIL: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run01\\llm-memory-eval-20260601-084900.json\u0027 drifted from official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027.\r\n- environment.datasetLocation expected=\"classpath:llm-memory-eval-set-v2.json\" actual=\"classpath:llm-memory-eval-set-v2-1.json\""
+                                },
+                     "FailureMessage":  null
+                 },
+                 {
+                     "RoundIndex":  2,
+                     "RoundStamp":  "20260601-v2-009-contract-audit-5x-net-run02",
+                     "Status":  "completed",
+                     "DurationSeconds":  145.568,
+                     "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run02",
+                     "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run02\\llm-memory-eval-20260601-085126.json",
+                     "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run02\\llm-memory-eval-20260601-085126.md",
+                     "GeneratedAt":  "2026-06-01T08:51:26.060733Z",
+                     "TotalCases":  15,
+                     "TotalRuns":  45,
+                     "DatasetLocation":  "classpath:llm-memory-eval-set-v2-1.json",
+                     "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
+                     "GenerationModel":  "gpt-5.2",
+                     "L1MaxTokens":  96,
+                     "EvalSystemPromptSha256":  "e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3",
+                     "Modes":  [
+                                   "Baseline-NoMemory",
+                                   "Vortex-Memory",
+                                   "Vortex-RecoveredMemory"
+                               ],
+                     "ModeSummaries":  {
+                                           "Baseline-NoMemory":  {
+                                                                     "total":  15,
+                                                                     "correct":  0,
+                                                                     "accuracy":  0.0,
+                                                                     "recallHitRate":  0.0,
+                                                                     "averageLatencyMs":  2286.9333333333334,
+                                                                     "recoveredRuns":  0,
+                                                                     "recoveredAccuracy":  0.0,
+                                                                     "recoveredL2HitRate":  0.0,
+                                                                     "feedbackSubmitted":  0,
+                                                                     "learningSampleCountDelta":  0,
+                                                                     "learningUpdateCountDelta":  0
+                                                                 },
+                                           "Vortex-Memory":  {
+                                                                 "total":  15,
+                                                                 "correct":  15,
+                                                                 "accuracy":  1.0,
+                                                                 "recallHitRate":  1.0,
+                                                                 "averageLatencyMs":  3518.0666666666666,
+                                                                 "recoveredRuns":  0,
+                                                                 "recoveredAccuracy":  0.0,
+                                                                 "recoveredL2HitRate":  0.0,
+                                                                 "feedbackSubmitted":  15,
+                                                                 "learningSampleCountDelta":  15,
+                                                                 "learningUpdateCountDelta":  1
+                                                             },
+                                           "Vortex-RecoveredMemory":  {
+                                                                          "total":  15,
+                                                                          "correct":  15,
+                                                                          "accuracy":  1.0,
+                                                                          "recallHitRate":  1.0,
+                                                                          "averageLatencyMs":  3164.133333333333,
+                                                                          "recoveredRuns":  15,
+                                                                          "recoveredAccuracy":  1.0,
+                                                                          "recoveredL2HitRate":  1.0,
+                                                                          "feedbackSubmitted":  15,
+                                                                          "learningSampleCountDelta":  15,
+                                                                          "learningUpdateCountDelta":  0
+                                                                      }
+                                       },
+                     "Verify":  {
+                                    "Passed":  false,
+                                    "ExitCode":  2,
+                                    "Output":  "FAIL: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run02\\llm-memory-eval-20260601-085126.json\u0027 drifted from official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027.\r\n- environment.datasetLocation expected=\"classpath:llm-memory-eval-set-v2.json\" actual=\"classpath:llm-memory-eval-set-v2-1.json\""
+                                },
+                     "FailureMessage":  null
+                 },
+                 {
+                     "RoundIndex":  3,
+                     "RoundStamp":  "20260601-v2-009-contract-audit-5x-net-run03",
+                     "Status":  "completed",
+                     "DurationSeconds":  124.833,
+                     "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run03",
+                     "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run03\\llm-memory-eval-20260601-085331.json",
+                     "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run03\\llm-memory-eval-20260601-085331.md",
+                     "GeneratedAt":  "2026-06-01T08:53:31.092089100Z",
+                     "TotalCases":  15,
+                     "TotalRuns":  45,
+                     "DatasetLocation":  "classpath:llm-memory-eval-set-v2-1.json",
+                     "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
+                     "GenerationModel":  "gpt-5.2",
+                     "L1MaxTokens":  96,
+                     "EvalSystemPromptSha256":  "e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3",
+                     "Modes":  [
+                                   "Baseline-NoMemory",
+                                   "Vortex-Memory",
+                                   "Vortex-RecoveredMemory"
+                               ],
+                     "ModeSummaries":  {
+                                           "Baseline-NoMemory":  {
+                                                                     "total":  15,
+                                                                     "correct":  0,
+                                                                     "accuracy":  0.0,
+                                                                     "recallHitRate":  0.0,
+                                                                     "averageLatencyMs":  1532.2666666666667,
+                                                                     "recoveredRuns":  0,
+                                                                     "recoveredAccuracy":  0.0,
+                                                                     "recoveredL2HitRate":  0.0,
+                                                                     "feedbackSubmitted":  0,
+                                                                     "learningSampleCountDelta":  0,
+                                                                     "learningUpdateCountDelta":  0
+                                                                 },
+                                           "Vortex-Memory":  {
+                                                                 "total":  15,
+                                                                 "correct":  15,
+                                                                 "accuracy":  1.0,
+                                                                 "recallHitRate":  1.0,
+                                                                 "averageLatencyMs":  3059.6,
+                                                                 "recoveredRuns":  0,
+                                                                 "recoveredAccuracy":  0.0,
+                                                                 "recoveredL2HitRate":  0.0,
+                                                                 "feedbackSubmitted":  15,
+                                                                 "learningSampleCountDelta":  15,
+                                                                 "learningUpdateCountDelta":  1
+                                                             },
+                                           "Vortex-RecoveredMemory":  {
+                                                                          "total":  15,
+                                                                          "correct":  15,
+                                                                          "accuracy":  1.0,
+                                                                          "recallHitRate":  1.0,
+                                                                          "averageLatencyMs":  3033.4666666666667,
+                                                                          "recoveredRuns":  15,
+                                                                          "recoveredAccuracy":  1.0,
+                                                                          "recoveredL2HitRate":  1.0,
+                                                                          "feedbackSubmitted":  15,
+                                                                          "learningSampleCountDelta":  15,
+                                                                          "learningUpdateCountDelta":  0
+                                                                      }
+                                       },
+                     "Verify":  {
+                                    "Passed":  false,
+                                    "ExitCode":  2,
+                                    "Output":  "FAIL: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run03\\llm-memory-eval-20260601-085331.json\u0027 drifted from official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027.\r\n- environment.datasetLocation expected=\"classpath:llm-memory-eval-set-v2.json\" actual=\"classpath:llm-memory-eval-set-v2-1.json\""
+                                },
+                     "FailureMessage":  null
+                 },
+                 {
+                     "RoundIndex":  4,
+                     "RoundStamp":  "20260601-v2-009-contract-audit-5x-net-run04",
+                     "Status":  "completed",
+                     "DurationSeconds":  136.311,
+                     "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run04",
+                     "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run04\\llm-memory-eval-20260601-085547.json",
+                     "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run04\\llm-memory-eval-20260601-085547.md",
+                     "GeneratedAt":  "2026-06-01T08:55:47.384951400Z",
+                     "TotalCases":  15,
+                     "TotalRuns":  45,
+                     "DatasetLocation":  "classpath:llm-memory-eval-set-v2-1.json",
+                     "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
+                     "GenerationModel":  "gpt-5.2",
+                     "L1MaxTokens":  96,
+                     "EvalSystemPromptSha256":  "e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3",
+                     "Modes":  [
+                                   "Baseline-NoMemory",
+                                   "Vortex-Memory",
+                                   "Vortex-RecoveredMemory"
+                               ],
+                     "ModeSummaries":  {
+                                           "Baseline-NoMemory":  {
+                                                                     "total":  15,
+                                                                     "correct":  0,
+                                                                     "accuracy":  0.0,
+                                                                     "recallHitRate":  0.0,
+                                                                     "averageLatencyMs":  1696.0,
+                                                                     "recoveredRuns":  0,
+                                                                     "recoveredAccuracy":  0.0,
+                                                                     "recoveredL2HitRate":  0.0,
+                                                                     "feedbackSubmitted":  0,
+                                                                     "learningSampleCountDelta":  0,
+                                                                     "learningUpdateCountDelta":  0
+                                                                 },
+                                           "Vortex-Memory":  {
+                                                                 "total":  15,
+                                                                 "correct":  15,
+                                                                 "accuracy":  1.0,
+                                                                 "recallHitRate":  1.0,
+                                                                 "averageLatencyMs":  3324.6666666666665,
+                                                                 "recoveredRuns":  0,
+                                                                 "recoveredAccuracy":  0.0,
+                                                                 "recoveredL2HitRate":  0.0,
+                                                                 "feedbackSubmitted":  15,
+                                                                 "learningSampleCountDelta":  15,
+                                                                 "learningUpdateCountDelta":  1
+                                                             },
+                                           "Vortex-RecoveredMemory":  {
+                                                                          "total":  15,
+                                                                          "correct":  15,
+                                                                          "accuracy":  1.0,
+                                                                          "recallHitRate":  1.0,
+                                                                          "averageLatencyMs":  3351.866666666667,
+                                                                          "recoveredRuns":  15,
+                                                                          "recoveredAccuracy":  1.0,
+                                                                          "recoveredL2HitRate":  1.0,
+                                                                          "feedbackSubmitted":  15,
+                                                                          "learningSampleCountDelta":  15,
+                                                                          "learningUpdateCountDelta":  0
+                                                                      }
+                                       },
+                     "Verify":  {
+                                    "Passed":  false,
+                                    "ExitCode":  2,
+                                    "Output":  "FAIL: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run04\\llm-memory-eval-20260601-085547.json\u0027 drifted from official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027.\r\n- environment.datasetLocation expected=\"classpath:llm-memory-eval-set-v2.json\" actual=\"classpath:llm-memory-eval-set-v2-1.json\""
+                                },
+                     "FailureMessage":  null
+                 },
+                 {
+                     "RoundIndex":  5,
+                     "RoundStamp":  "20260601-v2-009-contract-audit-5x-net-run05",
+                     "Status":  "completed",
+                     "DurationSeconds":  128.575,
+                     "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run05",
+                     "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run05\\llm-memory-eval-20260601-085755.json",
+                     "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run05\\llm-memory-eval-20260601-085755.md",
+                     "GeneratedAt":  "2026-06-01T08:57:55.762025200Z",
+                     "TotalCases":  15,
+                     "TotalRuns":  45,
+                     "DatasetLocation":  "classpath:llm-memory-eval-set-v2-1.json",
+                     "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
+                     "GenerationModel":  "gpt-5.2",
+                     "L1MaxTokens":  96,
+                     "EvalSystemPromptSha256":  "e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3",
+                     "Modes":  [
+                                   "Baseline-NoMemory",
+                                   "Vortex-Memory",
+                                   "Vortex-RecoveredMemory"
+                               ],
+                     "ModeSummaries":  {
+                                           "Baseline-NoMemory":  {
+                                                                     "total":  15,
+                                                                     "correct":  0,
+                                                                     "accuracy":  0.0,
+                                                                     "recallHitRate":  0.0,
+                                                                     "averageLatencyMs":  1832.5333333333333,
+                                                                     "recoveredRuns":  0,
+                                                                     "recoveredAccuracy":  0.0,
+                                                                     "recoveredL2HitRate":  0.0,
+                                                                     "feedbackSubmitted":  0,
+                                                                     "learningSampleCountDelta":  0,
+                                                                     "learningUpdateCountDelta":  0
+                                                                 },
+                                           "Vortex-Memory":  {
+                                                                 "total":  15,
+                                                                 "correct":  15,
+                                                                 "accuracy":  1.0,
+                                                                 "recallHitRate":  1.0,
+                                                                 "averageLatencyMs":  2976.266666666667,
+                                                                 "recoveredRuns":  0,
+                                                                 "recoveredAccuracy":  0.0,
+                                                                 "recoveredL2HitRate":  0.0,
+                                                                 "feedbackSubmitted":  15,
+                                                                 "learningSampleCountDelta":  15,
+                                                                 "learningUpdateCountDelta":  1
+                                                             },
+                                           "Vortex-RecoveredMemory":  {
+                                                                          "total":  15,
+                                                                          "correct":  15,
+                                                                          "accuracy":  1.0,
+                                                                          "recallHitRate":  1.0,
+                                                                          "averageLatencyMs":  3063.3333333333335,
+                                                                          "recoveredRuns":  15,
+                                                                          "recoveredAccuracy":  1.0,
+                                                                          "recoveredL2HitRate":  1.0,
+                                                                          "feedbackSubmitted":  15,
+                                                                          "learningSampleCountDelta":  15,
+                                                                          "learningUpdateCountDelta":  0
+                                                                      }
+                                       },
+                     "Verify":  {
+                                    "Passed":  false,
+                                    "ExitCode":  2,
+                                    "Output":  "FAIL: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260601-v2-009-contract-audit-5x-net\\runs\\20260601-v2-009-contract-audit-5x-net-run05\\llm-memory-eval-20260601-085755.json\u0027 drifted from official LLM memory eval baseline \u002720260529-real-bge-v2-006\u0027.\r\n- environment.datasetLocation expected=\"classpath:llm-memory-eval-set-v2.json\" actual=\"classpath:llm-memory-eval-set-v2-1.json\""
+                                },
+                     "FailureMessage":  null
+                 }
+             ]
+}

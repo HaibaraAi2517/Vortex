@@ -84,6 +84,35 @@ Do not fabricate hidden facts or fragment identifiers.
 1. `v2-009`：片段齐全但模型偶发拒绝从 `Thursday 08:00 UTC` + `one hour after` 推出 `Thursday`。这是 generation contract / 样本文案问题，不是召回问题。
 2. `v2-007`：本批次未再出现 recovered miss；`Vortex-RecoveredMemory` 的 `RecoveredAccuracy` 和 `RecoveredL2HitRate` 均为 5/5。
 
+## 候选 Eval Contract v2.1
+
+`v2-009` 的剩余波动来自样本文案没有显式说明 `one hour after` 是从 localization freeze start 起算且不跨 weekday。为避免把隐含时间推导 contract 混入 memory/recovery 能力评测，新增独立数据集：
+
+- 数据集：`classpath:llm-memory-eval-set-v2-1.json`
+- 变更：仅调整 `v2-009::mobile-cutoff`
+  - v2：`The mobile release happens one hour after the localization freeze.`
+  - v2.1：`The mobile release happens one hour after the localization freeze starts, on the same weekday.`
+
+v2.1 候选多轮 audit baseline：
+
+- 报告批次：`20260601-v2-009-contract-audit-5x-net`
+- 汇总报告：
+  - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/baseline-audit-summary.json:1)
+  - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/baseline-audit-summary.md:1)
+- 结果：
+  - `OverallPassed = true`
+  - `AuditGate.Passed = true`
+  - `StrictVerifierPassed = false`
+  - `VerifierPassCount = 0/5`
+  - `Baseline-NoMemory correct values = 0, 0, 0, 0, 0`
+  - `Vortex-Memory accuracy values = 1.0000, 1.0000, 1.0000, 1.0000, 1.0000`
+  - `Vortex-RecoveredMemory recoveredAccuracy values = 1.0000, 1.0000, 1.0000, 1.0000, 1.0000`
+  - `Vortex-RecoveredMemory recoveredL2HitRate values = 1.0000, 1.0000, 1.0000, 1.0000, 1.0000`
+  - `CaseFailureCount = 0`
+  - `CaseFailureGroupCount = 0`
+
+`StrictVerifierPassed = false` 在该批次中是预期结果：现有 strict verifier 固定校验正式 v2 数据集和 `20260529-real-bge-v2-006` 单轮基线。只有明确升级正式数据集 baseline 后，才应调整 verifier 的 expected dataset 和指标。
+
 ## 判定标准
 
 只有同时满足以下条件，新的真实报告才可以替换当前正式基线：
