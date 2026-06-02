@@ -1132,7 +1132,7 @@ try {
     $caseFailureSummary = Get-CaseFailureSummary -Failures $caseFailureDetails -RoundCount $Rounds
     $runtimeErrorTypeCounts = @($caseFailureDetails | Where-Object {
         $_.FailureReason -eq "runtime_error" -and -not [string]::IsNullOrWhiteSpace($_.RuntimeErrorType)
-    } | Group-Object RuntimeErrorType | Sort-Object Count -Descending, Name | ForEach-Object {
+    } | Group-Object RuntimeErrorType | Sort-Object -Property @{Expression = "Count"; Descending = $true}, Name | ForEach-Object {
         [pscustomobject]@{
             RuntimeErrorType = $_.Name
             Count = $_.Count
@@ -1217,6 +1217,9 @@ try {
     $summary | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $auditJsonPath -Encoding UTF8
 
     Write-Host "Building audit summary markdown"
+    $runtimeErrorTypeCountSummary = ($runtimeErrorTypeCounts | ForEach-Object {
+        "{0}={1} transient={2}" -f $_.RuntimeErrorType, $_.Count, $_.TransientCount
+    }) -join "; "
     $markdown = @(
         "# LLM Memory Baseline Audit"
         ""
@@ -1248,7 +1251,7 @@ try {
         "- Case failure count: $(@($caseFailureDetails).Count)"
         "- Case failure groups: $(@($caseFailureSummary).Count)"
         "- Transient runtime error count: $transientRuntimeErrorCount"
-        "- Runtime error type counts: $(($runtimeErrorTypeCounts | ForEach-Object { "" + $_.RuntimeErrorType + "=" + $_.Count + " transient=" + $_.TransientCount }) -join "; ")"
+        "- Runtime error type counts: $runtimeErrorTypeCountSummary"
         ""
         "## Audit Gate"
         ""
