@@ -78,13 +78,15 @@ public class LlmMemoryEvalReportWriter {
                             .append(summary.getTotal()).append(" |\n");
                 });
         builder.append("\n## Results\n\n");
-        builder.append("| CaseId | Mode | Correct | Failure Reason | Missing Must Contain | Matched Forbidden | Recall Hit | Recalled Tiers | Evicted | Feedback | Learning Update Δ | Prompt Tokens | Completion Tokens | Latency (ms) | Error |\n");
-        builder.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |\n");
+        builder.append("| CaseId | Mode | Correct | Failure Reason | Runtime Type | Transient Runtime | Missing Must Contain | Matched Forbidden | Recall Hit | Recalled Tiers | Evicted | Feedback | Learning Update Δ | Prompt Tokens | Completion Tokens | Latency (ms) | Error |\n");
+        builder.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |\n");
         safeList(report.getResults()).forEach(result -> builder.append("| ")
                 .append(result.getCaseId()).append(" | ")
                 .append(result.getMode()).append(" | ")
                 .append(result.isCorrect()).append(" | ")
                 .append(formatNullable(result.getFailureReason())).append(" | ")
+                .append(formatNullable(result.getRuntimeErrorType())).append(" | ")
+                .append(formatNullable(result.getTransientRuntimeError())).append(" | ")
                 .append(sanitizeMarkdown(String.join(",", safeList(result.getMissingMustContain())))).append(" | ")
                 .append(sanitizeMarkdown(String.join(",", safeList(result.getMatchedForbiddenTerms())))).append(" | ")
                 .append(result.isRecallHit()).append(" | ")

@@ -8,6 +8,7 @@ import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.RecallDiagnostics;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.exception.GenerationException;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.serialization.JsonMapperFactory;
 import com.vortex.kernel.embedding.TokenCounter;
@@ -486,6 +487,52 @@ class LlmMemoryEvalRunnerTest {
         assertThat(result.isCorrect()).isFalse();
         assertThat(result.getFailureReason()).isEqualTo(LlmMemoryEvalRunner.FAILURE_INSUFFICIENT_WHEN_MEMORY_AVAILABLE);
         assertThat(result.getMissingMustContain()).containsExactly("Zephyr risk dashboard");
+    }
+
+    @Test
+    void runMemoryModeShouldCaptureGenerationRuntimeSubtypeAndTelemetry() {
+        LlmMemoryEvalCase evalCase = LlmMemoryEvalCase.builder()
+                .caseId("judge-003")
+                .namespace("llm-eval-judge")
+                .memoryFragments(List.of(LlmMemoryEvalCase.EvalMemoryFragment.builder()
+                        .fragmentId("warehouse")
+                        .content("The Zephyr risk dashboard uses Redshift.")
+                        .tags(List.of("judge"))
+                        .build()))
+                .question("Which warehouse does Zephyr use?")
+                .expectedAnswer("Redshift")
+                .expectedFragments(List.of("warehouse"))
+                .tags(List.of("judge"))
+                .build();
+        when(generationServiceProvider.getIfAvailable()).thenReturn(request -> {
+            GenerationLatencyBreakdown breakdown = GenerationLatencyBreakdown.builder()
+                    .totalLatencyMs(61L)
+                    .totalLatencyNanos(61_000_000L)
+                    .httpRoundTripLatencyMs(60L)
+                    .httpRoundTripLatencyNanos(60_000_000L)
+                    .retryBackoffLatencyMs(1L)
+                    .retryBackoffLatencyNanos(1_000_000L)
+                    .attemptCount(2)
+                    .build();
+            throw new GenerationException(
+                    "Generation request failed: request timed out",
+                    null,
+                    "generation_timeout",
+                    true,
+                    breakdown);
+        });
+
+        LlmMemoryEvalReport report = runner.run(List.of(evalCase), List.of(LlmMemoryEvalMode.VORTEX_MEMORY));
+
+        LlmMemoryEvalResult result = report.getResults().getFirst();
+        assertThat(result.isCorrect()).isFalse();
+        assertThat(result.getFailureReason()).isEqualTo(LlmMemoryEvalRunner.FAILURE_RUNTIME_ERROR);
+        assertThat(result.getRuntimeErrorType()).isEqualTo("generation_timeout");
+        assertThat(result.getTransientRuntimeError()).isTrue();
+        assertThat(result.getGenerationAttemptCount()).isEqualTo(2);
+        assertThat(result.getGenerationRetryBackoffLatencyNanos()).isEqualTo(1_000_000L);
+        assertThat(result.getGenerationHttpRoundTripLatencyMs()).isEqualTo(60L);
+        assertThat(result.getErrorMessage()).contains("request timed out");
     }
 
     @Test

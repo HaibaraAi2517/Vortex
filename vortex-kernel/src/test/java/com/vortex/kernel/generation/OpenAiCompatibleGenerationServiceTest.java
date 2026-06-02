@@ -15,7 +15,10 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -24,11 +27,15 @@ class OpenAiCompatibleGenerationServiceTest {
 
     private final ObjectMapper objectMapper = JsonMapperFactory.create();
     private HttpServer server;
+    private ExecutorService executorService;
 
     @AfterEach
     void tearDown() {
         if (server != null) {
             server.stop(0);
+        }
+        if (executorService != null) {
+            executorService.shutdownNow();
         }
     }
 
@@ -129,6 +136,108 @@ class OpenAiCompatibleGenerationServiceTest {
                 .build()))
                 .isInstanceOf(GenerationException.class)
                 .hasMessageContaining("status=502");
+    }
+
+    @Test
+    void generateShouldRetryTransientHttpErrors() throws Exception {
+        AtomicInteger attempts = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        executorService = Executors.newFixedThreadPool(2);
+        server.setExecutor(executorService);
+        server.createContext("/v1/chat/completions", exchange -> {
+            if (attempts.incrementAndGet() == 1) {
+                writeJson(exchange, 502, "{\"error\":\"gateway unavailable\"}");
+                return;
+            }
+            writeJson(exchange, 200, """
+                    {
+                      "id": "resp-retry",
+                      "model": "gpt-5.2",
+                      "choices": [
+                        {
+                          "message": {
+                            "role": "assistant",
+                            "content": "answer after retry"
+                          },
+                          "finish_reason": "stop"
+                        }
+                      ],
+                      "usage": {
+                        "prompt_tokens": 3,
+                        "completion_tokens": 2,
+                        "total_tokens": 5
+                      }
+                    }
+                    """);
+        });
+        server.start();
+
+        GenerationProperties properties = generationProperties("http://localhost:" + server.getAddress().getPort() + "/v1");
+        properties.setRetryInitialBackoff(Duration.ofMillis(1));
+        OpenAiCompatibleGenerationService service = new OpenAiCompatibleGenerationService(properties, objectMapper);
+
+        GenerationResult result = service.generate(GenerationRequest.builder()
+                .userPrompt("user")
+                .build());
+
+        assertThat(result.getContent()).isEqualTo("answer after retry");
+        assertThat(attempts).hasValue(2);
+        assertThat(result.getLatencyBreakdown().getAttemptCount()).isEqualTo(2);
+        assertThat(result.getLatencyBreakdown().getRetryBackoffLatencyNanos()).isPositive();
+    }
+
+    @Test
+    void generateShouldNotRetryNonTransientHttpErrors() throws Exception {
+        AtomicInteger attempts = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/v1/chat/completions", exchange -> {
+            attempts.incrementAndGet();
+            writeJson(exchange, 403, "{\"error\":\"forbidden\"}");
+        });
+        server.start();
+
+        OpenAiCompatibleGenerationService service = new OpenAiCompatibleGenerationService(
+                generationProperties("http://localhost:" + server.getAddress().getPort() + "/v1"),
+                objectMapper);
+
+        assertThatThrownBy(() -> service.generate(GenerationRequest.builder()
+                .userPrompt("user")
+                .build()))
+                .isInstanceOfSatisfying(GenerationException.class, exception -> {
+                    assertThat(exception.getErrorType()).isEqualTo(OpenAiCompatibleGenerationService.ERROR_GENERATION_HTTP_ERROR);
+                    assertThat(exception.isTransientError()).isFalse();
+                    assertThat(exception.getLatencyBreakdown().getAttemptCount()).isEqualTo(1);
+                });
+        assertThat(attempts).hasValue(1);
+    }
+
+    @Test
+    void generateShouldClassifyTimeoutAfterRetries() throws Exception {
+        AtomicInteger attempts = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/v1/chat/completions", exchange -> {
+            attempts.incrementAndGet();
+            sleep(150L);
+            writeJson(exchange, 200, "{\"choices\":[]}");
+        });
+        server.start();
+
+        GenerationProperties properties = generationProperties("http://localhost:" + server.getAddress().getPort() + "/v1");
+        properties.setTimeout(Duration.ofMillis(30));
+        properties.setMaxRetries(1);
+        properties.setRetryInitialBackoff(Duration.ofMillis(1));
+        OpenAiCompatibleGenerationService service = new OpenAiCompatibleGenerationService(properties, objectMapper);
+
+        assertThatThrownBy(() -> service.generate(GenerationRequest.builder()
+                .userPrompt("user")
+                .build()))
+                .isInstanceOfSatisfying(GenerationException.class, exception -> {
+                    assertThat(exception.getErrorType()).isEqualTo(OpenAiCompatibleGenerationService.ERROR_GENERATION_TIMEOUT);
+                    assertThat(exception.isTransientError()).isTrue();
+                    assertThat(exception.getLatencyBreakdown().getAttemptCount()).isEqualTo(2);
+                    assertThat(exception.getLatencyBreakdown().getRetryBackoffLatencyNanos()).isPositive();
+                });
+        assertThat(attempts.get()).isGreaterThanOrEqualTo(1);
     }
 
     private GenerationProperties generationProperties(String baseUrl) {

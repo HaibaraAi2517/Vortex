@@ -9,6 +9,7 @@ import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.RecallDiagnostics;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.exception.GenerationException;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.kernel.embedding.TokenCounter;
 import com.vortex.kernel.hmc.AdaptiveWeightLearner;
@@ -53,6 +54,7 @@ public class LlmMemoryEvalRunner {
     static final String FAILURE_RECALL_MISS = "recall_miss";
     static final String FAILURE_INSUFFICIENT_WHEN_MEMORY_AVAILABLE = "insufficient_when_memory_available";
     static final String FAILURE_RUNTIME_ERROR = "runtime_error";
+    static final String RUNTIME_ERROR_RUNNER_INTERNAL = "runner_internal_error";
 
     private final HierarchicalMemoryController hmc;
     private final PromptAssembler promptAssembler;
@@ -269,6 +271,8 @@ public class LlmMemoryEvalRunner {
                     .generatedAnswer("")
                     .correct(false)
                     .failureReason(FAILURE_RUNTIME_ERROR)
+                    .runtimeErrorType(runtimeErrorType(e))
+                    .transientRuntimeError(transientRuntimeError(e))
                     .latencyMs(elapsedMillis(startedAt))
                     .promptTokens(null)
                     .completionTokens(null)
@@ -277,6 +281,7 @@ public class LlmMemoryEvalRunner {
                     .evictedBeforeAnswer(evictedBeforeAnswer)
                     .errorMessage(e.getMessage());
             applyLatencyBreakdown(builder, latencyBreakdown);
+            applyGenerationExceptionBreakdown(builder, latencyBreakdown, e);
             return builder.build();
         } finally {
             cleanupStoredFragments(storedFragmentIds);
@@ -781,6 +786,31 @@ public class LlmMemoryEvalRunner {
         latencyBreakdown.generationHttpStatusCode = generationLatencyBreakdown.getHttpStatusCode();
         latencyBreakdown.generationRequestBytes = generationLatencyBreakdown.getRequestBytes();
         latencyBreakdown.generationResponseBytes = generationLatencyBreakdown.getResponseBytes();
+    }
+
+    private void applyGenerationExceptionBreakdown(
+            LlmMemoryEvalResult.LlmMemoryEvalResultBuilder builder,
+            EvalLatencyBreakdown latencyBreakdown,
+            RuntimeException exception) {
+        if (!(exception instanceof GenerationException generationException)
+                || generationException.getLatencyBreakdown() == null) {
+            return;
+        }
+        applyGenerationLatencyBreakdown(latencyBreakdown, generationException.getLatencyBreakdown());
+        applyLatencyBreakdown(builder, latencyBreakdown);
+    }
+
+    private String runtimeErrorType(RuntimeException exception) {
+        if (exception instanceof GenerationException generationException
+                && !isBlank(generationException.getErrorType())) {
+            return generationException.getErrorType();
+        }
+        return RUNTIME_ERROR_RUNNER_INTERNAL;
+    }
+
+    private boolean transientRuntimeError(RuntimeException exception) {
+        return exception instanceof GenerationException generationException
+                && generationException.isTransientError();
     }
 
     private void logCaseCompletion(

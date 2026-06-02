@@ -32,6 +32,8 @@ public class LlmMemoryEvalResult {
     private boolean correct;
 
     private String failureReason;
+    private String runtimeErrorType;
+    private Boolean transientRuntimeError;
 
     @Builder.Default
     private List<String> missingMustContain = List.of();

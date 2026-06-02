@@ -31,6 +31,8 @@ class LlmMemoryEvalReportWriterTest {
                         .generatedAnswer("a")
                         .correct(true)
                         .failureReason("answer_missing_fact")
+                        .runtimeErrorType("generation_timeout")
+                        .transientRuntimeError(true)
                         .missingMustContain(List.of("CSV"))
                         .matchedForbiddenTerms(List.of("XLSX"))
                         .latencyMs(123L)
@@ -99,14 +101,16 @@ class LlmMemoryEvalReportWriterTest {
         assertThat(markdown).contains("Eval System Prompt SHA-256: 7f6d9c7d4f0cbe4f6c2c0e1b97c7b0f5b91f0d7d31ef9d0620d7f3c56f7f5a01");
         assertThat(markdown).contains("Eval System Prompt Chars: 512");
         assertThat(markdown).contains("## Recall Diagnostics");
-        assertThat(markdown).contains("Failure Reason | Missing Must Contain | Matched Forbidden");
-        assertThat(markdown).contains("profile-001 | Vortex-Memory | true | answer_missing_fact | CSV | XLSX");
+        assertThat(markdown).contains("Failure Reason | Runtime Type | Transient Runtime");
+        assertThat(markdown).contains("profile-001 | Vortex-Memory | true | answer_missing_fact | generation_timeout | true | CSV | XLSX");
         assertThat(markdown).contains("profile-001 | Vortex-Memory |  | 1 | llm-memory-eval-memory | 1 | 1 | 1");
         assertThat(markdown).contains("## Generation Telemetry");
         assertThat(markdown).contains("profile-001 | Vortex-Memory | 200 | 1 | 321 | 654");
         assertThat(json).contains("\"environment\"");
         assertThat(json).contains("\"recallDiagnostics\"");
         assertThat(json).contains("\"failureReason\" : \"answer_missing_fact\"");
+        assertThat(json).contains("\"runtimeErrorType\" : \"generation_timeout\"");
+        assertThat(json).contains("\"transientRuntimeError\" : true");
         assertThat(json).contains("\"missingMustContain\" : [ \"CSV\" ]");
         assertThat(json).contains("\"matchedForbiddenTerms\" : [ \"XLSX\" ]");
         assertThat(json).contains("\"generationLatencyNanos\" : 100000000");

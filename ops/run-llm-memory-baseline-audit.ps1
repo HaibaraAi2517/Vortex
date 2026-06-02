@@ -667,6 +667,8 @@ function Get-CaseFailureDetails {
                 RecalledFromTiers = @($result.recalledFromTiers | ForEach-Object { [string]$_ })
                 RecallHit = $result.recallHit
                 FailureReason = [string]$result.failureReason
+                RuntimeErrorType = if ($result.PSObject.Properties["runtimeErrorType"]) { [string]$result.runtimeErrorType } else { "" }
+                TransientRuntimeError = if ($result.PSObject.Properties["transientRuntimeError"]) { [bool]$result.transientRuntimeError } else { $false }
                 MissingMustContain = @($result.missingMustContain | ForEach-Object { [string]$_ })
                 MatchedForbiddenTerms = @($result.matchedForbiddenTerms | ForEach-Object { [string]$_ })
                 EvictedBeforeAnswer = $result.evictedBeforeAnswer
@@ -690,6 +692,7 @@ function Get-CaseFailureSummary {
         $first = $group.Group[0]
         $missing = @($group.Group | ForEach-Object { $_.MissingExpectedFragments } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
         $failureReasons = @($group.Group | ForEach-Object { $_.FailureReason } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+        $runtimeErrorTypes = @($group.Group | ForEach-Object { $_.RuntimeErrorType } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
         $missingMustContain = @($group.Group | ForEach-Object { $_.MissingMustContain } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
         $matchedForbiddenTerms = @($group.Group | ForEach-Object { $_.MatchedForbiddenTerms } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
         $returnedSets = @($group.Group | ForEach-Object { ($_.ReturnedFragmentIds -join ",") } | Sort-Object -Unique)
@@ -700,6 +703,8 @@ function Get-CaseFailureSummary {
             RoundCount = $RoundCount
             FailureRounds = @($group.Group | Sort-Object RoundIndex | ForEach-Object { $_.RoundIndex })
             FailureReasons = $failureReasons
+            RuntimeErrorTypes = $runtimeErrorTypes
+            TransientRuntimeFailureCount = @($group.Group | Where-Object { $_.TransientRuntimeError -eq $true }).Count
             RecallHitFailureCount = @($group.Group | Where-Object { $_.RecallHit -eq $true }).Count
             RecallMissFailureCount = @($group.Group | Where-Object { $_.RecallHit -eq $false }).Count
             MissingExpectedFragments = $missing
@@ -745,10 +750,10 @@ function Get-CaseFailureSummaryMarkdown {
         return "No Vortex case failures."
     }
     $builder = New-Object System.Text.StringBuilder
-    [void]$builder.AppendLine("| Case | Mode | Failures | Reasons | Rounds | Recall Hit | Recall Miss | Missing Expected Fragments | Missing Must Contain | Forbidden Terms | Expected Answer | Question |")
-    [void]$builder.AppendLine("| --- | --- | ---: | --- | --- | ---: | ---: | --- | --- | --- | --- | --- |")
+    [void]$builder.AppendLine("| Case | Mode | Failures | Reasons | Runtime Types | Transient Runtime | Rounds | Recall Hit | Recall Miss | Missing Expected Fragments | Missing Must Contain | Forbidden Terms | Expected Answer | Question |")
+    [void]$builder.AppendLine("| --- | --- | ---: | --- | --- | ---: | --- | ---: | ---: | --- | --- | --- | --- | --- |")
     foreach ($item in $items) {
-        [void]$builder.AppendLine("| $(Format-MarkdownCell $item.CaseId) | $(Format-MarkdownCell $item.Mode) | $($item.FailureCount)/$($item.RoundCount) | $(Format-MarkdownCell $item.FailureReasons) | $(Format-MarkdownCell $item.FailureRounds) | $($item.RecallHitFailureCount) | $($item.RecallMissFailureCount) | $(Format-MarkdownCell $item.MissingExpectedFragments) | $(Format-MarkdownCell $item.MissingMustContain) | $(Format-MarkdownCell $item.MatchedForbiddenTerms) | $(Format-MarkdownCell $item.ExpectedAnswer) | $(Format-MarkdownCell $item.Question) |")
+        [void]$builder.AppendLine("| $(Format-MarkdownCell $item.CaseId) | $(Format-MarkdownCell $item.Mode) | $($item.FailureCount)/$($item.RoundCount) | $(Format-MarkdownCell $item.FailureReasons) | $(Format-MarkdownCell $item.RuntimeErrorTypes) | $($item.TransientRuntimeFailureCount) | $(Format-MarkdownCell $item.FailureRounds) | $($item.RecallHitFailureCount) | $($item.RecallMissFailureCount) | $(Format-MarkdownCell $item.MissingExpectedFragments) | $(Format-MarkdownCell $item.MissingMustContain) | $(Format-MarkdownCell $item.MatchedForbiddenTerms) | $(Format-MarkdownCell $item.ExpectedAnswer) | $(Format-MarkdownCell $item.Question) |")
     }
     return $builder.ToString()
 }
@@ -760,11 +765,11 @@ function Get-CaseFailureDetailsMarkdown {
         return "No Vortex case failures."
     }
     $builder = New-Object System.Text.StringBuilder
-    [void]$builder.AppendLine("| Round | Case | Mode | Reason | Recall Hit | Returned Fragments | Missing Expected Fragments | Missing Must Contain | Forbidden Terms | Generated Answer |")
-    [void]$builder.AppendLine("| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    [void]$builder.AppendLine("| Round | Case | Mode | Reason | Runtime Type | Transient Runtime | Recall Hit | Returned Fragments | Missing Expected Fragments | Missing Must Contain | Forbidden Terms | Generated Answer |")
+    [void]$builder.AppendLine("| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     foreach ($item in ($items | Sort-Object RoundIndex, CaseId, Mode)) {
         $answerPreview = Limit-Text -Value $item.GeneratedAnswer
-        [void]$builder.AppendLine("| $($item.RoundIndex) | $(Format-MarkdownCell $item.CaseId) | $(Format-MarkdownCell $item.Mode) | $(Format-MarkdownCell $item.FailureReason) | $(Format-MarkdownCell $item.RecallHit) | $(Format-MarkdownCell $item.ReturnedFragmentIds) | $(Format-MarkdownCell $item.MissingExpectedFragments) | $(Format-MarkdownCell $item.MissingMustContain) | $(Format-MarkdownCell $item.MatchedForbiddenTerms) | $(Format-MarkdownCell $answerPreview) |")
+        [void]$builder.AppendLine("| $($item.RoundIndex) | $(Format-MarkdownCell $item.CaseId) | $(Format-MarkdownCell $item.Mode) | $(Format-MarkdownCell $item.FailureReason) | $(Format-MarkdownCell $item.RuntimeErrorType) | $(Format-MarkdownCell $item.TransientRuntimeError) | $(Format-MarkdownCell $item.RecallHit) | $(Format-MarkdownCell $item.ReturnedFragmentIds) | $(Format-MarkdownCell $item.MissingExpectedFragments) | $(Format-MarkdownCell $item.MissingMustContain) | $(Format-MarkdownCell $item.MatchedForbiddenTerms) | $(Format-MarkdownCell $answerPreview) |")
     }
     return $builder.ToString()
 }
@@ -1125,6 +1130,16 @@ try {
     $recoveredL2HitRateValues = Get-ModeMetricValues -Runs $completedRuns -ModeName "Vortex-RecoveredMemory" -MetricName "recoveredL2HitRate"
     $caseFailureDetails = Get-CaseFailureDetails -Runs $completedRuns -DatasetCases $datasetCaseMap
     $caseFailureSummary = Get-CaseFailureSummary -Failures $caseFailureDetails -RoundCount $Rounds
+    $runtimeErrorTypeCounts = @($caseFailureDetails | Where-Object {
+        $_.FailureReason -eq "runtime_error" -and -not [string]::IsNullOrWhiteSpace($_.RuntimeErrorType)
+    } | Group-Object RuntimeErrorType | Sort-Object Count -Descending, Name | ForEach-Object {
+        [pscustomobject]@{
+            RuntimeErrorType = $_.Name
+            Count = $_.Count
+            TransientCount = @($_.Group | Where-Object { $_.TransientRuntimeError -eq $true }).Count
+        }
+    })
+    $transientRuntimeErrorCount = @($caseFailureDetails | Where-Object { $_.TransientRuntimeError -eq $true }).Count
     $auditGate = New-AuditGateResult `
         -Runs $completedRuns `
         -RequestedRounds $Rounds `
@@ -1188,6 +1203,8 @@ try {
             RecoveredL2HitRateValues = $recoveredL2HitRateValues
             CaseFailureCount = @($caseFailureDetails).Count
             CaseFailureGroupCount = @($caseFailureSummary).Count
+            RuntimeErrorTypeCounts = $runtimeErrorTypeCounts
+            TransientRuntimeErrorCount = $transientRuntimeErrorCount
         }
         AuditGate = $auditGate
         ProfileGate = $profileGate
@@ -1230,6 +1247,8 @@ try {
         "- RecoveredL2HitRate values: $(Format-MetricSequence -Values $recoveredL2HitRateValues)"
         "- Case failure count: $(@($caseFailureDetails).Count)"
         "- Case failure groups: $(@($caseFailureSummary).Count)"
+        "- Transient runtime error count: $transientRuntimeErrorCount"
+        "- Runtime error type counts: $(($runtimeErrorTypeCounts | ForEach-Object { "" + $_.RuntimeErrorType + "=" + $_.Count + " transient=" + $_.TransientCount }) -join "; ")"
         ""
         "## Audit Gate"
         ""

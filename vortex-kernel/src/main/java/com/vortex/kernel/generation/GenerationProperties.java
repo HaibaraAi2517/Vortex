@@ -20,4 +20,7 @@ public class GenerationProperties {
     private double temperature = 0.0d;
     private int maxTokens = 512;
     private Duration timeout = Duration.ofSeconds(30);
+    private int maxRetries = 2;
+    private Duration retryInitialBackoff = Duration.ofSeconds(1);
+    private double retryBackoffMultiplier = 3.0d;
 }
