@@ -83,6 +83,7 @@ class LlmMemoryEvalReportWriterTest {
                         .evalSystemPromptSha256("7f6d9c7d4f0cbe4f6c2c0e1b97c7b0f5b91f0d7d31ef9d0620d7f3c56f7f5a01")
                         .evalSystemPromptChars(512)
                         .modes(List.of("Vortex-Memory"))
+                        .evalParallelism(32)
                         .reportOutputDir(tempDir.toString())
                         .javaVersion("21.0.10")
                         .osName("Windows 11")
@@ -100,6 +101,7 @@ class LlmMemoryEvalReportWriterTest {
         assertThat(markdown).contains("Generation Base URL: https://sub2.congmingai.com/v1");
         assertThat(markdown).contains("Eval System Prompt SHA-256: 7f6d9c7d4f0cbe4f6c2c0e1b97c7b0f5b91f0d7d31ef9d0620d7f3c56f7f5a01");
         assertThat(markdown).contains("Eval System Prompt Chars: 512");
+        assertThat(markdown).contains("Eval Parallelism: 32");
         assertThat(markdown).contains("## Recall Diagnostics");
         assertThat(markdown).contains("Failure Reason | Runtime Type | Transient Runtime");
         assertThat(markdown).contains("profile-001 | Vortex-Memory | true | answer_missing_fact | generation_timeout | true | CSV | XLSX");
@@ -116,5 +118,6 @@ class LlmMemoryEvalReportWriterTest {
         assertThat(json).contains("\"generationLatencyNanos\" : 100000000");
         assertThat(json).contains("\"generationBaseUrl\" : \"https://sub2.congmingai.com/v1\"");
         assertThat(json).contains("\"evalSystemPromptSha256\" : \"7f6d9c7d4f0cbe4f6c2c0e1b97c7b0f5b91f0d7d31ef9d0620d7f3c56f7f5a01\"");
+        assertThat(json).contains("\"evalParallelism\" : 32");
     }
 }

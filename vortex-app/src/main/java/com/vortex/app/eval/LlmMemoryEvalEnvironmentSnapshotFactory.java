@@ -56,6 +56,7 @@ public class LlmMemoryEvalEnvironmentSnapshotFactory {
                 .evalSystemPromptSha256(sha256Hex(evalProperties.getSystemPrompt()))
                 .evalSystemPromptChars(evalProperties.getSystemPrompt() == null ? 0 : evalProperties.getSystemPrompt().length())
                 .modes(configuredModes())
+                .evalParallelism(Math.max(1, evalProperties.getParallelism()))
                 .reportOutputDir(evalProperties.getReportOutputDir())
                 .javaVersion(System.getProperty("java.version"))
                 .osName(System.getProperty("os.name"))

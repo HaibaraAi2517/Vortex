@@ -59,13 +59,17 @@
 
 v2.1 只显式化 `v2-009` 的 same-weekday 时间偏移 contract。它有独立的 `official-v2.1-strict` strict profile，因此不会再被误判为相对正式 v2 数据集漂移。`contract-v2.1-candidate` 保留为过渡 alias。
 
-当前 v2.1 扩展候选评测集是：
+当前 v2.1 extended strict 评测集是：
 
 - 数据集：`classpath:llm-memory-eval-set-v2-1-extended.json`
 - case 数量：30
-- baseline profile：`candidate-v2.1-extended`
-- strict verifier profile：无
-- 定位：在保留 v2.1 前 15 条 contract 的基础上，新增多轮偏好、时间约束、跨片段组合、干扰记忆、命名实体和任务状态恢复场景。它用于候选 audit，不替代 `official-v2.1-strict`。
+- baseline profile：`official-v2.1-extended-strict`
+- strict verifier profile：`official-v2.1-extended-strict`
+- 定位：在保留 v2.1 前 15 条 contract 的基础上，新增多轮偏好、时间约束、跨片段组合、干扰记忆、命名实体和任务状态恢复场景。Phase 2 已将它晋升为独立 30-case strict profile，但默认 `verify <report>` 仍保留 `official-v2-strict`。
+
+Phase 2 决策见：
+
+- [vortex-baseline-governance-phase-2-decision.md](E:/1projects/claude/Vortex/ops/runbooks/vortex-baseline-governance-phase-2-decision.md:1)
 
 v2.1 正式升级提案见：
 
@@ -164,7 +168,8 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-real-llm-memory-eval.ps1 `
   -ApiKey '...' `
   -BaseUrl 'https://sub2.congmingai.com' `
   -Model 'gpt-5.2' `
-  -Stamp '20260529-real-bge-014'
+  -Stamp '20260529-real-bge-014' `
+  -EvalParallelism 32
 ```
 
 当前正式推荐运行方式是直接跑 `v2`：
@@ -175,20 +180,23 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-real-llm-memory-eval.ps1 `
   -BaseUrl 'https://sub2.congmingai.com' `
   -Model 'gpt-5.2' `
   -Stamp '20260529-real-bge-v2-006' `
-  -DatasetLocation 'classpath:llm-memory-eval-set-v2.json'
+  -DatasetLocation 'classpath:llm-memory-eval-set-v2.json' `
+  -EvalParallelism 32
 ```
 
 如果要切换到其它评测集，只改 `-Stamp` 和 `-DatasetLocation`，其它环境保持不变。
+真实 LLM 评测可用 `-EvalParallelism` 加速；默认是 `1`，建议先用 `24` 或 `32` 观察 5xx/timeout 后再提高。
 
 ## Baseline Profile
 
-真实 eval 的 baseline governance 分为五个 profile：
+真实 eval 的 baseline governance 分为六个 profile：
 
 1. `official-v2-strict`：正式 v2 单轮 strict baseline，默认用于 `verify <report>`。
 2. `audit-v2-stability`：v2 多轮稳定性 audit gate，不用于单个报告 strict verify。
 3. `official-v2.1-strict`：正式 v2.1 单轮 strict baseline，用于 v2.1 单轮 strict verify 和多轮 audit。
 4. `contract-v2.1-candidate`：`official-v2.1-strict` 的过渡 alias。
-5. `candidate-v2.1-extended`：30-case v2.1 扩展候选集，用于多轮真实 LLM audit，尚无 strict 单轮 verifier。
+5. `official-v2.1-extended-strict`：正式 v2.1 extended 单轮 strict baseline，要求 `0/30, 30/30, 30/30`。
+6. `candidate-v2.1-extended`：30-case v2.1 扩展集晋升前的历史 audit-only profile。
 
 列出当前 jar 支持的 profile：
 
@@ -224,11 +232,12 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
   -Rounds 5 `
   -DatasetLocation 'classpath:llm-memory-eval-set-v2-1.json' `
   -AuditStamp '20260601-v2-009-contract-audit-5x-net' `
+  -EvalParallelism 32 `
   -SkipComposeUp `
   -SkipPackage
 ```
 
-v2.1 extended candidate audit 示例：
+v2.1 extended strict audit 示例：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1 `
@@ -237,12 +246,13 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
   -Model 'gpt-5.2' `
   -Rounds 5 `
   -DatasetLocation 'classpath:llm-memory-eval-set-v2-1-extended.json' `
-  -AuditStamp '20260601-v2-1-extended-candidate-audit' `
+  -AuditStamp '20260602-v2-1-extended-official-strict-audit' `
+  -EvalParallelism 32 `
   -SkipComposeUp `
   -SkipPackage
 ```
 
-这个候选集没有 strict verifier profile，脚本会跳过单轮 strict verify，但仍执行 `ProfileGate` 和 `AuditGate`。如果候选集稳定通过，再用生成的 audit stamp 决定是否晋升为新的 official strict profile。
+脚本会自动推断 `BaselineProfile = official-v2.1-extended-strict` 和 `StrictVerifierProfile = official-v2.1-extended-strict`。历史 `candidate-v2.1-extended` audit 报告仍可作为 Phase 2 晋升证据，但新 extended audit 应使用 official extended strict profile。
 
 ## 手动运行方式
 
@@ -371,7 +381,7 @@ java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
 
 审计脚本有两层结论：
 
-1. `StrictVerifierPassed`：每一轮都必须完全匹配当前 `StrictVerifierProfile` 对应的单轮 strict baseline。v2 默认是 `official-v2-strict`；v2.1 默认是 `official-v2.1-strict`。
+1. `StrictVerifierPassed`：每一轮都必须完全匹配当前 `StrictVerifierProfile` 对应的单轮 strict baseline。v2 默认是 `official-v2-strict`；v2.1 默认是 `official-v2.1-strict`；v2.1 extended 默认是 `official-v2.1-extended-strict`。
 2. `ProfileGate.Passed`：profile / dataset / report environment 一致性 gate。它要求脚本推断或显式传入的 `BaselineProfile`、`StrictVerifierProfile`、`DatasetVersion` 与每轮 report environment 中的 profile 字段一致。
 3. `AuditGate.Passed`：多轮真实 LLM 稳定性 gate。默认允许真实模型输出波动，但要求环境不漂移、NoMemory 保持 0、Memory/Recovered 的多轮均值达到阈值。
 4. `OverallPassed`：必须同时满足 `ProfileGate.Passed = true` 和 `AuditGate.Passed = true`。
@@ -393,7 +403,8 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
   -Model 'gpt-5.2' `
   -Rounds 5 `
   -DatasetLocation 'classpath:llm-memory-eval-set-v2.json' `
-  -AuditStamp '20260601-baseline-audit'
+  -AuditStamp '20260601-baseline-audit' `
+  -EvalParallelism 32
 ```
 
 如果容器已经启动、`eval-cli` jar 也已经打好，可以跳过这两步：
@@ -406,6 +417,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
   -Rounds 5 `
   -DatasetLocation 'classpath:llm-memory-eval-set-v2.json' `
   -AuditStamp '20260601-baseline-audit' `
+  -EvalParallelism 32 `
   -SkipComposeUp `
   -SkipPackage
 ```
@@ -415,6 +427,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
 1. 默认会复用 `ops/eval-reports/<audit-stamp>/runs/<audit-stamp>-runNN/` 下已存在的报告
 2. 对已存在报告不会重跑 eval，只会重新执行 verifier 并重建汇总
 3. 如需强制重跑已有轮次，显式加 `-ForceRerunExisting`
+4. 同一次 audit 应保持 `-EvalParallelism` 一致；summary 的环境稳定性 gate 会记录并检查该值
 
 如果要把 audit gate 用作 CI/脚本门禁，追加 `-FailOnAuditGateFailure`；这会按 `OverallPassed` 退出，也就是 `AuditGate` 或 `ProfileGate` 任一失败都会返回非零。单轮 strict verifier 漂移仍保留为诊断信号，不会单独让 v2 stability audit 失败。
 
@@ -470,5 +483,5 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
 2. `AuditGate.Passed = true`
 3. `ProfileGate.Passed = true`
 4. `OverallPassed = true`
-5. `StrictVerifierPassed` 的含义取决于 `StrictVerifierProfile`；v2 stability audit 可接受它为 `false`，v2.1 official strict audit 期望它为 `true`
+5. `StrictVerifierPassed` 的含义取决于 `StrictVerifierProfile`；v2 stability audit 可接受它为 `false`，v2.1 official strict audit 和 v2.1 extended strict audit 期望它为 `true`
 6. 如果 `ProfileGate.Passed = false`，优先看 `ProfileGate.Checks`；如果 `AuditGate.Passed = false`，优先看 `AuditGate.Checks`，再看 `CaseFailureSummary`

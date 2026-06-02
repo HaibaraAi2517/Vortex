@@ -77,6 +77,14 @@ Do not fabricate hidden facts or fragment identifiers.
    - 数据集：`classpath:llm-memory-eval-set-v2-1.json`
    - baseline id：`20260601-v2-009-contract-audit-5x-net`
    - 语义：`official-v2.1-strict` 的过渡 alias
+5. `official-v2.1-extended-strict`
+   - 数据集：`classpath:llm-memory-eval-set-v2-1-extended.json`
+   - baseline id：`20260602-v2-1-extended-candidate-audit-generation-retry-001`
+   - 语义：正式 v2.1 extended 单轮 strict baseline，要求 `0/30, 30/30, 30/30`
+6. `candidate-v2.1-extended`
+   - 数据集：`classpath:llm-memory-eval-set-v2-1-extended.json`
+   - baseline id：`candidate-v2.1-extended`
+   - 语义：v2.1 extended 晋升前的历史 audit-only profile，不用于单个报告 strict verify
 
 `eval-cli verify` 默认使用 `official-v2-strict`。其它 strict profile 需要显式传入：
 
@@ -93,6 +101,16 @@ java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
   --profile official-v2.1-strict `
   .\ops\eval-reports\20260601-v2-009-contract-audit-5x-net\runs\20260601-v2-009-contract-audit-5x-net-run01\llm-memory-eval-*.json
 ```
+
+```powershell
+java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
+  --profile official-v2.1-extended-strict `
+  --describe
+```
+
+Phase 2 extended baseline 决策见：
+
+- [vortex-baseline-governance-phase-2-decision.md](E:/1projects/claude/Vortex/ops/runbooks/vortex-baseline-governance-phase-2-decision.md:1)
 
 ## 候选多轮审计基线
 
@@ -193,10 +211,13 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
   -Rounds 5 `
   -DatasetLocation 'classpath:llm-memory-eval-set-v2.json' `
   -AuditStamp '<new-audit-stamp>' `
+  -EvalParallelism 32 `
   -SkipComposeUp `
   -SkipPackage `
   -FailOnAuditGateFailure
 ```
+
+`-EvalParallelism` controls bounded in-process eval concurrency. Default is `1`; for real LLM audit start with `24` or `32`, then raise only if the provider remains stable.
 
 单轮 strict baseline verifier 仍保留，用于确认某个 `llm-memory-eval-*.json` 是否完全复现正式 15/15 基线。
 

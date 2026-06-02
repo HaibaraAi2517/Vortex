@@ -33,6 +33,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -693,6 +695,75 @@ class LlmMemoryEvalRunnerTest {
     }
 
     @Test
+    void runShouldEvaluateCasesConcurrentlyWithinEachModeWhenParallelismIsConfigured() {
+        properties.setParallelism(4);
+        CountDownLatch allRequestsInFlight = new CountDownLatch(4);
+        AtomicInteger activeRequests = new AtomicInteger();
+        AtomicInteger maxActiveRequests = new AtomicInteger();
+        when(generationServiceProvider.getIfAvailable()).thenReturn(request -> {
+            int active = activeRequests.incrementAndGet();
+            maxActiveRequests.accumulateAndGet(active, Math::max);
+            allRequestsInFlight.countDown();
+            try {
+                assertThat(allRequestsInFlight.await(1, TimeUnit.SECONDS)).isTrue();
+                return GenerationResult.builder()
+                        .content("memory insufficient")
+                        .latencyMs(1L)
+                        .build();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("interrupted while waiting for test requests", e);
+            } finally {
+                activeRequests.decrementAndGet();
+            }
+        });
+        List<LlmMemoryEvalCase> cases = List.of(
+                insufficientCase("parallel-001"),
+                insufficientCase("parallel-002"),
+                insufficientCase("parallel-003"),
+                insufficientCase("parallel-004"));
+
+        LlmMemoryEvalReport report = runner.run(cases, List.of(LlmMemoryEvalMode.BASELINE_NO_MEMORY));
+
+        assertThat(maxActiveRequests.get()).isGreaterThan(1);
+        assertThat(report.getResults())
+                .extracting(LlmMemoryEvalResult::getCaseId)
+                .containsExactly("parallel-001", "parallel-002", "parallel-003", "parallel-004");
+        assertThat(report.getResults()).allSatisfy(result -> {
+            assertThat(result.getMode()).isEqualTo("Baseline-NoMemory");
+            assertThat(result.getGeneratedAnswer()).isEqualTo("memory insufficient");
+            assertThat(result.getFailureReason()).isEqualTo(RuleBasedAnswerJudge.FAILURE_INSUFFICIENT_ANSWER);
+        });
+    }
+
+    @Test
+    void runShouldPreserveSerialResultOrderingWhenModePhasedParallelismIsConfigured() {
+        properties.setParallelism(3);
+        List<LlmMemoryEvalCase> cases = List.of(
+                insufficientCase("parallel-order-001"),
+                insufficientCase("parallel-order-002"),
+                insufficientCase("parallel-order-003"));
+        when(generationServiceProvider.getIfAvailable()).thenReturn(request -> GenerationResult.builder()
+                .content("memory insufficient")
+                .latencyMs(1L)
+                .build());
+
+        LlmMemoryEvalReport report = runner.run(cases, List.of(
+                LlmMemoryEvalMode.BASELINE_NO_MEMORY,
+                LlmMemoryEvalMode.BASELINE_NO_MEMORY));
+
+        assertThat(report.getResults())
+                .extracting(result -> result.getCaseId() + "/" + result.getMode())
+                .containsExactly(
+                        "parallel-order-001/Baseline-NoMemory",
+                        "parallel-order-001/Baseline-NoMemory",
+                        "parallel-order-002/Baseline-NoMemory",
+                        "parallel-order-002/Baseline-NoMemory",
+                        "parallel-order-003/Baseline-NoMemory",
+                        "parallel-order-003/Baseline-NoMemory");
+    }
+
+    @Test
     void planRecoveryFillersShouldShrinkLargeDefaultFillersForShortTargets() {
         String namespace = "llm-eval-profile-vortex_recovered_memory-test";
         MemoryFragment target = MemoryFragment.builder()
@@ -749,6 +820,22 @@ class LlmMemoryEvalRunnerTest {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to load expected answers for eval test", e);
         }
+    }
+
+    private LlmMemoryEvalCase insufficientCase(String caseId) {
+        return LlmMemoryEvalCase.builder()
+                .caseId(caseId)
+                .namespace("llm-eval-parallel")
+                .memoryFragments(List.of(LlmMemoryEvalCase.EvalMemoryFragment.builder()
+                        .fragmentId("placeholder")
+                        .content("Placeholder memory for validation only.")
+                        .tags(List.of("parallel"))
+                        .build()))
+                .question("What does memory say?")
+                .expectedAnswer("memory insufficient")
+                .expectedFragments(List.of("placeholder"))
+                .tags(List.of("parallel"))
+                .build();
     }
 
     private AdaptiveWeightLearner.LearningSnapshot learningSnapshot(long sampleCount, long updateCount) {

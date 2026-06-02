@@ -79,6 +79,7 @@ class LlmMemoryEvalCliApplicationTest {
                 .contains("audit-v2-stability [audit-only]")
                 .contains("official-v2.1-strict [strict-report]")
                 .contains("contract-v2.1-candidate [strict-report]")
+                .contains("official-v2.1-extended-strict [strict-report]")
                 .contains("candidate-v2.1-extended [audit-only]");
     }
 
@@ -137,29 +138,78 @@ class LlmMemoryEvalCliApplicationTest {
                 .contains("Strict verify expectations: none");
     }
 
+    @Test
+    void verifyCommandShouldAcceptExplicitOfficialV21ExtendedProfile(@org.junit.jupiter.api.io.TempDir Path tempDir)
+            throws Exception {
+        Path reportPath = tempDir.resolve("llm-memory-eval-v2-1-extended.json");
+        JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), strictReport(
+                "classpath:llm-memory-eval-set-v2-1-extended.json",
+                "v2.1-extended",
+                "official-v2.1-extended-strict",
+                "official-v2.1-extended-strict",
+                30));
+
+        int exitCode = LlmMemoryEvalCliApplication.execute(new String[] {
+                "verify",
+                "--profile",
+                "official-v2.1-extended-strict",
+                reportPath.toString()
+        });
+
+        assertThat(exitCode).isZero();
+    }
+
+    @Test
+    void verifyCommandShouldDescribeOfficialV21ExtendedProfile(CapturedOutput output) {
+        int exitCode = LlmMemoryEvalCliApplication.execute(new String[] {
+                "verify",
+                "--profile",
+                "official-v2.1-extended-strict",
+                "--describe"
+        });
+
+        assertThat(exitCode).isZero();
+        assertThat(output.getOut())
+                .contains("Profile: official-v2.1-extended-strict")
+                .contains("Type: strict-report")
+                .contains("Baseline ID: 20260602-v2-1-extended-candidate-audit-generation-retry-001")
+                .contains("Dataset version: v2.1-extended")
+                .contains("Dataset location: classpath:llm-memory-eval-set-v2-1-extended.json")
+                .contains("Vortex-RecoveredMemory correct=30/30 accuracy=1.0 recoveredAccuracy=1.0 recoveredL2HitRate=1.0");
+    }
+
     private LlmMemoryEvalReport strictReport(
             String datasetLocation,
             String datasetVersion,
             String baselineProfileId,
             String strictVerifierProfileId) {
+        return strictReport(datasetLocation, datasetVersion, baselineProfileId, strictVerifierProfileId, 15);
+    }
+
+    private LlmMemoryEvalReport strictReport(
+            String datasetLocation,
+            String datasetVersion,
+            String baselineProfileId,
+            String strictVerifierProfileId,
+            int totalCases) {
         return LlmMemoryEvalReport.builder()
                 .generatedAt(Instant.parse("2026-06-01T12:00:00Z"))
-                .totalCases(15)
-                .totalRuns(45)
+                .totalCases(totalCases)
+                .totalRuns(totalCases * 3)
                 .modeSummaries(Map.of(
                         "Baseline-NoMemory", LlmMemoryEvalReport.ModeSummary.builder()
-                                .total(15)
+                                .total(totalCases)
                                 .correct(0)
                                 .accuracy(0.0d)
                                 .build(),
                         "Vortex-Memory", LlmMemoryEvalReport.ModeSummary.builder()
-                                .total(15)
-                                .correct(15)
+                                .total(totalCases)
+                                .correct(totalCases)
                                 .accuracy(1.0d)
                                 .build(),
                         "Vortex-RecoveredMemory", LlmMemoryEvalReport.ModeSummary.builder()
-                                .total(15)
-                                .correct(15)
+                                .total(totalCases)
+                                .correct(totalCases)
                                 .accuracy(1.0d)
                                 .recoveredAccuracy(1.0d)
                                 .recoveredL2HitRate(1.0d)

@@ -23,6 +23,9 @@ param(
 
     [string]$Modes = "BASELINE_NO_MEMORY,VORTEX_MEMORY,VORTEX_RECOVERED_MEMORY",
 
+    [ValidateRange(1, 128)]
+    [int]$EvalParallelism = 1,
+
     [string]$ReportRoot = "ops/eval-reports",
 
     [switch]$SkipComposeUp,
@@ -107,7 +110,7 @@ function Get-DatasetVersion {
 function Get-AuditBaselineProfile {
     param([string]$Location)
     if ($Location -eq "classpath:llm-memory-eval-set-v2-1-extended.json") {
-        return "candidate-v2.1-extended"
+        return "official-v2.1-extended-strict"
     }
     if ($Location -eq "classpath:llm-memory-eval-set-v2-1.json") {
         return "official-v2.1-strict"
@@ -121,7 +124,7 @@ function Get-AuditBaselineProfile {
 function Get-StrictVerifierProfile {
     param([string]$Location)
     if ($Location -eq "classpath:llm-memory-eval-set-v2-1-extended.json") {
-        return ""
+        return "official-v2.1-extended-strict"
     }
     if ($Location -eq "classpath:llm-memory-eval-set-v2-1.json") {
         return "official-v2.1-strict"
@@ -134,6 +137,9 @@ function Get-StrictVerifierProfile {
 
 function Get-BaselineIdForProfile {
     param([string]$Profile)
+    if ($Profile -eq "official-v2.1-extended-strict") {
+        return "20260602-v2-1-extended-candidate-audit-generation-retry-001"
+    }
     if ($Profile -eq "candidate-v2.1-extended") {
         return "candidate-v2.1-extended"
     }
@@ -188,6 +194,15 @@ function Get-BaselineProfileDefinition {
             BaselineId = "20260601-v2-009-contract-audit-5x-net"
             DatasetVersion = "v2.1"
             DatasetLocation = "classpath:llm-memory-eval-set-v2-1.json"
+            StrictReportProfile = $true
+        }
+    }
+    if ($normalized -eq "official-v2.1-extended-strict") {
+        return [pscustomobject]@{
+            Id = "official-v2.1-extended-strict"
+            BaselineId = "20260602-v2-1-extended-candidate-audit-generation-retry-001"
+            DatasetVersion = "v2.1-extended"
+            DatasetLocation = "classpath:llm-memory-eval-set-v2-1-extended.json"
             StrictReportProfile = $true
         }
     }
@@ -300,7 +315,8 @@ function Test-BaselineProfileIdMatches {
     param(
         [string]$Actual,
         [string]$Expected,
-        [string]$DatasetLocation
+        [string]$DatasetLocation,
+        [switch]$AllowEmptyActual
     )
     if ($Actual -eq $Expected) {
         return $true
@@ -308,6 +324,17 @@ function Test-BaselineProfileIdMatches {
     if ($DatasetLocation -eq "classpath:llm-memory-eval-set-v2-1.json" `
             -and $Expected -eq "official-v2.1-strict" `
             -and $Actual -eq "contract-v2.1-candidate") {
+        return $true
+    }
+    if ($DatasetLocation -eq "classpath:llm-memory-eval-set-v2-1-extended.json" `
+            -and $Expected -eq "official-v2.1-extended-strict" `
+            -and $Actual -eq "candidate-v2.1-extended") {
+        return $true
+    }
+    if ($DatasetLocation -eq "classpath:llm-memory-eval-set-v2-1-extended.json" `
+            -and $Expected -eq "official-v2.1-extended-strict" `
+            -and $AllowEmptyActual `
+            -and [string]::IsNullOrWhiteSpace($Actual)) {
         return $true
     }
     return $false
@@ -334,13 +361,18 @@ function Get-RunProfileMismatchDetails {
 function Get-VerifyProfileMismatchDetails {
     param(
         [System.Collections.IEnumerable]$Runs,
-        [string]$ExpectedValue
+        [string]$ExpectedValue,
+        [string]$DatasetLocation
     )
     $mismatches = @($Runs | Where-Object {
         if ($null -eq $_.Verify) {
             $true
         } else {
-            [string]$_.Verify.Profile -ne $ExpectedValue
+            -not (Test-BaselineProfileIdMatches `
+                -Actual ([string]$_.Verify.Profile) `
+                -Expected $ExpectedValue `
+                -DatasetLocation $DatasetLocation `
+                -AllowEmptyActual)
         }
     } | ForEach-Object {
         $actual = if ($null -eq $_.Verify) { "" } else { [string]$_.Verify.Profile }
@@ -397,10 +429,15 @@ function New-ProfileGateResult {
         -not (Test-BaselineProfileIdMatches `
             -Actual ([string]$_.StrictVerifierProfileId) `
             -Expected $StrictVerifierProfile `
-            -DatasetLocation $DatasetLocation)
+            -DatasetLocation $DatasetLocation `
+            -AllowEmptyActual)
     }).Count -eq 0
     $runVerifyProfileMatches = $completedRuns.Count -eq $RequestedRounds -and @($completedRuns | Where-Object {
-        $null -eq $_.Verify -or [string]$_.Verify.Profile -ne $StrictVerifierProfile
+        $null -eq $_.Verify -or -not (Test-BaselineProfileIdMatches `
+            -Actual ([string]$_.Verify.Profile) `
+            -Expected $StrictVerifierProfile `
+            -DatasetLocation $DatasetLocation `
+            -AllowEmptyActual)
     }).Count -eq 0
     $strictProfileDefinitionExpected = if ([string]::IsNullOrWhiteSpace($expectedStrictVerifierProfile)) {
         "no strict verifier profile for {0}/{1}" -f $DatasetVersion, $DatasetLocation
@@ -463,7 +500,7 @@ function New-ProfileGateResult {
             -Passed $runVerifyProfileMatches `
             -Expected $StrictVerifierProfile `
             -Actual ("completedRuns={0}" -f $completedRuns.Count) `
-            -Details (Get-VerifyProfileMismatchDetails -Runs $completedRuns -ExpectedValue $StrictVerifierProfile)
+            -Details (Get-VerifyProfileMismatchDetails -Runs $completedRuns -ExpectedValue $StrictVerifierProfile -DatasetLocation $DatasetLocation)
     )
     return [pscustomobject]@{
         Passed = @($checks | Where-Object { -not $_.Passed }).Count -eq 0
@@ -509,6 +546,7 @@ function New-AuditGateResult {
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "GenerationModel") -eq 1 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "L1MaxTokens") -eq 1 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "EvalSystemPromptSha256") -eq 1 `
+        -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "EvalParallelism") -eq 1 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "Modes") -eq 1
     $checks = @(
         New-AuditGateCheck `
@@ -519,7 +557,7 @@ function New-AuditGateResult {
         New-AuditGateCheck `
             -Name "environmentStable" `
             -Passed $environmentStable `
-            -Expected "all completed runs share dataset/baseUrl/model/l1MaxTokens/promptSha/modes" `
+            -Expected "all completed runs share dataset/baseUrl/model/l1MaxTokens/promptSha/parallelism/modes" `
             -Actual ("completedRuns={0}" -f $completedRuns.Count)
         New-AuditGateCheck `
             -Name "baselineNoMemoryMaxCorrect" `
@@ -843,6 +881,11 @@ function Import-ExistingRun {
     } else {
         Get-StrictVerifierProfile -Location $runDatasetLocation
     }
+    $runEvalParallelism = if ($report.environment.PSObject.Properties["evalParallelism"]) {
+        [int]$report.environment.evalParallelism
+    } else {
+        1
+    }
     return [pscustomobject]@{
         Stamp = $RoundStamp
         ReportDir = $ReportDir
@@ -859,6 +902,7 @@ function Import-ExistingRun {
         GenerationModel = $report.environment.generationModel
         L1MaxTokens = $report.environment.l1MaxTokens
         EvalSystemPromptSha256 = $report.environment.evalSystemPromptSha256
+        EvalParallelism = $runEvalParallelism
         Modes = @($report.environment.modes)
         ModeSummaries = $report.modeSummaries
     }
@@ -986,6 +1030,7 @@ Write-Host "  Dataset     : $DatasetLocation"
 Write-Host "  Dataset Ver : $datasetVersion"
 Write-Host "  Profile     : $BaselineProfile"
 Write-Host "  Verifier    : $StrictVerifierProfile"
+Write-Host "  Parallelism : $EvalParallelism"
 Write-Host "  Report Dir  : $auditDir"
 
 if (-not $SkipComposeUp) {
@@ -1028,6 +1073,7 @@ for ($round = 1; $round -le $Rounds; $round++) {
                 -BgeModelPath $BgeModelPath `
                 -L1MaxTokens $L1MaxTokens `
                 -Modes $Modes `
+                -EvalParallelism $EvalParallelism `
                 -ReportRoot $runsRootRelative `
                 -SkipComposeUp `
                 -SkipPackage
@@ -1074,6 +1120,7 @@ for ($round = 1; $round -le $Rounds; $round++) {
             GenerationModel = $singleRun.GenerationModel
             L1MaxTokens = $singleRun.L1MaxTokens
             EvalSystemPromptSha256 = $singleRun.EvalSystemPromptSha256
+            EvalParallelism = if ($singleRun.PSObject.Properties["EvalParallelism"]) { $singleRun.EvalParallelism } else { $EvalParallelism }
             Modes = @($singleRun.Modes)
             ModeSummaries = ConvertTo-PlainObject $singleRun.ModeSummaries
             Verify = $verify
@@ -1101,6 +1148,7 @@ for ($round = 1; $round -le $Rounds; $round++) {
             GenerationModel = $Model
             L1MaxTokens = $L1MaxTokens
             EvalSystemPromptSha256 = $null
+            EvalParallelism = $EvalParallelism
             Modes = @()
             ModeSummaries = $null
             Verify = [pscustomobject]@{
@@ -1181,6 +1229,7 @@ try {
             BgeModelPath = $BgeModelPath
             L1MaxTokens = $L1MaxTokens
             Modes = $Modes
+            EvalParallelism = $EvalParallelism
             RequestedRounds = $Rounds
             ReportRoot = $ReportRoot
             BaselineNoMemoryMaxCorrect = $BaselineNoMemoryMaxCorrect
@@ -1240,6 +1289,7 @@ try {
         "- Base URL: $BaseUrl"
         "- Model: $Model"
         "- L1 Max Tokens: $L1MaxTokens"
+        "- Eval Parallelism: $EvalParallelism"
         "- Total Duration Seconds: $($summary.Aggregate.TotalDurationSeconds)"
         ""
         "## Aggregate"

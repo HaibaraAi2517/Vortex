@@ -16,6 +16,9 @@ param(
 
     [string]$Modes = "BASELINE_NO_MEMORY,VORTEX_MEMORY,VORTEX_RECOVERED_MEMORY",
 
+    [ValidateRange(1, 128)]
+    [int]$EvalParallelism = 1,
+
     [string]$ReportRoot = "ops/eval-reports",
 
     [switch]$SkipComposeUp,
@@ -148,6 +151,7 @@ $env:VORTEX_GENERATION_BASE_URL = $normalizedBaseUrl
 $env:VORTEX_GENERATION_API_KEY = $ApiKey
 $env:VORTEX_GENERATION_MODEL = $Model
 $env:VORTEX_EVAL_MODES = $Modes
+$env:VORTEX_EVAL_PARALLELISM = "$EvalParallelism"
 $env:VORTEX_STORAGE_L1_MAX_TOKENS = "$L1MaxTokens"
 $env:VORTEX_EVAL_REPORT_OUTPUT_DIR = $reportDir
 $env:VORTEX_STORAGE_L2_MILVUS_COLLECTION = $milvusCollection
@@ -167,6 +171,7 @@ $resolvedDatasetLocation = if ([string]::IsNullOrWhiteSpace($DatasetLocation)) {
     $DatasetLocation
 }
 Write-Host "  Dataset     : $resolvedDatasetLocation"
+Write-Host "  Parallelism : $EvalParallelism"
 Write-Host "  Report Dir  : $reportDir"
 Write-Host "  Collection  : $milvusCollection"
 Write-Host "  MinIO Prefix: $minioKeyPrefix"
@@ -202,6 +207,7 @@ Write-Host "  Report MD   : $($reportMarkdown.FullName)"
     GenerationModel = $report.environment.generationModel
     L1MaxTokens = $report.environment.l1MaxTokens
     EvalSystemPromptSha256 = $report.environment.evalSystemPromptSha256
+    EvalParallelism = if ($report.environment.PSObject.Properties["evalParallelism"]) { $report.environment.evalParallelism } else { $EvalParallelism }
     Modes = @($report.environment.modes)
     ModeSummaries = $report.modeSummaries
 }

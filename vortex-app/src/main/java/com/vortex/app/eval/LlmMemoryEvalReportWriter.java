@@ -194,6 +194,7 @@ public class LlmMemoryEvalReportWriter {
         builder.append("- Eval System Prompt SHA-256: ").append(nullToEmpty(environment.getEvalSystemPromptSha256())).append('\n');
         builder.append("- Eval System Prompt Chars: ").append(formatNullable(environment.getEvalSystemPromptChars())).append('\n');
         builder.append("- Modes: ").append(sanitizeMarkdown(String.join(", ", safeList(environment.getModes())))).append('\n');
+        builder.append("- Eval Parallelism: ").append(formatNullable(environment.getEvalParallelism())).append('\n');
         builder.append("- Report Output Dir: ").append(nullToEmpty(environment.getReportOutputDir())).append('\n');
         builder.append("- Java Version: ").append(nullToEmpty(environment.getJavaVersion())).append('\n');
         builder.append("- OS: ").append(nullToEmpty(environment.getOsName()))

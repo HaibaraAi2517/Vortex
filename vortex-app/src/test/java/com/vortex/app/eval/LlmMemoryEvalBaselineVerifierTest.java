@@ -82,6 +82,34 @@ class LlmMemoryEvalBaselineVerifierTest {
     }
 
     @Test
+    void verifyShouldPassForOfficialV21ExtendedProfile(@org.junit.jupiter.api.io.TempDir Path tempDir)
+            throws Exception {
+        Path reportPath = tempDir.resolve("llm-memory-eval-v2-1-extended.json");
+        LlmMemoryEvalReport report = officialBaselineReport();
+        report.setTotalCases(30);
+        report.setTotalRuns(90);
+        report.getEnvironment().setDatasetLocation("classpath:llm-memory-eval-set-v2-1-extended.json");
+        report.getEnvironment().setDatasetVersion("v2.1-extended");
+        report.getEnvironment().setBaselineProfileId("official-v2.1-extended-strict");
+        report.getEnvironment().setStrictVerifierProfileId("official-v2.1-extended-strict");
+        report.getModeSummaries().get("Baseline-NoMemory").setTotal(30);
+        report.getModeSummaries().get("Vortex-Memory").setTotal(30);
+        report.getModeSummaries().get("Vortex-Memory").setCorrect(30);
+        report.getModeSummaries().get("Vortex-RecoveredMemory").setTotal(30);
+        report.getModeSummaries().get("Vortex-RecoveredMemory").setCorrect(30);
+        JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
+
+        LlmMemoryEvalBaselineVerifier verifier = new LlmMemoryEvalBaselineVerifier(JsonMapperFactory.create());
+        LlmMemoryEvalBaselineVerificationResult result =
+                verifier.verify(reportPath, LlmMemoryEvalBaselineProfile.OFFICIAL_V2_1_EXTENDED_STRICT);
+
+        assertThat(result.isPassed()).isTrue();
+        assertThat(result.getBaselineProfileId()).isEqualTo("official-v2.1-extended-strict");
+        assertThat(result.getDatasetVersion()).isEqualTo("v2.1-extended");
+        assertThat(result.getDrifts()).isEmpty();
+    }
+
+    @Test
     void defaultOfficialProfileShouldRejectV21Dataset(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
         Path reportPath = tempDir.resolve("llm-memory-eval-v2-1.json");
         LlmMemoryEvalReport report = officialBaselineReport();
@@ -99,15 +127,17 @@ class LlmMemoryEvalBaselineVerifierTest {
     }
 
     @Test
-    void v21ExtendedDatasetShouldInferCandidateAuditProfileWithoutStrictVerifier() {
+    void v21ExtendedDatasetShouldInferOfficialExtendedProfileWithStrictVerifier() {
         String datasetLocation = "classpath:llm-memory-eval-set-v2-1-extended.json";
 
         assertThat(LlmMemoryEvalBaselineProfile.inferDatasetVersion(datasetLocation))
                 .isEqualTo("v2.1-extended");
         assertThat(LlmMemoryEvalBaselineProfile.inferAuditProfileId(datasetLocation))
-                .isEqualTo("candidate-v2.1-extended");
+                .isEqualTo("official-v2.1-extended-strict");
         assertThat(LlmMemoryEvalBaselineProfile.inferStrictVerifierProfileId(datasetLocation))
-                .isEmpty();
+                .isEqualTo("official-v2.1-extended-strict");
+        assertThat(LlmMemoryEvalBaselineProfile.OFFICIAL_V2_1_EXTENDED_STRICT.strictReportProfile())
+                .isTrue();
         assertThat(LlmMemoryEvalBaselineProfile.CANDIDATE_V2_1_EXTENDED.strictReportProfile())
                 .isFalse();
     }

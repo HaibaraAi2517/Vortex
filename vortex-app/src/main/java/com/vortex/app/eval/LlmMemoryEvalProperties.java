@@ -25,6 +25,7 @@ public class LlmMemoryEvalProperties {
     private boolean failOnStartupError = true;
     private boolean writeReport = true;
     private String reportOutputDir = "ops/eval-reports";
+    private int parallelism = 1;
     private int recallTopK = 5;
     private int recallTokenBudget = 1024;
     private int maxPromptTokens = 2048;

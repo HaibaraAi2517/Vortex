@@ -43,6 +43,18 @@ public enum LlmMemoryEvalBaselineProfile {
                     ModeExpectation.of("Vortex-Memory", 15, 15, 1.0d, null, null),
                     ModeExpectation.of("Vortex-RecoveredMemory", 15, 15, 1.0d, 1.0d, 1.0d))),
 
+    OFFICIAL_V2_1_EXTENDED_STRICT(
+            "official-v2.1-extended-strict",
+            "20260602-v2-1-extended-candidate-audit-generation-retry-001",
+            "v2.1-extended",
+            "classpath:llm-memory-eval-set-v2-1-extended.json",
+            true,
+            "Official strict baseline for 30-case v2.1 extended memory eval",
+            List.of(
+                    ModeExpectation.of("Baseline-NoMemory", 0, 30, null, null, null),
+                    ModeExpectation.of("Vortex-Memory", 30, 30, 1.0d, null, null),
+                    ModeExpectation.of("Vortex-RecoveredMemory", 30, 30, 1.0d, 1.0d, 1.0d))),
+
     CANDIDATE_V2_1_EXTENDED(
             "candidate-v2.1-extended",
             "candidate-v2.1-extended",
@@ -66,12 +78,14 @@ public enum LlmMemoryEvalBaselineProfile {
             AUDIT_V2_STABILITY,
             OFFICIAL_V2_1_STRICT,
             CONTRACT_V2_1_CANDIDATE,
+            OFFICIAL_V2_1_EXTENDED_STRICT,
             CANDIDATE_V2_1_EXTENDED);
 
     private static final Map<String, LlmMemoryEvalBaselineProfile> BY_ID = Map.of(
             OFFICIAL_V2_STRICT.id, OFFICIAL_V2_STRICT,
             OFFICIAL_V2_1_STRICT.id, OFFICIAL_V2_1_STRICT,
             CONTRACT_V2_1_CANDIDATE.id, CONTRACT_V2_1_CANDIDATE,
+            OFFICIAL_V2_1_EXTENDED_STRICT.id, OFFICIAL_V2_1_EXTENDED_STRICT,
             AUDIT_V2_STABILITY.id, AUDIT_V2_STABILITY,
             CANDIDATE_V2_1_EXTENDED.id, CANDIDATE_V2_1_EXTENDED);
 
@@ -164,7 +178,7 @@ public enum LlmMemoryEvalBaselineProfile {
 
     public static String inferAuditProfileId(String datasetLocation) {
         if ("classpath:llm-memory-eval-set-v2-1-extended.json".equals(datasetLocation)) {
-            return CANDIDATE_V2_1_EXTENDED.id();
+            return OFFICIAL_V2_1_EXTENDED_STRICT.id();
         }
         if ("classpath:llm-memory-eval-set-v2-1.json".equals(datasetLocation)) {
             return OFFICIAL_V2_1_STRICT.id();
@@ -177,7 +191,7 @@ public enum LlmMemoryEvalBaselineProfile {
 
     public static String inferStrictVerifierProfileId(String datasetLocation) {
         if ("classpath:llm-memory-eval-set-v2-1-extended.json".equals(datasetLocation)) {
-            return "";
+            return OFFICIAL_V2_1_EXTENDED_STRICT.id();
         }
         if ("classpath:llm-memory-eval-set-v2-1.json".equals(datasetLocation)) {
             return OFFICIAL_V2_1_STRICT.id();

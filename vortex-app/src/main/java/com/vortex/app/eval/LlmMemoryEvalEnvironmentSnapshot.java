@@ -28,6 +28,7 @@ public class LlmMemoryEvalEnvironmentSnapshot {
     private String evalSystemPromptSha256;
     private Integer evalSystemPromptChars;
     private List<String> modes;
+    private Integer evalParallelism;
     private String reportOutputDir;
     private String javaVersion;
     private String osName;

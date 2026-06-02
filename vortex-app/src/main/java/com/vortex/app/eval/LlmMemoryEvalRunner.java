@@ -40,6 +40,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 
@@ -115,19 +119,81 @@ public class LlmMemoryEvalRunner {
         }
 
         String runId = UUID.randomUUID().toString().substring(0, 8);
+        List<LlmMemoryEvalCase> caseList = List.copyOf(cases);
+        List<LlmMemoryEvalMode> modeList = List.copyOf(modes);
+        int parallelism = Math.max(1, properties.getParallelism());
+        List<LlmMemoryEvalResult> results = parallelism <= 1
+                ? runSerial(generationService, caseList, modeList, runId)
+                : runModePhasedParallel(generationService, caseList, modeList, runId, parallelism);
+        return LlmMemoryEvalReport.builder()
+                .generatedAt(Instant.now())
+                .totalCases(caseList.size())
+                .totalRuns(results.size())
+                .results(List.copyOf(results))
+                .modeSummaries(buildModeSummaries(results))
+                .build();
+    }
+
+    private List<LlmMemoryEvalResult> runSerial(
+            GenerationService generationService,
+            List<LlmMemoryEvalCase> cases,
+            List<LlmMemoryEvalMode> modes,
+            String runId) {
         List<LlmMemoryEvalResult> results = new ArrayList<>();
         for (LlmMemoryEvalCase evalCase : cases) {
             for (LlmMemoryEvalMode mode : modes) {
                 results.add(runSingleCase(generationService, evalCase, mode, runId));
             }
         }
-        return LlmMemoryEvalReport.builder()
-                .generatedAt(Instant.now())
-                .totalCases(cases.size())
-                .totalRuns(results.size())
-                .results(List.copyOf(results))
-                .modeSummaries(buildModeSummaries(results))
-                .build();
+        return results;
+    }
+
+    private List<LlmMemoryEvalResult> runModePhasedParallel(
+            GenerationService generationService,
+            List<LlmMemoryEvalCase> cases,
+            List<LlmMemoryEvalMode> modes,
+            String runId,
+            int configuredParallelism) {
+        int workerCount = Math.min(configuredParallelism, cases.size());
+        ExecutorService executorService = Executors.newFixedThreadPool(workerCount);
+        try {
+            List<IndexedEvalResult> indexedResults = new ArrayList<>(cases.size() * modes.size());
+            for (int modeIndex = 0; modeIndex < modes.size(); modeIndex++) {
+                LlmMemoryEvalMode mode = modes.get(modeIndex);
+                List<Future<IndexedEvalResult>> futures = new ArrayList<>(cases.size());
+                for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
+                    LlmMemoryEvalCase evalCase = cases.get(caseIndex);
+                    int sequence = (caseIndex * modes.size()) + modeIndex;
+                    futures.add(executorService.submit(() -> new IndexedEvalResult(
+                            sequence,
+                            runSingleCase(generationService, evalCase, mode, runId))));
+                }
+                for (Future<IndexedEvalResult> future : futures) {
+                    indexedResults.add(awaitResult(future));
+                }
+            }
+            return indexedResults.stream()
+                    .sorted((left, right) -> Integer.compare(left.sequence(), right.sequence()))
+                    .map(IndexedEvalResult::result)
+                    .toList();
+        } finally {
+            executorService.shutdownNow();
+        }
+    }
+
+    private IndexedEvalResult awaitResult(Future<IndexedEvalResult> future) {
+        try {
+            return future.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for parallel eval case", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Parallel eval case failed", cause);
+        }
     }
 
     private LlmMemoryEvalResult runSingleCase(
@@ -924,6 +990,9 @@ public class LlmMemoryEvalRunner {
     }
 
     private record WaitOutcome(boolean satisfied, long elapsedMs, int pollCount) {
+    }
+
+    private record IndexedEvalResult(int sequence, LlmMemoryEvalResult result) {
     }
 
     private record RecoveryPreparationOutcome(
