@@ -15,7 +15,29 @@
 
 ## 当前正式基线
 
-当前推荐作为正式对外引用的真实评测基线是：
+当前推荐作为正式对外引用的真实评测基线是 v2.1 extended official strict audit：
+
+- 数据集：`classpath:llm-memory-eval-set-v2-1-extended.json`
+- 报告批次：`20260603-v2-1-extended-post-summary-audit-004`
+- baseline profile：`official-v2.1-extended-strict`
+- strict verifier profile：`official-v2.1-extended-strict`
+- 汇总报告：
+  - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v2-1-extended-post-summary-audit-004/baseline-audit-summary.json:1)
+  - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v2-1-extended-post-summary-audit-004/baseline-audit-summary.md:1)
+- 结果：
+  - `OverallPassed = true`
+  - `AuditGate.Passed = true`
+  - `ProfileGate.Passed = true`
+  - `StrictVerifierPassed = true`
+  - `VerifierPassCount = 3/3`
+  - `Baseline-NoMemory = 0/30` for all rounds
+  - `Vortex-Memory accuracy = 1.0` for all rounds
+  - `Vortex-RecoveredMemory recoveredAccuracy = 1.0` for all rounds
+  - `RecoveredL2HitRate = 1.0` for all rounds
+  - `RuntimeTelemetry.PresentRunCount = 3`
+  - `RuntimeTelemetry.MissingRunCount = 0`
+
+历史 v2 单轮 strict baseline 仍保留用于向后兼容：
 
 - 数据集：`classpath:llm-memory-eval-set-v2.json`
 - 报告批次：`20260529-real-bge-v2-006`

@@ -22,6 +22,7 @@ Thumbs.db
 /日志.txt
 /构思.txt
 /项目构思评价.txt
+/deepapi.txt
 
 # Local/generated eval artifacts. Force-add intentionally promoted baselines.
 /ops/tmp/
