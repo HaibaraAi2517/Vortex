@@ -32,6 +32,8 @@ param(
 
     [switch]$SkipPackage,
 
+    [switch]$SkipGenerationPreflight,
+
     [switch]$ForceRerunExisting,
 
     [ValidateRange(0, 50)]
@@ -80,6 +82,9 @@ function Get-NumericValues {
         [string]$PropertyName
     )
     return @($Items | ForEach-Object {
+        if ($null -eq $_) {
+            return
+        }
         $property = $_.PSObject.Properties[$PropertyName]
         if ($null -ne $property -and $null -ne $property.Value) {
             [double]$property.Value
@@ -1176,19 +1181,28 @@ for ($round = 1; $round -le $Rounds; $round++) {
 
         if ($null -eq $singleRun) {
             Write-Host ("  Running real eval for: {0}" -f $roundStamp)
-            $singleRun = & $singleRunScript `
-                -ApiKey $ApiKey `
-                -BaseUrl $BaseUrl `
-                -Model $Model `
-                -Stamp $roundStamp `
-                -DatasetLocation $DatasetLocation `
-                -BgeModelPath $BgeModelPath `
-                -L1MaxTokens $L1MaxTokens `
-                -Modes $Modes `
-                -EvalParallelism $EvalParallelism `
-                -ReportRoot $runsRootRelative `
-                -SkipComposeUp `
-                -SkipPackage
+            $singleRunArgs = @{
+                ApiKey = $ApiKey
+                BaseUrl = $BaseUrl
+                Model = $Model
+                Stamp = $roundStamp
+                DatasetLocation = $DatasetLocation
+                BgeModelPath = $BgeModelPath
+                L1MaxTokens = $L1MaxTokens
+                Modes = $Modes
+                EvalParallelism = $EvalParallelism
+                ReportRoot = $runsRootRelative
+                SkipComposeUp = $true
+                SkipPackage = $true
+            }
+            if ($SkipGenerationPreflight) {
+                $singleRunArgs.SkipGenerationPreflight = $true
+            }
+            & $singleRunScript @singleRunArgs
+            $singleRun = Import-ExistingRun -ReportDir $roundReportDir -RoundStamp $roundStamp
+            if ($null -eq $singleRun) {
+                throw "Eval completed but report could not be imported from: $roundReportDir"
+            }
         }
 
         if ([string]::IsNullOrWhiteSpace($StrictVerifierProfile)) {
