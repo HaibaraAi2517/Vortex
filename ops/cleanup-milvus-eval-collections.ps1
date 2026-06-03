@@ -3,7 +3,7 @@ param(
 
     [string]$Token = "root:Milvus",
 
-    [string]$Database = "_default",
+    [string]$Database = "default",
 
     [string]$EvalCollectionPrefix = "vortex_memory_eval_",
 

@@ -471,7 +471,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\cleanup-milvus-eval-collections.p
 powershell -ExecutionPolicy Bypass -File .\ops\cleanup-milvus-eval-collections.ps1 -Execute
 ```
 
-脚本默认连接 `http://localhost:19530` 的 Milvus REST API，默认 database 是 `_default`，默认 token 是本地 standalone 的 `root:Milvus`。如果实际环境不同，显式传入 `-MilvusEndpoint`、`-Database` 或 `-Token`。
+脚本默认连接 `http://localhost:19530` 的 Milvus REST API，默认 database 是 `default`，默认 token 是本地 standalone 的 `root:Milvus`。如果实际环境不同，显式传入 `-MilvusEndpoint`、`-Database` 或 `-Token`。
 
 `20260601-mode-scoped-l2-wait-audit-5x-net` 的剩余失败分层：
 
