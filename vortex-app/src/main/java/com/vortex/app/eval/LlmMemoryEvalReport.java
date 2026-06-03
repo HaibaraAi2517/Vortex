@@ -21,6 +21,7 @@ public class LlmMemoryEvalReport {
     private List<LlmMemoryEvalResult> results;
     private Map<String, ModeSummary> modeSummaries;
     private LlmMemoryEvalEnvironmentSnapshot environment;
+    private RuntimeTelemetry runtimeTelemetry;
 
     @Data
     @Builder
@@ -38,5 +39,28 @@ public class LlmMemoryEvalReport {
         private int feedbackSubmitted;
         private long learningSampleCountDelta;
         private long learningUpdateCountDelta;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RuntimeTelemetry {
+        private int configuredParallelism;
+        private int actualWorkerCount;
+        private boolean modePhasedParallel;
+        private long totalElapsedMs;
+        private List<ModePhaseTiming> modePhaseTimings;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ModePhaseTiming {
+        private int modeIndex;
+        private String mode;
+        private int caseCount;
+        private long elapsedMs;
     }
 }

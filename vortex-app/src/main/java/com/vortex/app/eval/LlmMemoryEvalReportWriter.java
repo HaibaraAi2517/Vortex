@@ -57,6 +57,7 @@ public class LlmMemoryEvalReportWriter {
         builder.append("- TotalCases: ").append(report.getTotalCases()).append('\n');
         builder.append("- TotalRuns: ").append(report.getTotalRuns()).append("\n\n");
         appendEnvironment(builder, report.getEnvironment());
+        appendRuntimeTelemetry(builder, report.getRuntimeTelemetry());
         builder.append("## Mode Summary\n\n");
         builder.append("| Mode | Accuracy | Recall Hit Rate | Recovered Accuracy | L2 Recovery Hit Rate | Avg Latency (ms) | Feedback | Learning Sample Δ | Learning Update Δ | Correct | Total |\n");
         builder.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
@@ -200,6 +201,32 @@ public class LlmMemoryEvalReportWriter {
         builder.append("- OS: ").append(nullToEmpty(environment.getOsName()))
                 .append(' ').append(nullToEmpty(environment.getOsVersion())).append('\n');
         builder.append("- User Dir: ").append(nullToEmpty(environment.getUserDir())).append("\n\n");
+    }
+
+    private void appendRuntimeTelemetry(
+            StringBuilder builder,
+            LlmMemoryEvalReport.RuntimeTelemetry runtimeTelemetry) {
+        if (runtimeTelemetry == null) {
+            return;
+        }
+        builder.append("## Runtime Telemetry\n\n");
+        builder.append("- Configured Parallelism: ").append(runtimeTelemetry.getConfiguredParallelism()).append('\n');
+        builder.append("- Actual Worker Count: ").append(runtimeTelemetry.getActualWorkerCount()).append('\n');
+        builder.append("- Mode Phased Parallel: ").append(runtimeTelemetry.isModePhasedParallel()).append('\n');
+        builder.append("- Total Elapsed (ms): ").append(runtimeTelemetry.getTotalElapsedMs()).append("\n\n");
+
+        List<LlmMemoryEvalReport.ModePhaseTiming> phaseTimings = safeList(runtimeTelemetry.getModePhaseTimings());
+        if (phaseTimings.isEmpty()) {
+            return;
+        }
+        builder.append("| Mode Index | Mode | Cases | Elapsed (ms) |\n");
+        builder.append("| ---: | --- | ---: | ---: |\n");
+        phaseTimings.forEach(phase -> builder.append("| ")
+                .append(phase.getModeIndex()).append(" | ")
+                .append(formatNullable(phase.getMode())).append(" | ")
+                .append(phase.getCaseCount()).append(" | ")
+                .append(phase.getElapsedMs()).append(" |\n"));
+        builder.append('\n');
     }
 
     private String formatDecimal(double value) {

@@ -91,6 +91,25 @@ class LlmMemoryEvalReportWriterTest {
                         .userDir("E:/1projects/claude/Vortex")
                         .cliMainClass("com.vortex.app.eval.LlmMemoryEvalCliApplication")
                         .build())
+                .runtimeTelemetry(LlmMemoryEvalReport.RuntimeTelemetry.builder()
+                        .configuredParallelism(32)
+                        .actualWorkerCount(30)
+                        .modePhasedParallel(true)
+                        .totalElapsedMs(198765L)
+                        .modePhaseTimings(List.of(
+                                LlmMemoryEvalReport.ModePhaseTiming.builder()
+                                        .modeIndex(0)
+                                        .mode("Baseline-NoMemory")
+                                        .caseCount(30)
+                                        .elapsedMs(55432L)
+                                        .build(),
+                                LlmMemoryEvalReport.ModePhaseTiming.builder()
+                                        .modeIndex(1)
+                                        .mode("Vortex-Memory")
+                                        .caseCount(30)
+                                        .elapsedMs(60321L)
+                                        .build()))
+                        .build())
                 .build();
 
         LlmMemoryEvalReportWriter.WrittenReport writtenReport = writer.write(report);
@@ -102,6 +121,13 @@ class LlmMemoryEvalReportWriterTest {
         assertThat(markdown).contains("Eval System Prompt SHA-256: 7f6d9c7d4f0cbe4f6c2c0e1b97c7b0f5b91f0d7d31ef9d0620d7f3c56f7f5a01");
         assertThat(markdown).contains("Eval System Prompt Chars: 512");
         assertThat(markdown).contains("Eval Parallelism: 32");
+        assertThat(markdown).contains("## Runtime Telemetry");
+        assertThat(markdown).contains("Configured Parallelism: 32");
+        assertThat(markdown).contains("Actual Worker Count: 30");
+        assertThat(markdown).contains("Mode Phased Parallel: true");
+        assertThat(markdown).contains("Total Elapsed (ms): 198765");
+        assertThat(markdown).contains("Baseline-NoMemory | 30 | 55432");
+        assertThat(markdown).contains("Vortex-Memory | 30 | 60321");
         assertThat(markdown).contains("## Recall Diagnostics");
         assertThat(markdown).contains("Failure Reason | Runtime Type | Transient Runtime");
         assertThat(markdown).contains("profile-001 | Vortex-Memory | true | answer_missing_fact | generation_timeout | true | CSV | XLSX");
@@ -119,5 +145,10 @@ class LlmMemoryEvalReportWriterTest {
         assertThat(json).contains("\"generationBaseUrl\" : \"https://sub2.congmingai.com/v1\"");
         assertThat(json).contains("\"evalSystemPromptSha256\" : \"7f6d9c7d4f0cbe4f6c2c0e1b97c7b0f5b91f0d7d31ef9d0620d7f3c56f7f5a01\"");
         assertThat(json).contains("\"evalParallelism\" : 32");
+        assertThat(json).contains("\"runtimeTelemetry\"");
+        assertThat(json).contains("\"configuredParallelism\" : 32");
+        assertThat(json).contains("\"actualWorkerCount\" : 30");
+        assertThat(json).contains("\"modePhasedParallel\" : true");
+        assertThat(json).contains("\"modePhaseTimings\"");
     }
 }

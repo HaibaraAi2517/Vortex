@@ -6,7 +6,10 @@ import io.milvus.client.MilvusServiceClient;
 import io.milvus.grpc.DescribeCollectionResponse;
 import io.milvus.grpc.DataType;
 import io.milvus.grpc.FieldSchema;
+import io.milvus.grpc.GetLoadStateResponse;
+import io.milvus.grpc.GetLoadingProgressResponse;
 import io.milvus.grpc.KeyValuePair;
+import io.milvus.grpc.LoadState;
 import io.milvus.grpc.MutationResult;
 import io.milvus.grpc.SearchResults;
 import io.milvus.param.ConnectParam;
@@ -15,6 +18,8 @@ import io.milvus.param.collection.CreateCollectionParam;
 import io.milvus.param.collection.DescribeCollectionParam;
 import io.milvus.param.collection.DropCollectionParam;
 import io.milvus.param.collection.FieldType;
+import io.milvus.param.collection.GetLoadStateParam;
+import io.milvus.param.collection.GetLoadingProgressParam;
 import io.milvus.param.collection.HasCollectionParam;
 import io.milvus.param.collection.LoadCollectionParam;
 import io.milvus.grpc.QueryResults;
@@ -30,6 +35,7 @@ import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.time.Duration;
 import java.util.*;
 
 /**
@@ -62,6 +68,8 @@ public class MilvusWarmStore implements L2WarmStore {
     private final String collectionName;
     private final boolean dropCollectionOnStartup;
     private final String dropCollectionConfirmToken;
+    private final Duration loadWaitTimeout;
+    private final Duration loadWaitInterval;
     private volatile boolean tagsFieldAvailable;
 
     public MilvusWarmStore(
@@ -70,11 +78,15 @@ public class MilvusWarmStore implements L2WarmStore {
             @Value("${vortex.storage.l2.embedding-dim:512}") int embeddingDim,
             @Value("${vortex.storage.l2.milvus.collection:" + DEFAULT_COLLECTION + "}") String collectionName,
             @Value("${vortex.storage.l2.milvus.drop-collection-on-startup:false}") boolean dropCollectionOnStartup,
-            @Value("${vortex.storage.l2.milvus.drop-collection-confirm-token:}") String dropCollectionConfirmToken) {
+            @Value("${vortex.storage.l2.milvus.drop-collection-confirm-token:}") String dropCollectionConfirmToken,
+            @Value("${vortex.storage.l2.milvus.load-wait-timeout:180s}") Duration loadWaitTimeout,
+            @Value("${vortex.storage.l2.milvus.load-wait-interval:1s}") Duration loadWaitInterval) {
         this.embeddingDim = embeddingDim;
         this.collectionName = collectionName;
         this.dropCollectionOnStartup = dropCollectionOnStartup;
         this.dropCollectionConfirmToken = dropCollectionConfirmToken;
+        this.loadWaitTimeout = loadWaitTimeout == null ? Duration.ofSeconds(180) : loadWaitTimeout;
+        this.loadWaitInterval = loadWaitInterval == null ? Duration.ofSeconds(1) : loadWaitInterval;
         this.client = new MilvusServiceClient(
                 ConnectParam.newBuilder().withHost(host).withPort(port).build());
     }
@@ -145,9 +157,61 @@ public class MilvusWarmStore implements L2WarmStore {
     }
 
     private void loadCollection() {
-        client.loadCollection(LoadCollectionParam.newBuilder()
+        R<?> loadResult = client.loadCollection(LoadCollectionParam.newBuilder()
                 .withCollectionName(collectionName)
                 .build());
+        if (loadResult.getStatus() != 0) {
+            throw new IllegalStateException(
+                    "Milvus load collection failed for '" + collectionName + "': " + loadResult.getMessage());
+        }
+        waitUntilCollectionLoaded();
+    }
+
+    private void waitUntilCollectionLoaded() {
+        long deadline = System.currentTimeMillis() + Math.max(0L, loadWaitTimeout.toMillis());
+        LoadState lastState = LoadState.LoadStateNotExist;
+        long lastProgress = -1L;
+        while (System.currentTimeMillis() <= deadline) {
+            R<GetLoadStateResponse> stateResult = client.getLoadState(
+                    GetLoadStateParam.newBuilder()
+                            .withCollectionName(collectionName)
+                            .build());
+            if (stateResult.getStatus() == 0 && stateResult.getData() != null) {
+                lastState = stateResult.getData().getState();
+                if (lastState == LoadState.LoadStateLoaded) {
+                    log.info("Milvus collection '{}' fully loaded", collectionName);
+                    return;
+                }
+            }
+
+            R<GetLoadingProgressResponse> progressResult = client.getLoadingProgress(
+                    GetLoadingProgressParam.newBuilder()
+                            .withCollectionName(collectionName)
+                            .build());
+            if (progressResult.getStatus() == 0 && progressResult.getData() != null) {
+                lastProgress = progressResult.getData().getProgress();
+                if (lastProgress >= 100L) {
+                    log.info("Milvus collection '{}' loading progress reached {}%", collectionName, lastProgress);
+                    return;
+                }
+            }
+
+            pauseBeforeLoadPoll();
+        }
+
+        throw new IllegalStateException(
+                "Timed out waiting for Milvus collection '" + collectionName
+                        + "' to load state=" + lastState + " progress=" + lastProgress);
+    }
+
+    private void pauseBeforeLoadPoll() {
+        try {
+            Thread.sleep(Math.max(1L, loadWaitInterval.toMillis()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Interrupted while waiting for Milvus collection '" + collectionName + "' to load", e);
+        }
     }
 
     @Override

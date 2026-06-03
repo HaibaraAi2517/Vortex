@@ -122,44 +122,58 @@ public class LlmMemoryEvalRunner {
         List<LlmMemoryEvalCase> caseList = List.copyOf(cases);
         List<LlmMemoryEvalMode> modeList = List.copyOf(modes);
         int parallelism = Math.max(1, properties.getParallelism());
-        List<LlmMemoryEvalResult> results = parallelism <= 1
+        RunOutcome outcome = parallelism <= 1
                 ? runSerial(generationService, caseList, modeList, runId)
                 : runModePhasedParallel(generationService, caseList, modeList, runId, parallelism);
+        List<LlmMemoryEvalResult> results = outcome.results();
         return LlmMemoryEvalReport.builder()
                 .generatedAt(Instant.now())
                 .totalCases(caseList.size())
                 .totalRuns(results.size())
                 .results(List.copyOf(results))
                 .modeSummaries(buildModeSummaries(results))
+                .runtimeTelemetry(outcome.runtimeTelemetry())
                 .build();
     }
 
-    private List<LlmMemoryEvalResult> runSerial(
+    private RunOutcome runSerial(
             GenerationService generationService,
             List<LlmMemoryEvalCase> cases,
             List<LlmMemoryEvalMode> modes,
             String runId) {
+        long startedAt = System.nanoTime();
         List<LlmMemoryEvalResult> results = new ArrayList<>();
         for (LlmMemoryEvalCase evalCase : cases) {
             for (LlmMemoryEvalMode mode : modes) {
                 results.add(runSingleCase(generationService, evalCase, mode, runId));
             }
         }
-        return results;
+        return new RunOutcome(
+                List.copyOf(results),
+                LlmMemoryEvalReport.RuntimeTelemetry.builder()
+                        .configuredParallelism(1)
+                        .actualWorkerCount(1)
+                        .modePhasedParallel(false)
+                        .totalElapsedMs(elapsedMillis(startedAt))
+                        .modePhaseTimings(List.of())
+                        .build());
     }
 
-    private List<LlmMemoryEvalResult> runModePhasedParallel(
+    private RunOutcome runModePhasedParallel(
             GenerationService generationService,
             List<LlmMemoryEvalCase> cases,
             List<LlmMemoryEvalMode> modes,
             String runId,
             int configuredParallelism) {
+        long startedAt = System.nanoTime();
         int workerCount = Math.min(configuredParallelism, cases.size());
         ExecutorService executorService = Executors.newFixedThreadPool(workerCount);
         try {
             List<IndexedEvalResult> indexedResults = new ArrayList<>(cases.size() * modes.size());
+            List<LlmMemoryEvalReport.ModePhaseTiming> phaseTimings = new ArrayList<>(modes.size());
             for (int modeIndex = 0; modeIndex < modes.size(); modeIndex++) {
                 LlmMemoryEvalMode mode = modes.get(modeIndex);
+                long phaseStartedAt = System.nanoTime();
                 List<Future<IndexedEvalResult>> futures = new ArrayList<>(cases.size());
                 for (int caseIndex = 0; caseIndex < cases.size(); caseIndex++) {
                     LlmMemoryEvalCase evalCase = cases.get(caseIndex);
@@ -171,11 +185,26 @@ public class LlmMemoryEvalRunner {
                 for (Future<IndexedEvalResult> future : futures) {
                     indexedResults.add(awaitResult(future));
                 }
+                phaseTimings.add(LlmMemoryEvalReport.ModePhaseTiming.builder()
+                        .modeIndex(modeIndex)
+                        .mode(mode.reportName())
+                        .caseCount(cases.size())
+                        .elapsedMs(elapsedMillis(phaseStartedAt))
+                        .build());
             }
-            return indexedResults.stream()
+            List<LlmMemoryEvalResult> results = indexedResults.stream()
                     .sorted((left, right) -> Integer.compare(left.sequence(), right.sequence()))
                     .map(IndexedEvalResult::result)
                     .toList();
+            return new RunOutcome(
+                    results,
+                    LlmMemoryEvalReport.RuntimeTelemetry.builder()
+                            .configuredParallelism(configuredParallelism)
+                            .actualWorkerCount(workerCount)
+                            .modePhasedParallel(true)
+                            .totalElapsedMs(elapsedMillis(startedAt))
+                            .modePhaseTimings(List.copyOf(phaseTimings))
+                            .build());
         } finally {
             executorService.shutdownNow();
         }
@@ -993,6 +1022,11 @@ public class LlmMemoryEvalRunner {
     }
 
     private record IndexedEvalResult(int sequence, LlmMemoryEvalResult result) {
+    }
+
+    private record RunOutcome(
+            List<LlmMemoryEvalResult> results,
+            LlmMemoryEvalReport.RuntimeTelemetry runtimeTelemetry) {
     }
 
     private record RecoveryPreparationOutcome(

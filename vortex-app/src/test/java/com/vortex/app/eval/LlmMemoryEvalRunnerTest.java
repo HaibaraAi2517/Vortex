@@ -258,6 +258,13 @@ class LlmMemoryEvalRunnerTest {
         assertThat(report.getModeSummaries().get("Baseline-NoMemory").getAccuracy()).isEqualTo(0.0d);
         assertThat(report.getModeSummaries().get("Vortex-Memory").getAccuracy()).isEqualTo(1.0d);
         assertThat(report.getModeSummaries().get("Vortex-Memory").getRecallHitRate()).isEqualTo(1.0d);
+        assertThat(report.getRuntimeTelemetry()).satisfies(telemetry -> {
+            assertThat(telemetry.getConfiguredParallelism()).isEqualTo(1);
+            assertThat(telemetry.getActualWorkerCount()).isEqualTo(1);
+            assertThat(telemetry.isModePhasedParallel()).isFalse();
+            assertThat(telemetry.getTotalElapsedMs()).isGreaterThanOrEqualTo(0L);
+            assertThat(telemetry.getModePhaseTimings()).isEmpty();
+        });
         assertThat(report.getResults().stream()
                 .filter(result -> "Vortex-Memory".equals(result.getMode()))
                 .allMatch(LlmMemoryEvalResult::isCorrect))
@@ -726,6 +733,18 @@ class LlmMemoryEvalRunnerTest {
         LlmMemoryEvalReport report = runner.run(cases, List.of(LlmMemoryEvalMode.BASELINE_NO_MEMORY));
 
         assertThat(maxActiveRequests.get()).isGreaterThan(1);
+        assertThat(report.getRuntimeTelemetry()).satisfies(telemetry -> {
+            assertThat(telemetry.getConfiguredParallelism()).isEqualTo(4);
+            assertThat(telemetry.getActualWorkerCount()).isEqualTo(4);
+            assertThat(telemetry.isModePhasedParallel()).isTrue();
+            assertThat(telemetry.getTotalElapsedMs()).isGreaterThanOrEqualTo(0L);
+            assertThat(telemetry.getModePhaseTimings()).singleElement().satisfies(phase -> {
+                assertThat(phase.getModeIndex()).isZero();
+                assertThat(phase.getMode()).isEqualTo("Baseline-NoMemory");
+                assertThat(phase.getCaseCount()).isEqualTo(4);
+                assertThat(phase.getElapsedMs()).isGreaterThanOrEqualTo(0L);
+            });
+        });
         assertThat(report.getResults())
                 .extracting(LlmMemoryEvalResult::getCaseId)
                 .containsExactly("parallel-001", "parallel-002", "parallel-003", "parallel-004");
@@ -761,6 +780,9 @@ class LlmMemoryEvalRunnerTest {
                         "parallel-order-002/Baseline-NoMemory",
                         "parallel-order-003/Baseline-NoMemory",
                         "parallel-order-003/Baseline-NoMemory");
+        assertThat(report.getRuntimeTelemetry().getModePhaseTimings())
+                .extracting(LlmMemoryEvalReport.ModePhaseTiming::getModeIndex)
+                .containsExactly(0, 1);
     }
 
     @Test

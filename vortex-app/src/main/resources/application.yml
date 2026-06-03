@@ -27,6 +27,8 @@ vortex:
         # Drops and recreates the Milvus collection. Reset to false after first startup.
         drop-collection-on-startup: ${MILVUS_DROP_COLLECTION:false}
         drop-collection-confirm-token: ${MILVUS_DROP_CONFIRM_TOKEN:}
+        load-wait-timeout: ${MILVUS_LOAD_WAIT_TIMEOUT:180s}
+        load-wait-interval: ${MILVUS_LOAD_WAIT_INTERVAL:1s}
       # Safe local default is 512 (BGE-Small). Switch to 1024 only when
       # cloud embedding is enabled and the Milvus collection has been migrated.
       embedding-dim: ${VORTEX_L2_EMBEDDING_DIM:512}
