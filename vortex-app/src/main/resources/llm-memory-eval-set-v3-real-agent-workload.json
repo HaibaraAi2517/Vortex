@@ -1,0 +1,349 @@
+[
+  {
+    "caseId": "v3-agent-001",
+    "namespace": "llm-eval-v3-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "incident-alpha-initial-owner",
+        "content": "At the start of Incident Alpha, Dana was the temporary incident commander.",
+        "tags": ["agent-workload", "incident", "history"]
+      },
+      {
+        "fragmentId": "incident-alpha-handoff",
+        "content": "During the third investigation turn, Incident Alpha command was handed from Dana to Morgan.",
+        "tags": ["agent-workload", "incident", "current"]
+      },
+      {
+        "fragmentId": "incident-alpha-final-owner",
+        "content": "Morgan is the current incident commander for Incident Alpha.",
+        "tags": ["agent-workload", "incident", "ownership"]
+      }
+    ],
+    "question": "Who should the agent page as the current commander for Incident Alpha?",
+    "expectedAnswer": "Morgan",
+    "mustContain": ["Morgan"],
+    "mustNotContain": ["Dana is the current incident commander"],
+    "expectedFragments": ["incident-alpha-handoff", "incident-alpha-final-owner"],
+    "failureCategories": ["state_update", "historical_distractor"],
+    "tags": ["agent-workload", "incident"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3-agent-002",
+    "namespace": "llm-eval-v3-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "project-lyra-blocker",
+        "content": "Project Lyra cannot move to staging until the mobile privacy review is complete.",
+        "tags": ["agent-workload", "task", "dependency"]
+      },
+      {
+        "fragmentId": "privacy-review-owner",
+        "content": "The mobile privacy review is owned by Iris.",
+        "tags": ["agent-workload", "task", "ownership"]
+      },
+      {
+        "fragmentId": "project-lyra-old-blocker",
+        "content": "Earlier in the task, Project Lyra was blocked by design signoff, but that signoff is now complete.",
+        "tags": ["agent-workload", "task", "history"]
+      }
+    ],
+    "question": "Who owns the current blocker for Project Lyra staging?",
+    "expectedAnswer": "Iris",
+    "mustContain": ["Iris"],
+    "mustNotContain": ["design signoff is the current blocker"],
+    "expectedFragments": ["project-lyra-blocker", "privacy-review-owner"],
+    "failureCategories": ["cross_task_dependency", "historical_distractor"],
+    "tags": ["agent-workload", "task"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3-agent-003",
+    "namespace": "llm-eval-v3-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "user-maya-old-style",
+        "content": "Maya previously asked for long narrative deployment summaries.",
+        "tags": ["agent-workload", "preference", "history"]
+      },
+      {
+        "fragmentId": "user-maya-current-style",
+        "content": "Maya's current preference is terse deployment summaries with bullet points.",
+        "tags": ["agent-workload", "preference", "current"]
+      },
+      {
+        "fragmentId": "deployment-summary-channel",
+        "content": "Deployment summaries for Maya should be sent in the release-notes thread.",
+        "tags": ["agent-workload", "preference", "channel"]
+      }
+    ],
+    "question": "Which writing style should the agent use for Maya's deployment summary now?",
+    "expectedAnswer": "bullet points",
+    "mustContain": ["bullet points"],
+    "mustNotContain": ["use long narrative deployment summaries"],
+    "expectedFragments": ["user-maya-current-style"],
+    "failureCategories": ["preference_update"],
+    "tags": ["agent-workload", "preference"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3-agent-004",
+    "namespace": "llm-eval-v3-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "checkpoint-task-anchor",
+        "content": "The agent checkpoint for Task Cedar was taken after collecting API latency evidence.",
+        "tags": ["agent-workload", "checkpoint", "task"]
+      },
+      {
+        "fragmentId": "post-checkpoint-next-step",
+        "content": "After the checkpoint, the next Task Cedar step is to compare the latency evidence with the rollback threshold.",
+        "tags": ["agent-workload", "checkpoint", "next-step"]
+      },
+      {
+        "fragmentId": "pre-checkpoint-next-step",
+        "content": "Before evidence collection, the next Task Cedar step was to ask SRE for traces.",
+        "tags": ["agent-workload", "checkpoint", "history"]
+      }
+    ],
+    "question": "After recovering Task Cedar, what should the agent do next?",
+    "expectedAnswer": "rollback threshold",
+    "mustContain": ["compare", "latency evidence", "rollback threshold"],
+    "mustNotContain": ["ask SRE for traces"],
+    "expectedFragments": ["checkpoint-task-anchor", "post-checkpoint-next-step"],
+    "failureCategories": ["checkpoint_continuation", "historical_distractor"],
+    "tags": ["agent-workload", "checkpoint"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3-agent-005",
+    "namespace": "llm-eval-v3-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "branch-blue-status",
+        "content": "In the blue branch, the agent selected Redis Streams for event replay.",
+        "tags": ["agent-workload", "branch", "blue"]
+      },
+      {
+        "fragmentId": "branch-green-status",
+        "content": "In the green branch, the agent selected Kafka compacted topics for event replay.",
+        "tags": ["agent-workload", "branch", "green"]
+      },
+      {
+        "fragmentId": "active-branch",
+        "content": "The active decision branch for the replay design is green.",
+        "tags": ["agent-workload", "branch", "active"]
+      }
+    ],
+    "question": "Which event replay design should the agent continue with on the active branch?",
+    "expectedAnswer": "Kafka compacted topics",
+    "mustContain": ["Kafka compacted topics"],
+    "mustNotContain": ["Redis Streams"],
+    "expectedFragments": ["active-branch", "branch-green-status"],
+    "failureCategories": ["branch_isolation"],
+    "tags": ["agent-workload", "branch"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3-agent-006",
+    "namespace": "llm-eval-v3-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "release-note-alias",
+        "content": "The customer-facing release note should use the codename from the current payment launch plan.",
+        "tags": ["agent-workload", "release", "alias"]
+      },
+      {
+        "fragmentId": "current-payment-launch-plan",
+        "content": "The current payment launch plan codename is North Lantern.",
+        "tags": ["agent-workload", "release", "current"]
+      },
+      {
+        "fragmentId": "old-payment-launch-plan",
+        "content": "The old payment launch codename was Copper Fox before compliance renamed it.",
+        "tags": ["agent-workload", "release", "history"]
+      }
+    ],
+    "question": "Which codename should appear in the customer-facing release note?",
+    "expectedAnswer": "North Lantern",
+    "mustContain": ["North Lantern"],
+    "mustNotContain": ["Copper Fox"],
+    "expectedFragments": ["release-note-alias", "current-payment-launch-plan"],
+    "failureCategories": ["alias_resolution", "state_update"],
+    "tags": ["agent-workload", "release"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3-agent-007",
+    "namespace": "llm-eval-v3-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "long-task-meeting-result",
+        "content": "After several unrelated support turns, the agent learned that the renewal contract is waiting on vendor security approval.",
+        "tags": ["agent-workload", "long-context", "contract"]
+      },
+      {
+        "fragmentId": "vendor-security-owner",
+        "content": "Vendor security approval for the renewal contract is owned by Priyanka.",
+        "tags": ["agent-workload", "long-context", "ownership"]
+      },
+      {
+        "fragmentId": "unrelated-support-turn",
+        "content": "A separate support thread discussed a dashboard color mismatch and did not change the renewal contract.",
+        "tags": ["agent-workload", "long-context", "distractor"]
+      }
+    ],
+    "question": "Who owns the approval that the renewal contract is waiting on?",
+    "expectedAnswer": "Priyanka",
+    "mustContain": ["Priyanka"],
+    "mustNotContain": ["dashboard color mismatch"],
+    "expectedFragments": ["long-task-meeting-result", "vendor-security-owner"],
+    "failureCategories": ["long_context_recall", "distractor"],
+    "tags": ["agent-workload", "long-context"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3-agent-008",
+    "namespace": "llm-eval-v3-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "runbook-current-severity-rule",
+        "content": "The current runbook says payment API saturation above 85 percent maps to severity SEV2.",
+        "tags": ["agent-workload", "runbook", "current"]
+      },
+      {
+        "fragmentId": "runbook-old-severity-rule",
+        "content": "The previous runbook mapped payment API saturation above 85 percent to SEV3.",
+        "tags": ["agent-workload", "runbook", "history"]
+      },
+      {
+        "fragmentId": "incident-observed-saturation",
+        "content": "The observed payment API saturation during the incident is 88 percent.",
+        "tags": ["agent-workload", "runbook", "observation"]
+      }
+    ],
+    "question": "Which severity should the agent assign to the payment API saturation incident?",
+    "expectedAnswer": "SEV2",
+    "mustContain": ["SEV2"],
+    "mustNotContain": ["SEV3"],
+    "expectedFragments": ["runbook-current-severity-rule", "incident-observed-saturation"],
+    "failureCategories": ["rule_application", "historical_distractor"],
+    "tags": ["agent-workload", "runbook"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3-agent-009",
+    "namespace": "llm-eval-v3-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "customer-vela-current-tier",
+        "content": "Customer Vela is currently on the Enterprise Plus support tier.",
+        "tags": ["agent-workload", "customer", "current"]
+      },
+      {
+        "fragmentId": "customer-vela-routing-policy",
+        "content": "Enterprise Plus support issues route to the named premium escalation owner.",
+        "tags": ["agent-workload", "customer", "policy"]
+      },
+      {
+        "fragmentId": "premium-escalation-owner",
+        "content": "The premium escalation owner is Omar.",
+        "tags": ["agent-workload", "customer", "ownership"]
+      }
+    ],
+    "question": "Who should receive Customer Vela's support escalation?",
+    "expectedAnswer": "Omar",
+    "mustContain": ["Omar"],
+    "expectedFragments": ["customer-vela-current-tier", "customer-vela-routing-policy", "premium-escalation-owner"],
+    "failureCategories": ["multi_hop_policy"],
+    "tags": ["agent-workload", "customer"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3-agent-010",
+    "namespace": "llm-eval-v3-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "tool-selection-policy",
+        "content": "For production database investigations, the agent must use the read-only query tool.",
+        "tags": ["agent-workload", "tool", "policy"]
+      },
+      {
+        "fragmentId": "current-investigation-target",
+        "content": "The current investigation target is the production ledger database.",
+        "tags": ["agent-workload", "tool", "target"]
+      },
+      {
+        "fragmentId": "sandbox-tool-note",
+        "content": "For sandbox database experiments, the agent may use the write-enabled migration tool.",
+        "tags": ["agent-workload", "tool", "distractor"]
+      }
+    ],
+    "question": "Which tool should the agent use for the current database investigation?",
+    "expectedAnswer": "read-only query tool",
+    "mustContain": ["read-only query tool"],
+    "mustNotContain": ["write-enabled migration tool"],
+    "expectedFragments": ["tool-selection-policy", "current-investigation-target"],
+    "failureCategories": ["tool_policy", "safety"],
+    "tags": ["agent-workload", "tool"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3-agent-011",
+    "namespace": "llm-eval-v3-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "sprint-retro-decision",
+        "content": "The sprint retro decided that flaky browser tests should be quarantined only after two consecutive failures.",
+        "tags": ["agent-workload", "testing", "decision"]
+      },
+      {
+        "fragmentId": "current-test-history",
+        "content": "The checkout browser test has failed in two consecutive nightly runs.",
+        "tags": ["agent-workload", "testing", "current"]
+      },
+      {
+        "fragmentId": "old-test-history",
+        "content": "Last month the checkout browser test had a single isolated failure.",
+        "tags": ["agent-workload", "testing", "history"]
+      }
+    ],
+    "question": "Should the agent quarantine the checkout browser test now?",
+    "expectedAnswer": "yes",
+    "mustContain": ["yes"],
+    "mustNotContain": ["single isolated failure"],
+    "expectedFragments": ["sprint-retro-decision", "current-test-history"],
+    "failureCategories": ["decision_rule", "state_update"],
+    "tags": ["agent-workload", "testing"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3-agent-012",
+    "namespace": "llm-eval-v3-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "agent-plan-current-goal",
+        "content": "The current agent goal is to finish the memory recovery benchmark before changing the transport layer.",
+        "tags": ["agent-workload", "planning", "current"]
+      },
+      {
+        "fragmentId": "transport-layer-idea",
+        "content": "A future idea is to add a Netty transport layer after the memory recovery benchmark is stable.",
+        "tags": ["agent-workload", "planning", "future"]
+      },
+      {
+        "fragmentId": "benchmark-owner",
+        "content": "The memory recovery benchmark is owned by the evaluation track.",
+        "tags": ["agent-workload", "planning", "ownership"]
+      }
+    ],
+    "question": "What should the agent prioritize before changing the transport layer?",
+    "expectedAnswer": "memory recovery benchmark",
+    "mustContain": ["prioritize", "memory recovery benchmark"],
+    "mustNotContain": ["add a Netty transport layer"],
+    "expectedFragments": ["agent-plan-current-goal", "transport-layer-idea"],
+    "failureCategories": ["planning_priority"],
+    "tags": ["agent-workload", "planning"],
+    "difficulty": "medium"
+  }
+]

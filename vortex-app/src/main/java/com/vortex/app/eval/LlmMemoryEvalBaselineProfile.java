@@ -64,6 +64,27 @@ public enum LlmMemoryEvalBaselineProfile {
             "Candidate 30-case v2.1 extension for broader memory capability audit",
             List.of()),
 
+    OFFICIAL_V3_REAL_AGENT_WORKLOAD_STRICT(
+            "official-v3-real-agent-workload-strict",
+            "20260603-v3-real-agent-workload-audit-002",
+            "v3-real-agent-workload",
+            "classpath:llm-memory-eval-set-v3-real-agent-workload.json",
+            true,
+            "Official strict baseline for 12-case realistic long-task Agent memory eval",
+            List.of(
+                    ModeExpectation.of("Baseline-NoMemory", 0, 12, null, null, null),
+                    ModeExpectation.of("Vortex-Memory", 12, 12, 1.0d, null, null),
+                    ModeExpectation.of("Vortex-RecoveredMemory", 12, 12, 1.0d, 1.0d, 1.0d))),
+
+    AUDIT_V3_REAL_AGENT_WORKLOAD(
+            "audit-v3-real-agent-workload",
+            "candidate-v3-real-agent-workload",
+            "v3-real-agent-workload",
+            "classpath:llm-memory-eval-set-v3-real-agent-workload.json",
+            false,
+            "Candidate audit-only workload for realistic long-task Agent memory behavior",
+            List.of()),
+
     AUDIT_V2_STABILITY(
             "audit-v2-stability",
             "20260601-mode-scoped-l2-wait-audit-5x-net",
@@ -79,7 +100,9 @@ public enum LlmMemoryEvalBaselineProfile {
             OFFICIAL_V2_1_STRICT,
             CONTRACT_V2_1_CANDIDATE,
             OFFICIAL_V2_1_EXTENDED_STRICT,
-            CANDIDATE_V2_1_EXTENDED);
+            CANDIDATE_V2_1_EXTENDED,
+            OFFICIAL_V3_REAL_AGENT_WORKLOAD_STRICT,
+            AUDIT_V3_REAL_AGENT_WORKLOAD);
 
     private static final Map<String, LlmMemoryEvalBaselineProfile> BY_ID = Map.of(
             OFFICIAL_V2_STRICT.id, OFFICIAL_V2_STRICT,
@@ -87,7 +110,9 @@ public enum LlmMemoryEvalBaselineProfile {
             CONTRACT_V2_1_CANDIDATE.id, CONTRACT_V2_1_CANDIDATE,
             OFFICIAL_V2_1_EXTENDED_STRICT.id, OFFICIAL_V2_1_EXTENDED_STRICT,
             AUDIT_V2_STABILITY.id, AUDIT_V2_STABILITY,
-            CANDIDATE_V2_1_EXTENDED.id, CANDIDATE_V2_1_EXTENDED);
+            CANDIDATE_V2_1_EXTENDED.id, CANDIDATE_V2_1_EXTENDED,
+            OFFICIAL_V3_REAL_AGENT_WORKLOAD_STRICT.id, OFFICIAL_V3_REAL_AGENT_WORKLOAD_STRICT,
+            AUDIT_V3_REAL_AGENT_WORKLOAD.id, AUDIT_V3_REAL_AGENT_WORKLOAD);
 
     private final String id;
     private final String baselineId;
@@ -161,6 +186,9 @@ public enum LlmMemoryEvalBaselineProfile {
     }
 
     public static String inferDatasetVersion(String datasetLocation) {
+        if ("classpath:llm-memory-eval-set-v3-real-agent-workload.json".equals(datasetLocation)) {
+            return "v3-real-agent-workload";
+        }
         if ("classpath:llm-memory-eval-set-v2-1-extended.json".equals(datasetLocation)) {
             return "v2.1-extended";
         }
@@ -177,6 +205,9 @@ public enum LlmMemoryEvalBaselineProfile {
     }
 
     public static String inferAuditProfileId(String datasetLocation) {
+        if ("classpath:llm-memory-eval-set-v3-real-agent-workload.json".equals(datasetLocation)) {
+            return OFFICIAL_V3_REAL_AGENT_WORKLOAD_STRICT.id();
+        }
         if ("classpath:llm-memory-eval-set-v2-1-extended.json".equals(datasetLocation)) {
             return OFFICIAL_V2_1_EXTENDED_STRICT.id();
         }
@@ -190,6 +221,9 @@ public enum LlmMemoryEvalBaselineProfile {
     }
 
     public static String inferStrictVerifierProfileId(String datasetLocation) {
+        if ("classpath:llm-memory-eval-set-v3-real-agent-workload.json".equals(datasetLocation)) {
+            return OFFICIAL_V3_REAL_AGENT_WORKLOAD_STRICT.id();
+        }
         if ("classpath:llm-memory-eval-set-v2-1-extended.json".equals(datasetLocation)) {
             return OFFICIAL_V2_1_EXTENDED_STRICT.id();
         }

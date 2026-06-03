@@ -340,6 +340,59 @@ class LlmMemoryEvalRunnerTest {
     }
 
     @Test
+    void loadV3RealAgentWorkloadShouldFocusOnLongTaskAgentMemoryScenarios() {
+        List<LlmMemoryEvalCase> cases =
+                runner.loadCaseSet("classpath:llm-memory-eval-set-v3-real-agent-workload.json");
+
+        assertThat(cases).hasSize(12);
+        assertThat(cases)
+                .extracting(LlmMemoryEvalCase::getCaseId)
+                .containsExactly("v3-agent-001", "v3-agent-002", "v3-agent-003", "v3-agent-004",
+                        "v3-agent-005", "v3-agent-006", "v3-agent-007", "v3-agent-008",
+                        "v3-agent-009", "v3-agent-010", "v3-agent-011", "v3-agent-012");
+        assertThat(cases)
+                .allSatisfy(evalCase -> {
+                    assertThat(evalCase.getTags()).contains("agent-workload");
+                    assertThat(evalCase.getMemoryFragments()).hasSizeGreaterThanOrEqualTo(3);
+                    assertThat(evalCase.getExpectedFragments()).isNotEmpty();
+                })
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v3-agent-001");
+                    assertThat(evalCase.getMustNotContain()).containsExactly("Dana is the current incident commander");
+                })
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v3-agent-002");
+                    assertThat(evalCase.getMustNotContain()).containsExactly("design signoff is the current blocker");
+                })
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v3-agent-003");
+                    assertThat(evalCase.getMustNotContain()).containsExactly("use long narrative deployment summaries");
+                })
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v3-agent-004");
+                    assertThat(evalCase.getFailureCategories()).contains("checkpoint_continuation");
+                    assertThat(evalCase.getExpectedAnswer()).isEqualTo("rollback threshold");
+                    assertThat(evalCase.getMustContain()).containsExactly("compare", "latency evidence", "rollback threshold");
+                    assertThat(evalCase.getMustNotContain()).contains("ask SRE for traces");
+                })
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v3-agent-005");
+                    assertThat(evalCase.getFailureCategories()).contains("branch_isolation");
+                    assertThat(evalCase.getExpectedAnswer()).isEqualTo("Kafka compacted topics");
+                })
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v3-agent-010");
+                    assertThat(evalCase.getFailureCategories()).contains("tool_policy", "safety");
+                    assertThat(evalCase.getExpectedAnswer()).isEqualTo("read-only query tool");
+                })
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v3-agent-012");
+                    assertThat(evalCase.getExpectedAnswer()).isEqualTo("memory recovery benchmark");
+                    assertThat(evalCase.getMustContain()).containsExactly("prioritize", "memory recovery benchmark");
+                });
+    }
+
+    @Test
     void runConfiguredModesShouldUseConfiguredDatasetLocation(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
         Path datasetPath = tempDir.resolve("custom-eval-set.json");
         Files.writeString(datasetPath, """
@@ -832,7 +885,8 @@ class LlmMemoryEvalRunnerTest {
         try {
             List<String> datasets = List.of(
                     "classpath:llm-memory-eval-set.json",
-                    "classpath:llm-memory-eval-set-v2.json");
+                    "classpath:llm-memory-eval-set-v2.json",
+                    "classpath:llm-memory-eval-set-v3-real-agent-workload.json");
             for (String dataset : datasets) {
                 for (LlmMemoryEvalCase evalCase : runner.loadCaseSet(dataset)) {
                     answers.put(evalCase.getCaseId(), evalCase.getExpectedAnswer());

@@ -13,6 +13,11 @@
     <artifactId>vortex-app</artifactId>
     <name>Vortex :: App</name>
 
+    <properties>
+        <vortex.it.fullLifecycleExclude>**/FullLifecycleIT.java</vortex.it.fullLifecycleExclude>
+        <vortex.it.skipComposeDown>false</vortex.it.skipComposeDown>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.vortex</groupId>
@@ -125,6 +130,7 @@
                             <goal>exec</goal>
                         </goals>
                         <configuration>
+                            <skip>${vortex.it.skipComposeDown}</skip>
                             <workingDirectory>${project.parent.basedir}</workingDirectory>
                             <executable>docker</executable>
                             <arguments>
@@ -146,7 +152,7 @@
                         <include>**/*IT.java</include>
                     </includes>
                     <excludes>
-                        <exclude>**/FullLifecycleIT.java</exclude>
+                        <exclude>${vortex.it.fullLifecycleExclude}</exclude>
                     </excludes>
                 </configuration>
                 <executions>

@@ -128,6 +128,9 @@ function New-VerifyResult {
 
 function Get-DatasetVersion {
     param([string]$Location)
+    if ($Location -eq "classpath:llm-memory-eval-set-v3-real-agent-workload.json") {
+        return "v3-real-agent-workload"
+    }
     if ($Location -eq "classpath:llm-memory-eval-set-v2-1-extended.json") {
         return "v2.1-extended"
     }
@@ -145,6 +148,9 @@ function Get-DatasetVersion {
 
 function Get-AuditBaselineProfile {
     param([string]$Location)
+    if ($Location -eq "classpath:llm-memory-eval-set-v3-real-agent-workload.json") {
+        return "official-v3-real-agent-workload-strict"
+    }
     if ($Location -eq "classpath:llm-memory-eval-set-v2-1-extended.json") {
         return "official-v2.1-extended-strict"
     }
@@ -159,6 +165,9 @@ function Get-AuditBaselineProfile {
 
 function Get-StrictVerifierProfile {
     param([string]$Location)
+    if ($Location -eq "classpath:llm-memory-eval-set-v3-real-agent-workload.json") {
+        return "official-v3-real-agent-workload-strict"
+    }
     if ($Location -eq "classpath:llm-memory-eval-set-v2-1-extended.json") {
         return "official-v2.1-extended-strict"
     }
@@ -173,6 +182,12 @@ function Get-StrictVerifierProfile {
 
 function Get-BaselineIdForProfile {
     param([string]$Profile)
+    if ($Profile -eq "official-v3-real-agent-workload-strict") {
+        return "20260603-v3-real-agent-workload-audit-002"
+    }
+    if ($Profile -eq "audit-v3-real-agent-workload") {
+        return "candidate-v3-real-agent-workload"
+    }
     if ($Profile -eq "official-v2.1-extended-strict") {
         return "20260602-v2-1-extended-candidate-audit-generation-retry-001"
     }
@@ -248,6 +263,24 @@ function Get-BaselineProfileDefinition {
             BaselineId = "candidate-v2.1-extended"
             DatasetVersion = "v2.1-extended"
             DatasetLocation = "classpath:llm-memory-eval-set-v2-1-extended.json"
+            StrictReportProfile = $false
+        }
+    }
+    if ($normalized -eq "official-v3-real-agent-workload-strict") {
+        return [pscustomobject]@{
+            Id = "official-v3-real-agent-workload-strict"
+            BaselineId = "20260603-v3-real-agent-workload-audit-002"
+            DatasetVersion = "v3-real-agent-workload"
+            DatasetLocation = "classpath:llm-memory-eval-set-v3-real-agent-workload.json"
+            StrictReportProfile = $true
+        }
+    }
+    if ($normalized -eq "audit-v3-real-agent-workload") {
+        return [pscustomobject]@{
+            Id = "audit-v3-real-agent-workload"
+            BaselineId = "candidate-v3-real-agent-workload"
+            DatasetVersion = "v3-real-agent-workload"
+            DatasetLocation = "classpath:llm-memory-eval-set-v3-real-agent-workload.json"
             StrictReportProfile = $false
         }
     }
@@ -369,6 +402,17 @@ function Test-BaselineProfileIdMatches {
     }
     if ($DatasetLocation -eq "classpath:llm-memory-eval-set-v2-1-extended.json" `
             -and $Expected -eq "official-v2.1-extended-strict" `
+            -and $AllowEmptyActual `
+            -and [string]::IsNullOrWhiteSpace($Actual)) {
+        return $true
+    }
+    if ($DatasetLocation -eq "classpath:llm-memory-eval-set-v3-real-agent-workload.json" `
+            -and $Expected -eq "official-v3-real-agent-workload-strict" `
+            -and $Actual -eq "audit-v3-real-agent-workload") {
+        return $true
+    }
+    if ($DatasetLocation -eq "classpath:llm-memory-eval-set-v3-real-agent-workload.json" `
+            -and $Expected -eq "official-v3-real-agent-workload-strict" `
             -and $AllowEmptyActual `
             -and [string]::IsNullOrWhiteSpace($Actual)) {
         return $true

@@ -94,11 +94,23 @@ docker compose down
 # 单元测试（无需 Docker）
 mvn test -pl vortex-common,vortex-kernel,vortex-storage
 
-# 完整集成回归（需要 Docker，自动启停 compose）
+# 默认集成回归（需要 Docker，自动启停 compose）
 mvn verify -pl vortex-app -am
 ```
 
-集成测试覆盖：memory store → evict → L2 recall → L1 re-admission、checkpoint → recover、delta chain 恢复、feedback → 权重演化。
+默认集成测试覆盖：memory store → evict → L2 recall → L1 re-admission、checkpoint → recover、delta chain 恢复、feedback → 权重演化。
+
+如果你希望 `verify` 后保留本地 compose 服务继续运行：
+
+```bash
+mvn verify -pl vortex-app -am -Dvortex.it.skipComposeDown=true
+```
+
+`FullLifecycleIT` 是可选的 Testcontainers 版端到端生命周期测试，默认不跑。需要显式启用时：
+
+```bash
+mvn verify -pl vortex-app -am -Dvortex.it.fullLifecycleExclude= -Drun.full.lifecycle.it=true
+```
 
 ## API 速览
 

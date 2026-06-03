@@ -80,7 +80,9 @@ class LlmMemoryEvalCliApplicationTest {
                 .contains("official-v2.1-strict [strict-report]")
                 .contains("contract-v2.1-candidate [strict-report]")
                 .contains("official-v2.1-extended-strict [strict-report]")
-                .contains("candidate-v2.1-extended [audit-only]");
+                .contains("candidate-v2.1-extended [audit-only]")
+                .contains("official-v3-real-agent-workload-strict [strict-report]")
+                .contains("audit-v3-real-agent-workload [audit-only]");
     }
 
     @Test
@@ -136,6 +138,84 @@ class LlmMemoryEvalCliApplicationTest {
                 .contains("Dataset version: v2.1-extended")
                 .contains("Dataset location: classpath:llm-memory-eval-set-v2-1-extended.json")
                 .contains("Strict verify expectations: none");
+    }
+
+    @Test
+    void verifyCommandShouldDescribeV3RealAgentWorkloadProfile(CapturedOutput output) {
+        int exitCode = LlmMemoryEvalCliApplication.execute(new String[] {
+                "verify",
+                "--profile",
+                "official-v3-real-agent-workload-strict",
+                "--describe"
+        });
+
+        assertThat(exitCode).isZero();
+        assertThat(output.getOut())
+                .contains("Profile: official-v3-real-agent-workload-strict")
+                .contains("Type: strict-report")
+                .contains("Baseline ID: 20260603-v3-real-agent-workload-audit-002")
+                .contains("Dataset version: v3-real-agent-workload")
+                .contains("Dataset location: classpath:llm-memory-eval-set-v3-real-agent-workload.json")
+                .contains("Vortex-RecoveredMemory correct=12/12 accuracy=1.0 recoveredAccuracy=1.0 recoveredL2HitRate=1.0");
+    }
+
+    @Test
+    void verifyCommandShouldDescribeV3AuditProfileAsHistoricalAuditOnly(CapturedOutput output) {
+        int exitCode = LlmMemoryEvalCliApplication.execute(new String[] {
+                "verify",
+                "--profile",
+                "audit-v3-real-agent-workload",
+                "--describe"
+        });
+
+        assertThat(exitCode).isZero();
+        assertThat(output.getOut())
+                .contains("Profile: audit-v3-real-agent-workload")
+                .contains("Type: audit-only")
+                .contains("Baseline ID: candidate-v3-real-agent-workload")
+                .contains("Strict verify expectations: none");
+    }
+
+    @Test
+    void verifyCommandShouldRejectV3AuditProfileForSingleReport(@org.junit.jupiter.api.io.TempDir Path tempDir)
+            throws Exception {
+        Path reportPath = tempDir.resolve("llm-memory-eval-v3-agent.json");
+        JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), strictReport(
+                "classpath:llm-memory-eval-set-v3-real-agent-workload.json",
+                "v3-real-agent-workload",
+                "audit-v3-real-agent-workload",
+                "",
+                12));
+
+        int exitCode = LlmMemoryEvalCliApplication.execute(new String[] {
+                "verify",
+                "--profile",
+                "audit-v3-real-agent-workload",
+                reportPath.toString()
+        });
+
+        assertThat(exitCode).isEqualTo(1);
+    }
+
+    @Test
+    void verifyCommandShouldAcceptExplicitOfficialV3RealAgentWorkloadProfile(
+            @org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+        Path reportPath = tempDir.resolve("llm-memory-eval-v3-agent.json");
+        JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), strictReport(
+                "classpath:llm-memory-eval-set-v3-real-agent-workload.json",
+                "v3-real-agent-workload",
+                "official-v3-real-agent-workload-strict",
+                "official-v3-real-agent-workload-strict",
+                12));
+
+        int exitCode = LlmMemoryEvalCliApplication.execute(new String[] {
+                "verify",
+                "--profile",
+                "official-v3-real-agent-workload-strict",
+                reportPath.toString()
+        });
+
+        assertThat(exitCode).isZero();
     }
 
     @Test

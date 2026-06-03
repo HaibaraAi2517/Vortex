@@ -110,6 +110,34 @@ class LlmMemoryEvalBaselineVerifierTest {
     }
 
     @Test
+    void verifyShouldPassForOfficialV3RealAgentWorkloadProfile(@org.junit.jupiter.api.io.TempDir Path tempDir)
+            throws Exception {
+        Path reportPath = tempDir.resolve("llm-memory-eval-v3-agent.json");
+        LlmMemoryEvalReport report = officialBaselineReport();
+        report.setTotalCases(12);
+        report.setTotalRuns(36);
+        report.getEnvironment().setDatasetLocation("classpath:llm-memory-eval-set-v3-real-agent-workload.json");
+        report.getEnvironment().setDatasetVersion("v3-real-agent-workload");
+        report.getEnvironment().setBaselineProfileId("official-v3-real-agent-workload-strict");
+        report.getEnvironment().setStrictVerifierProfileId("official-v3-real-agent-workload-strict");
+        report.getModeSummaries().get("Baseline-NoMemory").setTotal(12);
+        report.getModeSummaries().get("Vortex-Memory").setTotal(12);
+        report.getModeSummaries().get("Vortex-Memory").setCorrect(12);
+        report.getModeSummaries().get("Vortex-RecoveredMemory").setTotal(12);
+        report.getModeSummaries().get("Vortex-RecoveredMemory").setCorrect(12);
+        JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
+
+        LlmMemoryEvalBaselineVerifier verifier = new LlmMemoryEvalBaselineVerifier(JsonMapperFactory.create());
+        LlmMemoryEvalBaselineVerificationResult result =
+                verifier.verify(reportPath, LlmMemoryEvalBaselineProfile.OFFICIAL_V3_REAL_AGENT_WORKLOAD_STRICT);
+
+        assertThat(result.isPassed()).isTrue();
+        assertThat(result.getBaselineProfileId()).isEqualTo("official-v3-real-agent-workload-strict");
+        assertThat(result.getDatasetVersion()).isEqualTo("v3-real-agent-workload");
+        assertThat(result.getDrifts()).isEmpty();
+    }
+
+    @Test
     void defaultOfficialProfileShouldRejectV21Dataset(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
         Path reportPath = tempDir.resolve("llm-memory-eval-v2-1.json");
         LlmMemoryEvalReport report = officialBaselineReport();
@@ -139,6 +167,22 @@ class LlmMemoryEvalBaselineVerifierTest {
         assertThat(LlmMemoryEvalBaselineProfile.OFFICIAL_V2_1_EXTENDED_STRICT.strictReportProfile())
                 .isTrue();
         assertThat(LlmMemoryEvalBaselineProfile.CANDIDATE_V2_1_EXTENDED.strictReportProfile())
+                .isFalse();
+    }
+
+    @Test
+    void v3RealAgentWorkloadShouldInferOfficialStrictProfileWithStrictVerifier() {
+        String datasetLocation = "classpath:llm-memory-eval-set-v3-real-agent-workload.json";
+
+        assertThat(LlmMemoryEvalBaselineProfile.inferDatasetVersion(datasetLocation))
+                .isEqualTo("v3-real-agent-workload");
+        assertThat(LlmMemoryEvalBaselineProfile.inferAuditProfileId(datasetLocation))
+                .isEqualTo("official-v3-real-agent-workload-strict");
+        assertThat(LlmMemoryEvalBaselineProfile.inferStrictVerifierProfileId(datasetLocation))
+                .isEqualTo("official-v3-real-agent-workload-strict");
+        assertThat(LlmMemoryEvalBaselineProfile.OFFICIAL_V3_REAL_AGENT_WORKLOAD_STRICT.strictReportProfile())
+                .isTrue();
+        assertThat(LlmMemoryEvalBaselineProfile.AUDIT_V3_REAL_AGENT_WORKLOAD.strictReportProfile())
                 .isFalse();
     }
 
