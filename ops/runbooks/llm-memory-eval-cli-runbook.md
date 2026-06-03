@@ -447,12 +447,31 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
 6. `ProfileGate`：dataset / baseline profile / strict verifier profile / 每轮 report environment 的一致性 check
 7. `CaseFailureSummary`：按 `caseId + mode` 聚合的失败次数、失败轮次、召回命中/未命中次数、缺失的 expected fragments
 8. `CaseFailureDetails`：逐轮失败明细，包括 returned fragments、missing expected fragments、召回 tiers、生成答案和对应报告路径
+9. `RuntimeTelemetry`：从每轮 report 聚合 configured parallelism、actual worker count、total elapsed ms 和各 mode phase timing；旧报告缺失该字段时会记录 missing count，但不阻断 summary 生成
 
 排查漂移时先看 `CaseFailureSummary`：
 
 1. `MissingExpectedFragments` 非空：优先查召回排序、L1 token budget、L2 enrichment 和 tag 过滤。
 2. `MissingExpectedFragments` 为空但答案错误：优先查 generation prompt 是否停在中间描述、被 distractor 带偏，或判分规则是否过窄。
 3. `RecallMissFailureCount` 非零：优先查召回链路或底层存储；`RecallHitFailureCount` 非零：优先查多跳推理和生成稳定性。
+
+## Milvus eval collection 清理
+
+真实 eval 每轮会创建独立的 `vortex_memory_eval_*` collection。长期堆积过多时，Milvus standalone 可能出现 collection load 卡住或恢复变慢。清理只能处理 eval collection，不能删除 `vortex_memory`、`vortex_memory_it_*` 或 Docker volume。
+
+先执行 dry-run：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\cleanup-milvus-eval-collections.ps1
+```
+
+确认输出只包含 `vortex_memory_eval_*` 后，再显式执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\cleanup-milvus-eval-collections.ps1 -Execute
+```
+
+脚本默认连接 `http://localhost:19530` 的 Milvus REST API，默认 database 是 `_default`，默认 token 是本地 standalone 的 `root:Milvus`。如果实际环境不同，显式传入 `-MilvusEndpoint`、`-Database` 或 `-Token`。
 
 `20260601-mode-scoped-l2-wait-audit-5x-net` 的剩余失败分层：
 

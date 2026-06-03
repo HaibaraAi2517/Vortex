@@ -210,4 +210,5 @@ Write-Host "  Report MD   : $($reportMarkdown.FullName)"
     EvalParallelism = if ($report.environment.PSObject.Properties["evalParallelism"]) { $report.environment.evalParallelism } else { $EvalParallelism }
     Modes = @($report.environment.modes)
     ModeSummaries = $report.modeSummaries
+    RuntimeTelemetry = if ($report.PSObject.Properties["runtimeTelemetry"]) { $report.runtimeTelemetry } else { $null }
 }

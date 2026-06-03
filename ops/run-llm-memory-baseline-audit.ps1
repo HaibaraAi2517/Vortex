@@ -74,6 +74,37 @@ function ConvertTo-PlainObject {
     return $Value | ConvertTo-Json -Depth 20 | ConvertFrom-Json
 }
 
+function Get-NumericValues {
+    param(
+        [object]$Items,
+        [string]$PropertyName
+    )
+    return @($Items | ForEach-Object {
+        $property = $_.PSObject.Properties[$PropertyName]
+        if ($null -ne $property -and $null -ne $property.Value) {
+            [double]$property.Value
+        }
+    })
+}
+
+function Get-MinValue {
+    param($Values)
+    $items = @($Values)
+    if ($items.Count -eq 0) {
+        return $null
+    }
+    return ($items | Measure-Object -Minimum).Minimum
+}
+
+function Get-MaxValue {
+    param($Values)
+    $items = @($Values)
+    if ($items.Count -eq 0) {
+        return $null
+    }
+    return ($items | Measure-Object -Maximum).Maximum
+}
+
 function New-VerifyResult {
     param(
         [int]$ExitCode,
@@ -905,6 +936,7 @@ function Import-ExistingRun {
         EvalParallelism = $runEvalParallelism
         Modes = @($report.environment.modes)
         ModeSummaries = $report.modeSummaries
+        RuntimeTelemetry = if ($report.PSObject.Properties["runtimeTelemetry"]) { $report.runtimeTelemetry } else { $null }
     }
 }
 
@@ -930,6 +962,86 @@ function Get-ModeMetricValues {
         $values.Add([double]$metric.Value)
     }
     return @($values)
+}
+
+function New-RuntimeTelemetryAggregate {
+    param([System.Collections.IEnumerable]$Runs)
+    $runsWithTelemetry = @($Runs | Where-Object {
+        $_.Status -eq "completed" -and $null -ne $_.RuntimeTelemetry
+    })
+    $totalElapsedValues = Get-NumericValues -Items ($runsWithTelemetry | ForEach-Object { $_.RuntimeTelemetry }) -PropertyName "totalElapsedMs"
+    $configuredParallelismValues = @($runsWithTelemetry | ForEach-Object {
+        [int]$_.RuntimeTelemetry.configuredParallelism
+    })
+    $actualWorkerCountValues = @($runsWithTelemetry | ForEach-Object {
+        [int]$_.RuntimeTelemetry.actualWorkerCount
+    })
+    $modePhasedParallelValues = @($runsWithTelemetry | ForEach-Object {
+        [bool]$_.RuntimeTelemetry.modePhasedParallel
+    } | Sort-Object -Unique)
+    $phaseRows = @($runsWithTelemetry | ForEach-Object {
+        $run = $_
+        @($run.RuntimeTelemetry.modePhaseTimings) | ForEach-Object {
+            [pscustomobject]@{
+                RoundIndex = $run.RoundIndex
+                ModeIndex = [int]$_.modeIndex
+                Mode = [string]$_.mode
+                CaseCount = [int]$_.caseCount
+                ElapsedMs = [long]$_.elapsedMs
+            }
+        }
+    })
+    $phaseSummary = @($phaseRows | Group-Object ModeIndex, Mode | Sort-Object {
+        [int]$_.Group[0].ModeIndex
+    } | ForEach-Object {
+        $elapsedValues = Get-NumericValues -Items $_.Group -PropertyName "ElapsedMs"
+        [pscustomobject]@{
+            ModeIndex = [int]$_.Group[0].ModeIndex
+            Mode = [string]$_.Group[0].Mode
+            RoundCount = @($_.Group).Count
+            CaseCounts = @($_.Group | ForEach-Object { [int]$_.CaseCount } | Sort-Object -Unique)
+            ElapsedMsValues = $elapsedValues
+            MeanElapsedMs = Get-MeanValue -Values $elapsedValues
+            MinElapsedMs = Get-MinValue -Values $elapsedValues
+            MaxElapsedMs = Get-MaxValue -Values $elapsedValues
+        }
+    })
+
+    return [pscustomobject]@{
+        PresentRunCount = $runsWithTelemetry.Count
+        MissingRunCount = @($Runs | Where-Object { $_.Status -eq "completed" -and $null -eq $_.RuntimeTelemetry }).Count
+        ConfiguredParallelismValues = $configuredParallelismValues
+        ActualWorkerCountValues = $actualWorkerCountValues
+        ModePhasedParallelValues = $modePhasedParallelValues
+        TotalElapsedMsValues = $totalElapsedValues
+        MeanTotalElapsedMs = Get-MeanValue -Values $totalElapsedValues
+        MinTotalElapsedMs = Get-MinValue -Values $totalElapsedValues
+        MaxTotalElapsedMs = Get-MaxValue -Values $totalElapsedValues
+        PhaseTimings = $phaseSummary
+    }
+}
+
+function Get-RuntimeTelemetryMarkdown {
+    param([object]$RuntimeTelemetry)
+    if ($null -eq $RuntimeTelemetry -or $RuntimeTelemetry.PresentRunCount -eq 0) {
+        return "No runtime telemetry was present in completed run reports."
+    }
+
+    $builder = New-Object System.Text.StringBuilder
+    [void]$builder.AppendLine("- Runs with telemetry: $($RuntimeTelemetry.PresentRunCount)")
+    [void]$builder.AppendLine("- Runs missing telemetry: $($RuntimeTelemetry.MissingRunCount)")
+    [void]$builder.AppendLine("- Configured parallelism values: $(Format-MetricSequence -Values $RuntimeTelemetry.ConfiguredParallelismValues)")
+    [void]$builder.AppendLine("- Actual worker count values: $(Format-MetricSequence -Values $RuntimeTelemetry.ActualWorkerCountValues)")
+    [void]$builder.AppendLine("- Mode phased parallel values: $(Format-MetricSequence -Values $RuntimeTelemetry.ModePhasedParallelValues)")
+    [void]$builder.AppendLine("- Total elapsed ms values: $(Format-MetricSequence -Values $RuntimeTelemetry.TotalElapsedMsValues)")
+    [void]$builder.AppendLine("- Mean total elapsed ms: $(Format-Decimal $RuntimeTelemetry.MeanTotalElapsedMs)")
+    [void]$builder.AppendLine()
+    [void]$builder.AppendLine("| Mode Index | Mode | Rounds | Case Counts | Elapsed ms values | Mean ms | Min ms | Max ms |")
+    [void]$builder.AppendLine("| ---: | --- | ---: | --- | --- | ---: | ---: | ---: |")
+    foreach ($phase in @($RuntimeTelemetry.PhaseTimings)) {
+        [void]$builder.AppendLine("| $($phase.ModeIndex) | $(Format-MarkdownCell $phase.Mode) | $($phase.RoundCount) | $(Format-MarkdownCell $phase.CaseCounts) | $(Format-MarkdownCell $phase.ElapsedMsValues) | $(Format-Decimal $phase.MeanElapsedMs) | $($phase.MinElapsedMs) | $($phase.MaxElapsedMs) |")
+    }
+    return $builder.ToString()
 }
 
 function Get-RunMarkdownRows {
@@ -1123,6 +1235,7 @@ for ($round = 1; $round -le $Rounds; $round++) {
             EvalParallelism = if ($singleRun.PSObject.Properties["EvalParallelism"]) { $singleRun.EvalParallelism } else { $EvalParallelism }
             Modes = @($singleRun.Modes)
             ModeSummaries = ConvertTo-PlainObject $singleRun.ModeSummaries
+            RuntimeTelemetry = if ($singleRun.PSObject.Properties["RuntimeTelemetry"]) { ConvertTo-PlainObject $singleRun.RuntimeTelemetry } else { $null }
             Verify = $verify
             FailureMessage = $null
         }) | Out-Null
@@ -1151,6 +1264,7 @@ for ($round = 1; $round -le $Rounds; $round++) {
             EvalParallelism = $EvalParallelism
             Modes = @()
             ModeSummaries = $null
+            RuntimeTelemetry = $null
             Verify = [pscustomobject]@{
                 Profile = $StrictVerifierProfile
                 Skipped = $false
@@ -1178,6 +1292,7 @@ try {
     $recoveredL2HitRateValues = Get-ModeMetricValues -Runs $completedRuns -ModeName "Vortex-RecoveredMemory" -MetricName "recoveredL2HitRate"
     $caseFailureDetails = Get-CaseFailureDetails -Runs $completedRuns -DatasetCases $datasetCaseMap
     $caseFailureSummary = Get-CaseFailureSummary -Failures $caseFailureDetails -RoundCount $Rounds
+    $runtimeTelemetryAggregate = New-RuntimeTelemetryAggregate -Runs $completedRuns
     $runtimeErrorTypeCounts = @($caseFailureDetails | Where-Object {
         $_.FailureReason -eq "runtime_error" -and -not [string]::IsNullOrWhiteSpace($_.RuntimeErrorType)
     } | Group-Object RuntimeErrorType | Sort-Object -Property @{Expression = "Count"; Descending = $true}, Name | ForEach-Object {
@@ -1254,6 +1369,7 @@ try {
             CaseFailureGroupCount = @($caseFailureSummary).Count
             RuntimeErrorTypeCounts = $runtimeErrorTypeCounts
             TransientRuntimeErrorCount = $transientRuntimeErrorCount
+            RuntimeTelemetry = $runtimeTelemetryAggregate
         }
         AuditGate = $auditGate
         ProfileGate = $profileGate
@@ -1302,6 +1418,10 @@ try {
         "- Case failure groups: $(@($caseFailureSummary).Count)"
         "- Transient runtime error count: $transientRuntimeErrorCount"
         "- Runtime error type counts: $runtimeErrorTypeCountSummary"
+        ""
+        "## Runtime Telemetry"
+        ""
+        (Get-RuntimeTelemetryMarkdown -RuntimeTelemetry $runtimeTelemetryAggregate)
         ""
         "## Audit Gate"
         ""
