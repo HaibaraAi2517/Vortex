@@ -33,3 +33,11 @@ Thumbs.db
 !/ops/eval-reports/20260601-mode-scoped-l2-wait-audit-5x-net/**
 !/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/
 !/ops/eval-reports/20260601-v2-009-contract-audit-5x-net/**
+!/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/
+/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/*
+!/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/baseline-audit-summary.json
+!/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/runs/
+/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/runs/*
+!/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/runs/*/
+/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/runs/*/*
+!/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/runs/*/llm-memory-eval-*.json
