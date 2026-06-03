@@ -100,6 +100,12 @@ mvn verify -pl vortex-app -am
 
 默认集成测试覆盖：memory store → evict → L2 recall → L1 re-admission、checkpoint → recover、delta chain 恢复、feedback → 权重演化。
 
+LLM memory baseline 的本地/CI 治理门禁不调用真实模型，也不需要 API Key；它只验证当前代码中的 profile、已接受的 v3 official strict 证据汇总，以及每轮既有报告是否仍通过 strict verifier：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1
+```
+
 如果你希望 `verify` 后保留本地 compose 服务继续运行：
 
 ```bash

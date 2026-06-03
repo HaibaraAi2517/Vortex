@@ -130,3 +130,4 @@ Phase 3 is complete when:
    - strict verifier profile: `official-v3-real-agent-workload-strict`
 5. The default verifier remains `official-v2-strict`.
 6. Existing v2, v2.1, and v2.1 extended strict tests still pass.
+7. `ops/run-baseline-governance-check.ps1` passes as the no-generation local/CI guard for the accepted v3 official strict evidence.

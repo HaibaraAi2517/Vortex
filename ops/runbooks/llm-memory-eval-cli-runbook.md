@@ -430,6 +430,26 @@ java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
 2. 漂移时输出逐项 drift 明细，并返回退出码 `2`
 3. profile 不存在或 audit-only profile 被用于单轮 verify 时返回退出码 `1`
 
+## 基线治理检查
+
+`ops/run-baseline-governance-check.ps1` 是本地/CI 用的 baseline governance 门禁。它不调用真实 generation API，不需要 API Key，也不会生成新的 eval 报告；它只检查当前代码中的 baseline profile、已接受的 official strict audit summary，以及既有每轮 JSON 报告是否仍通过 strict verifier。
+
+默认检查 v3 official strict baseline：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1
+```
+
+快速排障时可以跳过 Maven 测试和打包，只复用当前 jar 与既有报告：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1 `
+  -SkipMavenTest `
+  -SkipPackage
+```
+
+它和 `ops/run-llm-memory-baseline-audit.ps1` 的职责不同：`run-baseline-governance-check.ps1` 用于无模型、可重复、低成本的回归门禁；`run-llm-memory-baseline-audit.ps1` 用于真实 LLM 多轮审计，必须提供 generation API 环境，并会产生新的报告证据。
+
 ## 基线审计
 
 `ops/run-llm-memory-baseline-audit.ps1` 会连续跑多轮真实 eval，并在每轮结束后自动调用 `verify`，最后生成稳定性汇总报告。
