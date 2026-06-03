@@ -80,6 +80,27 @@ Result: accepted promotion evidence.
   - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-real-agent-workload-audit-002/baseline-audit-summary.json:1)
   - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-real-agent-workload-audit-002/baseline-audit-summary.md:1)
 
+### 20260603-v3-real-agent-workload-official-strict-audit-001
+
+Result: accepted post-promotion strict evidence.
+
+- `OverallPassed`: true.
+- `AuditGate.Passed`: true.
+- `ProfileGate.Passed`: true.
+- `StrictVerifierPassed`: true.
+- `VerifierPassCount`: 3/3.
+- `EvalSuccessCount`: 3/3.
+- `Baseline-NoMemory`: 0/12 in all rounds.
+- `Vortex-Memory`: 12/12 in all rounds.
+- `Vortex-RecoveredMemory`: 12/12 in all rounds.
+- `RecoveredAccuracy`: 1.0 in all rounds.
+- `RecoveredL2HitRate`: 1.0 in all rounds.
+- `CaseFailureCount`: 0.
+- `TransientRuntimeErrorCount`: 0.
+- Summary:
+  - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/baseline-audit-summary.json:1)
+  - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/baseline-audit-summary.md:1)
+
 ## Recommended Strict Audit
 
 ```powershell

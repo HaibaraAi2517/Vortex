@@ -49,6 +49,33 @@ Validated result:
 - `RecoveredAccuracy = 1.0` in all three rounds
 - `RecoveredL2HitRate = 1.0` in all three rounds
 
+Accepted post-promotion evidence:
+
+- Audit stamp: `20260603-v3-real-agent-workload-official-strict-audit-001`
+- Summary:
+  - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/baseline-audit-summary.json:1)
+  - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/baseline-audit-summary.md:1)
+- Rounds: `3`
+- Dataset: `classpath:llm-memory-eval-set-v3-real-agent-workload.json`
+- Model: `gpt-5.2`
+- Base URL: `https://sub2.congmingai.com`
+- L1 max tokens: `96`
+- Eval parallelism: `24`
+- Result:
+  - `OverallPassed = true`
+  - `AuditGate.Passed = true`
+  - `ProfileGate.Passed = true`
+  - `StrictVerifierPassed = true`
+  - `VerifierPassCount = 3/3`
+  - `EvalSuccessCount = 3/3`
+  - `CaseFailureCount = 0`
+  - `TransientRuntimeErrorCount = 0`
+  - `Baseline-NoMemory = 0/12` in all three rounds
+  - `Vortex-Memory = 12/12` in all three rounds
+  - `Vortex-RecoveredMemory = 12/12` in all three rounds
+  - `RecoveredAccuracy = 1.0` in all three rounds
+  - `RecoveredL2HitRate = 1.0` in all three rounds
+
 Rejected predecessor:
 
 - Audit stamp: `20260603-v3-real-agent-workload-audit-001`
