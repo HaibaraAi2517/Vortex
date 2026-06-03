@@ -1,0 +1,691 @@
+[
+  {
+    "caseId": "v3.1-agent-001",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "orion-owner-initial",
+        "content": "At kickoff, Orion migration ownership was assigned to Lena.",
+        "tags": ["agent-workload", "state-update", "history"]
+      },
+      {
+        "fragmentId": "orion-owner-mid",
+        "content": "After the dependency review, Orion migration ownership moved from Lena to Mateo.",
+        "tags": ["agent-workload", "state-update", "history"]
+      },
+      {
+        "fragmentId": "orion-owner-final",
+        "content": "The current owner for Orion migration is Priya.",
+        "tags": ["agent-workload", "state-update", "current"]
+      },
+      {
+        "fragmentId": "orion-handoff-note",
+        "content": "Mateo handed Orion migration to Priya after the storage risk was closed.",
+        "tags": ["agent-workload", "state-update", "handoff"]
+      }
+    ],
+    "question": "Who is the current owner for Orion migration?",
+    "expectedAnswer": "Priya",
+    "mustContain": ["Priya"],
+    "mustNotContain": ["Lena is the current owner", "Mateo is the current owner"],
+    "expectedFragments": ["orion-owner-final", "orion-handoff-note"],
+    "failureCategories": ["multi_step_state_update", "historical_distractor"],
+    "tags": ["agent-workload", "state-update"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3.1-agent-002",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "atlas-namespace-alpha",
+        "content": "In namespace alpha, Atlas refers to the billing importer service.",
+        "tags": ["agent-workload", "namespace", "alpha"]
+      },
+      {
+        "fragmentId": "atlas-namespace-beta",
+        "content": "In namespace beta, Atlas refers to the search index rebuild task.",
+        "tags": ["agent-workload", "namespace", "beta"]
+      },
+      {
+        "fragmentId": "alpha-atlas-owner",
+        "content": "The billing importer service owner in namespace alpha is Noor.",
+        "tags": ["agent-workload", "namespace", "ownership"]
+      },
+      {
+        "fragmentId": "beta-atlas-owner",
+        "content": "The search index rebuild task owner in namespace beta is Pavel.",
+        "tags": ["agent-workload", "namespace", "distractor"]
+      }
+    ],
+    "question": "In namespace alpha, who owns Atlas?",
+    "expectedAnswer": "Noor",
+    "mustContain": ["Noor"],
+    "mustNotContain": ["Pavel"],
+    "expectedFragments": ["atlas-namespace-alpha", "alpha-atlas-owner"],
+    "failureCategories": ["namespace_collision", "alias_resolution"],
+    "tags": ["agent-workload", "namespace"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3.1-agent-003",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "pegasus-branch-a",
+        "content": "In branch A for Pegasus caching, the agent proposed local Guava caches.",
+        "tags": ["agent-workload", "branch", "history"]
+      },
+      {
+        "fragmentId": "pegasus-branch-b",
+        "content": "In branch B for Pegasus caching, the agent proposed Redis Cluster.",
+        "tags": ["agent-workload", "branch", "candidate"]
+      },
+      {
+        "fragmentId": "pegasus-final-branch",
+        "content": "The final accepted Pegasus caching branch is branch B.",
+        "tags": ["agent-workload", "branch", "current"]
+      },
+      {
+        "fragmentId": "pegasus-final-rationale",
+        "content": "Branch B was accepted because Redis Cluster keeps cache entries shared across workers.",
+        "tags": ["agent-workload", "branch", "rationale"]
+      }
+    ],
+    "question": "Which caching design should Pegasus continue with?",
+    "expectedAnswer": "Redis Cluster",
+    "mustContain": ["Redis Cluster"],
+    "mustNotContain": ["local Guava caches"],
+    "expectedFragments": ["pegasus-final-branch", "pegasus-branch-b"],
+    "failureCategories": ["branch_isolation", "final_decision"],
+    "tags": ["agent-workload", "branch"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3.1-agent-004",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "task-nova-checkpoint",
+        "content": "Task Nova checkpoint was saved after the agent validated the rollback script.",
+        "tags": ["agent-workload", "checkpoint", "anchor"]
+      },
+      {
+        "fragmentId": "task-nova-old-step",
+        "content": "Before rollback validation, Task Nova's next step was to collect deployment logs.",
+        "tags": ["agent-workload", "checkpoint", "history"]
+      },
+      {
+        "fragmentId": "task-nova-current-step",
+        "content": "After recovery, Task Nova should notify release management with the validated rollback script.",
+        "tags": ["agent-workload", "checkpoint", "next-step"]
+      },
+      {
+        "fragmentId": "task-nova-release-channel",
+        "content": "Release management notifications for Task Nova go to the release-control channel.",
+        "tags": ["agent-workload", "checkpoint", "channel"]
+      }
+    ],
+    "question": "After recovering Task Nova, what should the agent do next?",
+    "expectedAnswer": "notify release management",
+    "mustContain": ["notify", "release management", "validated rollback script"],
+    "mustNotContain": ["collect deployment logs"],
+    "expectedFragments": ["task-nova-checkpoint", "task-nova-current-step"],
+    "failureCategories": ["checkpoint_continuation", "historical_distractor"],
+    "tags": ["agent-workload", "checkpoint"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3.1-agent-005",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "rhea-old-tool-policy",
+        "content": "Earlier sandbox Rhea debugging allowed the write-enabled SQL console.",
+        "tags": ["agent-workload", "tool-policy", "history"]
+      },
+      {
+        "fragmentId": "rhea-current-target",
+        "content": "The current Rhea debugging target is the production customer ledger.",
+        "tags": ["agent-workload", "tool-policy", "target"]
+      },
+      {
+        "fragmentId": "rhea-current-tool-policy",
+        "content": "For production customer ledger debugging, the agent must use the read-only SQL console.",
+        "tags": ["agent-workload", "tool-policy", "current"]
+      },
+      {
+        "fragmentId": "rhea-approval-note",
+        "content": "No write operation is approved for the current Rhea production investigation.",
+        "tags": ["agent-workload", "tool-policy", "safety"]
+      }
+    ],
+    "question": "Which SQL console should the agent use for the current Rhea debugging task?",
+    "expectedAnswer": "read-only SQL console",
+    "mustContain": ["read-only SQL console"],
+    "mustNotContain": ["write-enabled SQL console"],
+    "expectedFragments": ["rhea-current-target", "rhea-current-tool-policy"],
+    "failureCategories": ["tool_policy_update", "safety"],
+    "tags": ["agent-workload", "tool-policy"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3.1-agent-006",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "samira-old-format",
+        "content": "Samira used to prefer daily status updates as Slack threads.",
+        "tags": ["agent-workload", "preference", "history"]
+      },
+      {
+        "fragmentId": "samira-mid-format",
+        "content": "For one sprint, Samira asked for status updates as email summaries.",
+        "tags": ["agent-workload", "preference", "history"]
+      },
+      {
+        "fragmentId": "samira-current-format",
+        "content": "Samira's current preference is a compact Jira comment with risks first.",
+        "tags": ["agent-workload", "preference", "current"]
+      },
+      {
+        "fragmentId": "samira-risk-order",
+        "content": "When writing for Samira, list blockers and risks before completed work.",
+        "tags": ["agent-workload", "preference", "style"]
+      }
+    ],
+    "question": "How should the agent format Samira's status update now?",
+    "expectedAnswer": "compact Jira comment",
+    "mustContain": ["compact Jira comment", "risks", "first"],
+    "mustNotContain": ["Slack threads", "email summaries"],
+    "expectedFragments": ["samira-current-format", "samira-risk-order"],
+    "failureCategories": ["preference_reversal", "state_update"],
+    "tags": ["agent-workload", "preference"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3.1-agent-007",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "helios-old-blocker",
+        "content": "Helios rollout was previously blocked by schema review.",
+        "tags": ["agent-workload", "long-context", "history"]
+      },
+      {
+        "fragmentId": "helios-schema-review-closed",
+        "content": "The Helios schema review is now closed and no longer blocks rollout.",
+        "tags": ["agent-workload", "long-context", "update"]
+      },
+      {
+        "fragmentId": "helios-current-blocker",
+        "content": "The current Helios rollout blocker is the missing EU data residency approval.",
+        "tags": ["agent-workload", "long-context", "current"]
+      },
+      {
+        "fragmentId": "helios-approval-owner",
+        "content": "EU data residency approval for Helios is owned by Camille.",
+        "tags": ["agent-workload", "long-context", "ownership"]
+      },
+      {
+        "fragmentId": "helios-unrelated-thread",
+        "content": "A separate Helios support thread discussed dashboard colors and did not affect rollout blockers.",
+        "tags": ["agent-workload", "long-context", "distractor"]
+      }
+    ],
+    "question": "Who owns the current Helios rollout blocker?",
+    "expectedAnswer": "Camille",
+    "mustContain": ["Camille"],
+    "mustNotContain": ["schema review is the current blocker", "dashboard colors"],
+    "expectedFragments": ["helios-current-blocker", "helios-approval-owner"],
+    "failureCategories": ["long_context_distractor", "current_state"],
+    "tags": ["agent-workload", "long-context"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3.1-agent-008",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "mirage-policy-tier",
+        "content": "Mirage incidents route by customer tier and data sensitivity.",
+        "tags": ["agent-workload", "policy", "rule"]
+      },
+      {
+        "fragmentId": "mirage-customer-tier",
+        "content": "Customer Mirage is on the regulated enterprise tier.",
+        "tags": ["agent-workload", "policy", "customer"]
+      },
+      {
+        "fragmentId": "mirage-data-classification",
+        "content": "The current Mirage incident involves restricted billing data.",
+        "tags": ["agent-workload", "policy", "data"]
+      },
+      {
+        "fragmentId": "mirage-escalation-policy",
+        "content": "Regulated enterprise incidents with restricted billing data escalate to the privacy incident desk.",
+        "tags": ["agent-workload", "policy", "escalation"]
+      }
+    ],
+    "question": "Where should the agent escalate the current Mirage incident?",
+    "expectedAnswer": "privacy incident desk",
+    "mustContain": ["privacy incident desk"],
+    "expectedFragments": ["mirage-customer-tier", "mirage-data-classification", "mirage-escalation-policy"],
+    "failureCategories": ["multi_fragment_synthesis", "policy_application"],
+    "tags": ["agent-workload", "policy"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3.1-agent-009",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "quartz-alias-rule",
+        "content": "The release note should use the codename tied to the current Quartz launch alias.",
+        "tags": ["agent-workload", "alias", "rule"]
+      },
+      {
+        "fragmentId": "quartz-current-alias",
+        "content": "The current Quartz launch alias is River Glass.",
+        "tags": ["agent-workload", "alias", "current"]
+      },
+      {
+        "fragmentId": "quartz-old-alias",
+        "content": "Quartz used the retired alias Snow Finch before legal renamed it.",
+        "tags": ["agent-workload", "alias", "history"]
+      },
+      {
+        "fragmentId": "quartz-customer-facing",
+        "content": "Customer-facing Quartz copy must not mention retired aliases.",
+        "tags": ["agent-workload", "alias", "policy"]
+      }
+    ],
+    "question": "Which Quartz codename should appear in customer-facing copy?",
+    "expectedAnswer": "River Glass",
+    "mustContain": ["River Glass"],
+    "mustNotContain": ["Snow Finch"],
+    "expectedFragments": ["quartz-alias-rule", "quartz-current-alias"],
+    "failureCategories": ["alias_resolution", "historical_distractor"],
+    "tags": ["agent-workload", "alias"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3.1-agent-010",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "phoenix-old-severity",
+        "content": "The old Phoenix runbook mapped queue age above 20 minutes to SEV3.",
+        "tags": ["agent-workload", "runbook", "history"]
+      },
+      {
+        "fragmentId": "phoenix-current-severity-rule",
+        "content": "The current Phoenix runbook maps queue age above 20 minutes plus payment impact to SEV1.",
+        "tags": ["agent-workload", "runbook", "current"]
+      },
+      {
+        "fragmentId": "phoenix-observed-queue",
+        "content": "The observed Phoenix queue age is 24 minutes.",
+        "tags": ["agent-workload", "runbook", "observation"]
+      },
+      {
+        "fragmentId": "phoenix-payment-impact",
+        "content": "Phoenix currently blocks payment confirmations for checkout users.",
+        "tags": ["agent-workload", "runbook", "impact"]
+      }
+    ],
+    "question": "Which severity should the agent assign to Phoenix now?",
+    "expectedAnswer": "SEV1",
+    "mustContain": ["SEV1"],
+    "mustNotContain": ["SEV3"],
+    "expectedFragments": ["phoenix-current-severity-rule", "phoenix-observed-queue", "phoenix-payment-impact"],
+    "failureCategories": ["rule_application", "multi_fragment_synthesis"],
+    "tags": ["agent-workload", "runbook"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3.1-agent-011",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "aurora-test-rule",
+        "content": "Aurora flaky tests should be quarantined only after three failures in the same browser.",
+        "tags": ["agent-workload", "testing", "rule"]
+      },
+      {
+        "fragmentId": "aurora-chrome-history",
+        "content": "The Aurora checkout test failed three times in Chrome this week.",
+        "tags": ["agent-workload", "testing", "current"]
+      },
+      {
+        "fragmentId": "aurora-firefox-history",
+        "content": "The Aurora checkout test failed once in Firefox last month.",
+        "tags": ["agent-workload", "testing", "history"]
+      },
+      {
+        "fragmentId": "aurora-quarantine-owner",
+        "content": "Quarantine decisions for Aurora tests are owned by the quality gate agent.",
+        "tags": ["agent-workload", "testing", "ownership"]
+      }
+    ],
+    "question": "Should the agent quarantine the Aurora checkout test now?",
+    "expectedAnswer": "yes",
+    "mustContain": ["yes", "Chrome"],
+    "mustNotContain": ["Firefox last month"],
+    "expectedFragments": ["aurora-test-rule", "aurora-chrome-history"],
+    "failureCategories": ["decision_rule", "state_update"],
+    "tags": ["agent-workload", "testing"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3.1-agent-012",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "zephyr-old-plan",
+        "content": "Zephyr's earlier plan was to optimize websocket fanout before storage recovery.",
+        "tags": ["agent-workload", "planning", "history"]
+      },
+      {
+        "fragmentId": "zephyr-current-plan",
+        "content": "The current Zephyr plan prioritizes storage recovery before websocket fanout.",
+        "tags": ["agent-workload", "planning", "current"]
+      },
+      {
+        "fragmentId": "zephyr-risk-note",
+        "content": "Storage recovery is blocking reliable restart tests for Zephyr.",
+        "tags": ["agent-workload", "planning", "risk"]
+      },
+      {
+        "fragmentId": "zephyr-owner",
+        "content": "The Zephyr storage recovery work is owned by the durability track.",
+        "tags": ["agent-workload", "planning", "ownership"]
+      }
+    ],
+    "question": "What should Zephyr prioritize before websocket fanout?",
+    "expectedAnswer": "storage recovery",
+    "mustContain": ["storage recovery"],
+    "mustNotContain": ["optimize websocket fanout before storage recovery"],
+    "expectedFragments": ["zephyr-current-plan", "zephyr-risk-note"],
+    "failureCategories": ["planning_priority", "state_update"],
+    "tags": ["agent-workload", "planning"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3.1-agent-013",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "cobalt-approval-old",
+        "content": "Cobalt deployment previously required approval from the API guild.",
+        "tags": ["agent-workload", "approval", "history"]
+      },
+      {
+        "fragmentId": "cobalt-approval-current",
+        "content": "Cobalt deployment now requires approval from the data governance board.",
+        "tags": ["agent-workload", "approval", "current"]
+      },
+      {
+        "fragmentId": "cobalt-risk-classification",
+        "content": "Cobalt deployment touches customer export retention policy.",
+        "tags": ["agent-workload", "approval", "risk"]
+      },
+      {
+        "fragmentId": "cobalt-board-chair",
+        "content": "The data governance board chair for Cobalt is Ren.",
+        "tags": ["agent-workload", "approval", "ownership"]
+      }
+    ],
+    "question": "Who should the agent contact for Cobalt deployment approval?",
+    "expectedAnswer": "Ren",
+    "mustContain": ["Ren"],
+    "mustNotContain": ["API guild"],
+    "expectedFragments": ["cobalt-approval-current", "cobalt-board-chair"],
+    "failureCategories": ["approval_update", "owner_resolution"],
+    "tags": ["agent-workload", "approval"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3.1-agent-014",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "lumen-page-initial",
+        "content": "The initial Lumen incident page went to the platform on-call.",
+        "tags": ["agent-workload", "incident", "history"]
+      },
+      {
+        "fragmentId": "lumen-page-update",
+        "content": "After database saturation was confirmed, Lumen paging moved to the database on-call.",
+        "tags": ["agent-workload", "incident", "update"]
+      },
+      {
+        "fragmentId": "lumen-db-oncall",
+        "content": "The current database on-call for Lumen is Talia.",
+        "tags": ["agent-workload", "incident", "ownership"]
+      },
+      {
+        "fragmentId": "lumen-platform-oncall",
+        "content": "The platform on-call for Lumen is Victor, but platform is no longer the active page target.",
+        "tags": ["agent-workload", "incident", "distractor"]
+      }
+    ],
+    "question": "Who should the agent page for the active Lumen incident now?",
+    "expectedAnswer": "Talia",
+    "mustContain": ["Talia"],
+    "mustNotContain": ["Victor is the active page target"],
+    "expectedFragments": ["lumen-page-update", "lumen-db-oncall"],
+    "failureCategories": ["incident_handoff", "current_state"],
+    "tags": ["agent-workload", "incident"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3.1-agent-015",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "delta-export-old-destination",
+        "content": "Delta export reports used to be sent to the finance-shared mailbox.",
+        "tags": ["agent-workload", "delivery", "history"]
+      },
+      {
+        "fragmentId": "delta-export-current-destination",
+        "content": "Delta export reports now go to the secure revenue room.",
+        "tags": ["agent-workload", "delivery", "current"]
+      },
+      {
+        "fragmentId": "delta-export-format",
+        "content": "The secure revenue room expects Delta export reports as encrypted CSV files.",
+        "tags": ["agent-workload", "delivery", "format"]
+      },
+      {
+        "fragmentId": "delta-export-owner",
+        "content": "Delta export delivery is owned by the revenue operations agent.",
+        "tags": ["agent-workload", "delivery", "ownership"]
+      }
+    ],
+    "question": "Where should the agent send Delta export reports now?",
+    "expectedAnswer": "secure revenue room",
+    "mustContain": ["secure revenue room"],
+    "mustNotContain": ["finance-shared mailbox"],
+    "expectedFragments": ["delta-export-current-destination", "delta-export-format"],
+    "failureCategories": ["delivery_update", "historical_distractor"],
+    "tags": ["agent-workload", "delivery"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3.1-agent-016",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "iris-retention-rule",
+        "content": "Iris audit logs must be retained for 180 days when the customer is public sector.",
+        "tags": ["agent-workload", "compliance", "rule"]
+      },
+      {
+        "fragmentId": "iris-customer-type",
+        "content": "The current Iris customer is a public sector agency.",
+        "tags": ["agent-workload", "compliance", "customer"]
+      },
+      {
+        "fragmentId": "iris-old-retention",
+        "content": "For private beta customers, Iris audit logs were retained for 30 days.",
+        "tags": ["agent-workload", "compliance", "history"]
+      },
+      {
+        "fragmentId": "iris-storage-note",
+        "content": "Iris audit logs are stored in the compliance archive.",
+        "tags": ["agent-workload", "compliance", "storage"]
+      }
+    ],
+    "question": "How long should Iris audit logs be retained now?",
+    "expectedAnswer": "180 days",
+    "mustContain": ["180 days"],
+    "mustNotContain": ["30 days"],
+    "expectedFragments": ["iris-retention-rule", "iris-customer-type"],
+    "failureCategories": ["policy_application", "historical_distractor"],
+    "tags": ["agent-workload", "compliance"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3.1-agent-017",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "mosaic-old-owner",
+        "content": "Mosaic ingestion alerts were previously owned by Team Slate.",
+        "tags": ["agent-workload", "ownership", "history"]
+      },
+      {
+        "fragmentId": "mosaic-new-routing",
+        "content": "Mosaic ingestion alerts now route through the data platform rotation.",
+        "tags": ["agent-workload", "ownership", "current"]
+      },
+      {
+        "fragmentId": "data-platform-current-oncall",
+        "content": "The current data platform rotation on-call is Eshan.",
+        "tags": ["agent-workload", "ownership", "oncall"]
+      },
+      {
+        "fragmentId": "slate-current-note",
+        "content": "Team Slate still owns Mosaic documentation, not ingestion alerts.",
+        "tags": ["agent-workload", "ownership", "distractor"]
+      }
+    ],
+    "question": "Who should receive Mosaic ingestion alerts now?",
+    "expectedAnswer": "Eshan",
+    "mustContain": ["Eshan"],
+    "mustNotContain": ["Team Slate receives ingestion alerts"],
+    "expectedFragments": ["mosaic-new-routing", "data-platform-current-oncall"],
+    "failureCategories": ["owner_resolution", "state_update"],
+    "tags": ["agent-workload", "ownership"],
+    "difficulty": "medium"
+  },
+  {
+    "caseId": "v3.1-agent-018",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "nebula-incident-old-action",
+        "content": "At the first Nebula incident checkpoint, the agent needed to gather CDN logs.",
+        "tags": ["agent-workload", "checkpoint", "history"]
+      },
+      {
+        "fragmentId": "nebula-cdn-logs-done",
+        "content": "The Nebula CDN logs have been gathered and attached to the incident timeline.",
+        "tags": ["agent-workload", "checkpoint", "done"]
+      },
+      {
+        "fragmentId": "nebula-next-action",
+        "content": "The next Nebula incident action is to compare CDN logs with origin latency samples.",
+        "tags": ["agent-workload", "checkpoint", "next-step"]
+      },
+      {
+        "fragmentId": "nebula-origin-latency",
+        "content": "Origin latency samples for Nebula are available in the origin-metrics panel.",
+        "tags": ["agent-workload", "checkpoint", "evidence"]
+      }
+    ],
+    "question": "After recovery, what is the next Nebula incident action?",
+    "expectedAnswer": "compare",
+    "mustContain": ["CDN logs", "origin latency samples"],
+    "mustNotContain": ["gather CDN logs"],
+    "expectedFragments": ["nebula-next-action", "nebula-origin-latency"],
+    "failureCategories": ["checkpoint_continuation", "avoid_repeating_done_work"],
+    "tags": ["agent-workload", "checkpoint"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3.1-agent-019",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "solstice-old-decision",
+        "content": "Solstice originally planned to pause all regional launches.",
+        "tags": ["agent-workload", "decision", "history"]
+      },
+      {
+        "fragmentId": "solstice-risk-review",
+        "content": "Risk review found only the APAC Solstice launch has unresolved tax validation.",
+        "tags": ["agent-workload", "decision", "evidence"]
+      },
+      {
+        "fragmentId": "solstice-final-decision",
+        "content": "The final Solstice decision is to pause APAC only and continue other regional launches.",
+        "tags": ["agent-workload", "decision", "current"]
+      },
+      {
+        "fragmentId": "solstice-owner",
+        "content": "The APAC tax validation follow-up is owned by Mei.",
+        "tags": ["agent-workload", "decision", "ownership"]
+      }
+    ],
+    "question": "Which Solstice launches should be paused?",
+    "expectedAnswer": "APAC",
+    "mustContain": ["APAC", "only"],
+    "mustNotContain": ["pause all regional launches"],
+    "expectedFragments": ["solstice-risk-review", "solstice-final-decision"],
+    "failureCategories": ["final_decision", "historical_distractor"],
+    "tags": ["agent-workload", "decision"],
+    "difficulty": "hard"
+  },
+  {
+    "caseId": "v3.1-agent-020",
+    "namespace": "llm-eval-v3-1-agent",
+    "memoryFragments": [
+      {
+        "fragmentId": "ember-support-policy",
+        "content": "Ember support escalations depend on customer tier and current outage status.",
+        "tags": ["agent-workload", "support", "policy"]
+      },
+      {
+        "fragmentId": "ember-customer-tier",
+        "content": "Customer Ember is currently on the strategic support tier.",
+        "tags": ["agent-workload", "support", "tier"]
+      },
+      {
+        "fragmentId": "ember-outage-status",
+        "content": "Customer Ember currently has an active checkout outage.",
+        "tags": ["agent-workload", "support", "outage"]
+      },
+      {
+        "fragmentId": "ember-escalation-rule",
+        "content": "Strategic customers with an active checkout outage escalate to the executive response desk.",
+        "tags": ["agent-workload", "support", "escalation"]
+      },
+      {
+        "fragmentId": "ember-old-route",
+        "content": "Before the outage, Ember questions routed to the standard support queue.",
+        "tags": ["agent-workload", "support", "history"]
+      }
+    ],
+    "question": "Where should the agent escalate Customer Ember now?",
+    "expectedAnswer": "executive response desk",
+    "mustContain": ["executive response desk"],
+    "mustNotContain": ["standard support queue"],
+    "expectedFragments": ["ember-customer-tier", "ember-outage-status", "ember-escalation-rule"],
+    "failureCategories": ["multi_fragment_synthesis", "support_escalation"],
+    "tags": ["agent-workload", "support"],
+    "difficulty": "hard"
+  }
+]

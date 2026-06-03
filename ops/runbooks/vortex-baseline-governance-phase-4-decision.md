@@ -1,0 +1,138 @@
+# Vortex Baseline Governance Phase 4 Decision
+
+## Status
+
+Decision recorded on 2026-06-03.
+
+Phase 4 promotes the 20-case `v3.1-real-agent-workload` eval from candidate audit evidence into an explicit strict baseline profile. It does not change the default `eval-cli verify <report>` profile.
+
+## Decision
+
+- Approved strict profile: `official-v3.1-real-agent-workload-strict`
+- Dataset: `classpath:llm-memory-eval-set-v3-1-real-agent-workload.json`
+- Dataset version: `v3.1-real-agent-workload`
+- Baseline evidence: `20260603-v3-1-real-agent-workload-candidate-audit-003`
+- Default `verify <report>` profile: keep `official-v2-strict`
+- Compatibility profile retained: `candidate-v3.1-real-agent-workload`
+
+`candidate-v3.1-real-agent-workload` remains as the historical audit-only profile used before promotion. New `v3.1-real-agent-workload` eval reports should infer `official-v3.1-real-agent-workload-strict` as both the baseline profile and strict verifier profile.
+
+## Evidence
+
+Promotion evidence:
+
+- Audit stamp: `20260603-v3-1-real-agent-workload-candidate-audit-003`
+- Summary:
+  - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-1-real-agent-workload-candidate-audit-003/baseline-audit-summary.json:1)
+  - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-1-real-agent-workload-candidate-audit-003/baseline-audit-summary.md:1)
+- Rounds: `3`
+- Dataset: `classpath:llm-memory-eval-set-v3-1-real-agent-workload.json`
+- Model: `gpt-5.2`
+- Base URL: `https://sub2.congmingai.com`
+- L1 max tokens: `96`
+- Eval parallelism: `24`
+- Eval system prompt SHA-256: `e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3`
+
+Validated result:
+
+- `OverallPassed = true`
+- `AuditGate.Passed = true`
+- `ProfileGate.Passed = true`
+- `EvalSuccessCount = 3/3`
+- `CaseFailureCount = 0`
+- `CaseFailureGroupCount = 0`
+- `RuntimeErrorTypeCounts = {}`
+- `TransientRuntimeErrorCount = 0`
+- `Baseline-NoMemory = 0/20` in all three rounds
+- `Vortex-Memory = 20/20` in all three rounds
+- `Vortex-RecoveredMemory = 20/20` in all three rounds
+- `RecoveredAccuracy = 1.0` in all three rounds
+- `RecoveredL2HitRate = 1.0` in all three rounds
+
+Accepted post-promotion evidence:
+
+- Audit stamp: `20260603-v3-1-real-agent-workload-official-strict-audit-003`
+- Summary:
+  - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/baseline-audit-summary.json:1)
+  - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/baseline-audit-summary.md:1)
+- Rounds: `3`
+- Dataset: `classpath:llm-memory-eval-set-v3-1-real-agent-workload.json`
+- Model: `gpt-5.2`
+- Base URL: `https://sub2.congmingai.com`
+- L1 max tokens: `96`
+- Eval parallelism: `24`
+- Result:
+  - `OverallPassed = true`
+  - `AuditGate.Passed = true`
+  - `ProfileGate.Passed = true`
+  - `StrictVerifierPassed = true`
+  - `VerifierPassCount = 3/3`
+  - `EvalSuccessCount = 3/3`
+  - `CaseFailureCount = 0`
+  - `TransientRuntimeErrorCount = 0`
+  - `Baseline-NoMemory = 0/20` in all three rounds
+  - `Vortex-Memory = 20/20` in all three rounds
+  - `Vortex-RecoveredMemory = 20/20` in all three rounds
+  - `RecoveredAccuracy = 1.0` in all three rounds
+  - `RecoveredL2HitRate = 1.0` in all three rounds
+
+Rejected predecessors:
+
+- Audit stamp: `20260603-v3-1-real-agent-workload-candidate-audit-001`
+- Result: not accepted as baseline evidence
+- Reason: brittle judge anchors rejected correct or sufficiently grounded model answers.
+- Remediation: long answer anchors were split into shorter semantic anchors.
+
+- Audit stamp: `20260603-v3-1-real-agent-workload-candidate-audit-002`
+- Result: not accepted as baseline evidence
+- Reason: remaining brittle answer anchors and a floating threshold comparison issue.
+- Remediation: the affected case expectations were narrowed to stable facts, and audit gate threshold comparison now uses a small epsilon.
+
+## Strict Expectations
+
+`official-v3.1-real-agent-workload-strict` verifies a single 20-case report with these exact expectations:
+
+- `environment.datasetLocation = classpath:llm-memory-eval-set-v3-1-real-agent-workload.json`
+- `environment.generationBaseUrl = https://sub2.congmingai.com/v1`
+- `environment.generationModel = gpt-5.2`
+- `environment.l1MaxTokens = 96`
+- `environment.evalSystemPromptSha256 = e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3`
+- modes exactly:
+  - `Baseline-NoMemory`
+  - `Vortex-Memory`
+  - `Vortex-RecoveredMemory`
+- `Baseline-NoMemory = 0/20`
+- `Vortex-Memory = 20/20`
+- `Vortex-RecoveredMemory = 20/20`
+- `Vortex-RecoveredMemory.recoveredAccuracy = 1.0`
+- `Vortex-RecoveredMemory.recoveredL2HitRate = 1.0`
+
+## Migration Rules
+
+1. Keep default `verify <report>` on `official-v2-strict`.
+2. Use `--profile official-v3.1-real-agent-workload-strict` for v3.1 strict verification.
+3. Treat `candidate-v3.1-real-agent-workload` as historical audit evidence, not the profile for new official v3.1 reports.
+4. Do not commit ignored eval report artifacts unless a release decision explicitly promotes the artifact into tracked baseline evidence.
+
+## Rollback Plan
+
+If the v3.1 strict profile causes governance or CI friction:
+
+1. Revert `v3.1-real-agent-workload` dataset inference back to `candidate-v3.1-real-agent-workload` and an empty strict verifier profile.
+2. Keep `official-v3.1-real-agent-workload-strict` available only for explicit manual verification, or remove it if no longer needed.
+3. Leave the default verifier unchanged on `official-v2-strict`.
+4. Re-run v2, v2.1, v2.1 extended, v3, and v3.1 profile tests to confirm compatibility.
+
+## Acceptance Criteria
+
+Phase 4 is complete when:
+
+1. `eval-cli verify --list-profiles` shows `official-v3.1-real-agent-workload-strict`.
+2. `eval-cli verify --profile official-v3.1-real-agent-workload-strict --describe` shows the 20-case strict expectations.
+3. A synthetic 20-case v3.1 report passes `LlmMemoryEvalBaselineVerifier` under `official-v3.1-real-agent-workload-strict`.
+4. `v3.1-real-agent-workload` dataset inference returns:
+   - baseline profile: `official-v3.1-real-agent-workload-strict`
+   - strict verifier profile: `official-v3.1-real-agent-workload-strict`
+5. The default verifier remains `official-v2-strict`.
+6. Existing v2, v2.1, v2.1 extended, and v3 strict tests still pass.
+7. `ops/run-baseline-governance-check.ps1` passes as the no-generation local guard for the accepted v3.1 official strict evidence.

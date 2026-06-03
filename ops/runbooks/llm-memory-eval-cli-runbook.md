@@ -107,6 +107,20 @@ v3 工作负载说明和 Phase 3 晋升决策见：
 - [llm-memory-eval-v3-real-agent-workload.md](E:/1projects/claude/Vortex/ops/runbooks/llm-memory-eval-v3-real-agent-workload.md:1)
 - [vortex-baseline-governance-phase-3-decision.md](E:/1projects/claude/Vortex/ops/runbooks/vortex-baseline-governance-phase-3-decision.md:1)
 
+当前 v3.1 real agent workload 是正式 Agent 工作负载 strict 评测集：
+
+- 数据集：`classpath:llm-memory-eval-set-v3-1-real-agent-workload.json`
+- case 数量：20
+- baseline profile：`official-v3.1-real-agent-workload-strict`
+- strict verifier profile：`official-v3.1-real-agent-workload-strict`
+- historical audit-only profile：`candidate-v3.1-real-agent-workload`
+- 定位：在 v3 的基础上扩大到更难的长任务 Agent 记忆行为，包括多步状态更新、namespace alias 冲突、多片段策略应用、checkpoint 后续执行、历史干扰、工具策略和避免重复已完成工作。
+
+v3.1 工作负载提案和 Phase 4 晋升决策见：
+
+- [llm-memory-eval-v3-1-workload-proposal.md](E:/1projects/claude/Vortex/ops/runbooks/llm-memory-eval-v3-1-workload-proposal.md:1)
+- [vortex-baseline-governance-phase-4-decision.md](E:/1projects/claude/Vortex/ops/runbooks/vortex-baseline-governance-phase-4-decision.md:1)
+
 v2.1 正式升级提案见：
 
 - [llm-memory-eval-v2-1-upgrade-proposal.md](E:/1projects/claude/Vortex/ops/runbooks/llm-memory-eval-v2-1-upgrade-proposal.md:1)
@@ -225,7 +239,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-real-llm-memory-eval.ps1 `
 
 ## Baseline Profile
 
-真实 eval 的 baseline governance 当前包含八个 profile：
+真实 eval 的 baseline governance 当前包含十个 profile：
 
 1. `official-v2-strict`：正式 v2 单轮 strict baseline，默认用于 `verify <report>`。
 2. `audit-v2-stability`：v2 多轮稳定性 audit gate，不用于单个报告 strict verify。
@@ -235,6 +249,8 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-real-llm-memory-eval.ps1 `
 6. `candidate-v2.1-extended`：30-case v2.1 扩展集晋升前的历史 audit-only profile。
 7. `official-v3-real-agent-workload-strict`：正式 v3 Agent 工作负载单轮 strict baseline，要求 `0/12, 12/12, 12/12`。
 8. `audit-v3-real-agent-workload`：v3 真实 Agent 工作负载历史 audit-only profile，不用于单报告 strict verify。
+9. `official-v3.1-real-agent-workload-strict`：正式 v3.1 Agent 工作负载单轮 strict baseline，要求 `0/20, 20/20, 20/20`。
+10. `candidate-v3.1-real-agent-workload`：20-case v3.1 Agent 工作负载历史 candidate profile，不用于单报告 strict verify。
 
 列出当前 jar 支持的 profile：
 
@@ -308,6 +324,23 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
 ```
 
 脚本会自动推断 `BaselineProfile = official-v3-real-agent-workload-strict` 和 `StrictVerifierProfile = official-v3-real-agent-workload-strict`。历史 `audit-v3-real-agent-workload` 报告仍可作为 Phase 3 晋升证据，但新 v3 audit 应使用 official v3 strict profile。
+
+v3.1 real agent workload strict audit 示例：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1 `
+  -ApiKey '...' `
+  -BaseUrl 'https://sub2.congmingai.com' `
+  -Model 'gpt-5.2' `
+  -Rounds 3 `
+  -DatasetLocation 'classpath:llm-memory-eval-set-v3-1-real-agent-workload.json' `
+  -AuditStamp '20260603-v3-1-real-agent-workload-official-strict-audit' `
+  -EvalParallelism 24 `
+  -SkipComposeUp `
+  -SkipPackage
+```
+
+脚本会自动推断 `BaselineProfile = official-v3.1-real-agent-workload-strict` 和 `StrictVerifierProfile = official-v3.1-real-agent-workload-strict`。历史 `candidate-v3.1-real-agent-workload` 报告仍可作为 Phase 4 晋升证据，但新 v3.1 audit 应使用 official v3.1 strict profile。
 
 ## 手动运行方式
 
@@ -456,7 +489,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1
 
 审计脚本有两层结论：
 
-1. `StrictVerifierPassed`：每一轮都必须完全匹配当前 `StrictVerifierProfile` 对应的单轮 strict baseline。v2 默认是 `official-v2-strict`；v2.1 默认是 `official-v2.1-strict`；v2.1 extended 默认是 `official-v2.1-extended-strict`；v3 real agent workload 默认是 `official-v3-real-agent-workload-strict`。
+1. `StrictVerifierPassed`：每一轮都必须完全匹配当前 `StrictVerifierProfile` 对应的单轮 strict baseline。v2 默认是 `official-v2-strict`；v2.1 默认是 `official-v2.1-strict`；v2.1 extended 默认是 `official-v2.1-extended-strict`；v3 real agent workload 默认是 `official-v3-real-agent-workload-strict`；v3.1 real agent workload 默认是 `official-v3.1-real-agent-workload-strict`。
 2. `ProfileGate.Passed`：profile / dataset / report environment 一致性 gate。它要求脚本推断或显式传入的 `BaselineProfile`、`StrictVerifierProfile`、`DatasetVersion` 与每轮 report environment 中的 profile 字段一致。
 3. `AuditGate.Passed`：多轮真实 LLM 稳定性 gate。默认允许真实模型输出波动，但要求环境不漂移、NoMemory 保持 0、Memory/Recovered 的多轮均值达到阈值。
 4. `OverallPassed`：必须同时满足 `ProfileGate.Passed = true` 和 `AuditGate.Passed = true`。
@@ -577,5 +610,5 @@ powershell -ExecutionPolicy Bypass -File .\ops\cleanup-milvus-eval-collections.p
 2. `AuditGate.Passed = true`
 3. `ProfileGate.Passed = true`
 4. `OverallPassed = true`
-5. `StrictVerifierPassed` 的含义取决于 `StrictVerifierProfile`；v2 stability audit 可接受它为 `false`，v2.1 official strict audit 和 v2.1 extended strict audit 期望它为 `true`
+5. `StrictVerifierPassed` 的含义取决于 `StrictVerifierProfile`；v2 stability audit 可接受它为 `false`，v2.1 official strict audit、v2.1 extended strict audit、v3 official strict audit 和 v3.1 official strict audit 期望它为 `true`
 6. 如果 `ProfileGate.Passed = false`，优先看 `ProfileGate.Checks`；如果 `AuditGate.Passed = false`，优先看 `AuditGate.Checks`，再看 `CaseFailureSummary`

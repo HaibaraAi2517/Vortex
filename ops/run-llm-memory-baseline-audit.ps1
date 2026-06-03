@@ -128,6 +128,9 @@ function New-VerifyResult {
 
 function Get-DatasetVersion {
     param([string]$Location)
+    if ($Location -eq "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json") {
+        return "v3.1-real-agent-workload"
+    }
     if ($Location -eq "classpath:llm-memory-eval-set-v3-real-agent-workload.json") {
         return "v3-real-agent-workload"
     }
@@ -148,6 +151,9 @@ function Get-DatasetVersion {
 
 function Get-AuditBaselineProfile {
     param([string]$Location)
+    if ($Location -eq "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json") {
+        return "official-v3.1-real-agent-workload-strict"
+    }
     if ($Location -eq "classpath:llm-memory-eval-set-v3-real-agent-workload.json") {
         return "official-v3-real-agent-workload-strict"
     }
@@ -165,6 +171,9 @@ function Get-AuditBaselineProfile {
 
 function Get-StrictVerifierProfile {
     param([string]$Location)
+    if ($Location -eq "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json") {
+        return "official-v3.1-real-agent-workload-strict"
+    }
     if ($Location -eq "classpath:llm-memory-eval-set-v3-real-agent-workload.json") {
         return "official-v3-real-agent-workload-strict"
     }
@@ -182,6 +191,12 @@ function Get-StrictVerifierProfile {
 
 function Get-BaselineIdForProfile {
     param([string]$Profile)
+    if ($Profile -eq "official-v3.1-real-agent-workload-strict") {
+        return "20260603-v3-1-real-agent-workload-candidate-audit-003"
+    }
+    if ($Profile -eq "candidate-v3.1-real-agent-workload") {
+        return "candidate-v3.1-real-agent-workload"
+    }
     if ($Profile -eq "official-v3-real-agent-workload-strict") {
         return "20260603-v3-real-agent-workload-audit-002"
     }
@@ -281,6 +296,24 @@ function Get-BaselineProfileDefinition {
             BaselineId = "candidate-v3-real-agent-workload"
             DatasetVersion = "v3-real-agent-workload"
             DatasetLocation = "classpath:llm-memory-eval-set-v3-real-agent-workload.json"
+            StrictReportProfile = $false
+        }
+    }
+    if ($normalized -eq "official-v3.1-real-agent-workload-strict") {
+        return [pscustomobject]@{
+            Id = "official-v3.1-real-agent-workload-strict"
+            BaselineId = "20260603-v3-1-real-agent-workload-candidate-audit-003"
+            DatasetVersion = "v3.1-real-agent-workload"
+            DatasetLocation = "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json"
+            StrictReportProfile = $true
+        }
+    }
+    if ($normalized -eq "candidate-v3.1-real-agent-workload") {
+        return [pscustomobject]@{
+            Id = "candidate-v3.1-real-agent-workload"
+            BaselineId = "candidate-v3.1-real-agent-workload"
+            DatasetVersion = "v3.1-real-agent-workload"
+            DatasetLocation = "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json"
             StrictReportProfile = $false
         }
     }
@@ -413,6 +446,17 @@ function Test-BaselineProfileIdMatches {
     }
     if ($DatasetLocation -eq "classpath:llm-memory-eval-set-v3-real-agent-workload.json" `
             -and $Expected -eq "official-v3-real-agent-workload-strict" `
+            -and $AllowEmptyActual `
+            -and [string]::IsNullOrWhiteSpace($Actual)) {
+        return $true
+    }
+    if ($DatasetLocation -eq "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json" `
+            -and $Expected -eq "official-v3.1-real-agent-workload-strict" `
+            -and $Actual -eq "candidate-v3.1-real-agent-workload") {
+        return $true
+    }
+    if ($DatasetLocation -eq "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json" `
+            -and $Expected -eq "official-v3.1-real-agent-workload-strict" `
             -and $AllowEmptyActual `
             -and [string]::IsNullOrWhiteSpace($Actual)) {
         return $true
@@ -619,6 +663,7 @@ function New-AuditGateResult {
     $memoryMean = Get-MeanValue -Values $MemoryAccuracyValues
     $recoveredMean = Get-MeanValue -Values $RecoveredAccuracyValues
     $recoveredL2Mean = Get-MeanValue -Values $RecoveredL2HitRateValues
+    $thresholdEpsilon = 0.0000001
     $baselineMax = if (@($BaselineCorrectValues).Count -eq 0) { $null } else { ($BaselineCorrectValues | Measure-Object -Maximum).Maximum }
     $environmentStable = $completedRuns.Count -gt 0 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "DatasetLocation") -eq 1 `
@@ -646,17 +691,17 @@ function New-AuditGateResult {
             -Actual ("values=[{0}]" -f (Format-MetricSequence -Values $BaselineCorrectValues))
         New-AuditGateCheck `
             -Name "vortexMemoryMeanAccuracy" `
-            -Passed ($null -ne $memoryMean -and $memoryMean -ge $MinVortexMemoryMeanAccuracy -and @($MemoryAccuracyValues).Count -eq $RequestedRounds) `
+            -Passed ($null -ne $memoryMean -and ($memoryMean + $thresholdEpsilon) -ge $MinVortexMemoryMeanAccuracy -and @($MemoryAccuracyValues).Count -eq $RequestedRounds) `
             -Expected (">= " + (Format-Decimal $MinVortexMemoryMeanAccuracy)) `
             -Actual (Format-Decimal $memoryMean)
         New-AuditGateCheck `
             -Name "recoveredMeanAccuracy" `
-            -Passed ($null -ne $recoveredMean -and $recoveredMean -ge $MinRecoveredMeanAccuracy -and @($RecoveredAccuracyValues).Count -eq $RequestedRounds) `
+            -Passed ($null -ne $recoveredMean -and ($recoveredMean + $thresholdEpsilon) -ge $MinRecoveredMeanAccuracy -and @($RecoveredAccuracyValues).Count -eq $RequestedRounds) `
             -Expected (">= " + (Format-Decimal $MinRecoveredMeanAccuracy)) `
             -Actual (Format-Decimal $recoveredMean)
         New-AuditGateCheck `
             -Name "recoveredL2MeanHitRate" `
-            -Passed ($null -ne $recoveredL2Mean -and $recoveredL2Mean -ge $MinRecoveredL2MeanHitRate -and @($RecoveredL2HitRateValues).Count -eq $RequestedRounds) `
+            -Passed ($null -ne $recoveredL2Mean -and ($recoveredL2Mean + $thresholdEpsilon) -ge $MinRecoveredL2MeanHitRate -and @($RecoveredL2HitRateValues).Count -eq $RequestedRounds) `
             -Expected (">= " + (Format-Decimal $MinRecoveredL2MeanHitRate)) `
             -Actual (Format-Decimal $recoveredL2Mean)
     )

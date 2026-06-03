@@ -113,18 +113,7 @@ class LlmMemoryEvalBaselineVerifierTest {
     void verifyShouldPassForOfficialV3RealAgentWorkloadProfile(@org.junit.jupiter.api.io.TempDir Path tempDir)
             throws Exception {
         Path reportPath = tempDir.resolve("llm-memory-eval-v3-agent.json");
-        LlmMemoryEvalReport report = officialBaselineReport();
-        report.setTotalCases(12);
-        report.setTotalRuns(36);
-        report.getEnvironment().setDatasetLocation("classpath:llm-memory-eval-set-v3-real-agent-workload.json");
-        report.getEnvironment().setDatasetVersion("v3-real-agent-workload");
-        report.getEnvironment().setBaselineProfileId("official-v3-real-agent-workload-strict");
-        report.getEnvironment().setStrictVerifierProfileId("official-v3-real-agent-workload-strict");
-        report.getModeSummaries().get("Baseline-NoMemory").setTotal(12);
-        report.getModeSummaries().get("Vortex-Memory").setTotal(12);
-        report.getModeSummaries().get("Vortex-Memory").setCorrect(12);
-        report.getModeSummaries().get("Vortex-RecoveredMemory").setTotal(12);
-        report.getModeSummaries().get("Vortex-RecoveredMemory").setCorrect(12);
+        LlmMemoryEvalReport report = officialV3RealAgentWorkloadReport();
         JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
 
         LlmMemoryEvalBaselineVerifier verifier = new LlmMemoryEvalBaselineVerifier(JsonMapperFactory.create());
@@ -135,6 +124,67 @@ class LlmMemoryEvalBaselineVerifierTest {
         assertThat(result.getBaselineProfileId()).isEqualTo("official-v3-real-agent-workload-strict");
         assertThat(result.getDatasetVersion()).isEqualTo("v3-real-agent-workload");
         assertThat(result.getDrifts()).isEmpty();
+    }
+
+    @Test
+    void verifyShouldPassForOfficialV31RealAgentWorkloadProfile(@org.junit.jupiter.api.io.TempDir Path tempDir)
+            throws Exception {
+        Path reportPath = tempDir.resolve("llm-memory-eval-v3-1-agent.json");
+        LlmMemoryEvalReport report = officialV31RealAgentWorkloadReport();
+        JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
+
+        LlmMemoryEvalBaselineVerifier verifier = new LlmMemoryEvalBaselineVerifier(JsonMapperFactory.create());
+        LlmMemoryEvalBaselineVerificationResult result =
+                verifier.verify(reportPath, LlmMemoryEvalBaselineProfile.OFFICIAL_V3_1_REAL_AGENT_WORKLOAD_STRICT);
+
+        assertThat(result.isPassed()).isTrue();
+        assertThat(result.getBaselineProfileId()).isEqualTo("official-v3.1-real-agent-workload-strict");
+        assertThat(result.getDatasetVersion()).isEqualTo("v3.1-real-agent-workload");
+        assertThat(result.getDrifts()).isEmpty();
+    }
+
+    @Test
+    void verifyShouldRejectV3ReportWhenNoMemoryOrRecoveredMetricsDrift(
+            @org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+        Path reportPath = tempDir.resolve("llm-memory-eval-v3-agent-drifted.json");
+        LlmMemoryEvalReport report = officialV3RealAgentWorkloadReport();
+        report.getModeSummaries().get("Baseline-NoMemory").setCorrect(1);
+        report.getModeSummaries().get("Baseline-NoMemory").setAccuracy(1.0d / 12.0d);
+        report.getModeSummaries().get("Vortex-RecoveredMemory").setRecoveredL2HitRate(11.0d / 12.0d);
+        JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
+
+        LlmMemoryEvalBaselineVerifier verifier = new LlmMemoryEvalBaselineVerifier(JsonMapperFactory.create());
+        LlmMemoryEvalBaselineVerificationResult result =
+                verifier.verify(reportPath, LlmMemoryEvalBaselineProfile.OFFICIAL_V3_REAL_AGENT_WORKLOAD_STRICT);
+
+        assertThat(result.isPassed()).isFalse();
+        assertThat(result.getDrifts())
+                .extracting(LlmMemoryEvalBaselineVerificationResult.Drift::field)
+                .contains(
+                        "modeSummaries.Baseline-NoMemory.correct",
+                        "modeSummaries.Vortex-RecoveredMemory.recoveredL2HitRate");
+    }
+
+    @Test
+    void verifyShouldRejectV31ReportWhenNoMemoryOrRecoveredMetricsDrift(
+            @org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
+        Path reportPath = tempDir.resolve("llm-memory-eval-v3-1-agent-drifted.json");
+        LlmMemoryEvalReport report = officialV31RealAgentWorkloadReport();
+        report.getModeSummaries().get("Baseline-NoMemory").setCorrect(1);
+        report.getModeSummaries().get("Baseline-NoMemory").setAccuracy(1.0d / 20.0d);
+        report.getModeSummaries().get("Vortex-RecoveredMemory").setRecoveredL2HitRate(19.0d / 20.0d);
+        JsonMapperFactory.create().writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
+
+        LlmMemoryEvalBaselineVerifier verifier = new LlmMemoryEvalBaselineVerifier(JsonMapperFactory.create());
+        LlmMemoryEvalBaselineVerificationResult result =
+                verifier.verify(reportPath, LlmMemoryEvalBaselineProfile.OFFICIAL_V3_1_REAL_AGENT_WORKLOAD_STRICT);
+
+        assertThat(result.isPassed()).isFalse();
+        assertThat(result.getDrifts())
+                .extracting(LlmMemoryEvalBaselineVerificationResult.Drift::field)
+                .contains(
+                        "modeSummaries.Baseline-NoMemory.correct",
+                        "modeSummaries.Vortex-RecoveredMemory.recoveredL2HitRate");
     }
 
     @Test
@@ -186,6 +236,22 @@ class LlmMemoryEvalBaselineVerifierTest {
                 .isFalse();
     }
 
+    @Test
+    void v31RealAgentWorkloadShouldInferOfficialStrictProfileWithStrictVerifier() {
+        String datasetLocation = "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json";
+
+        assertThat(LlmMemoryEvalBaselineProfile.inferDatasetVersion(datasetLocation))
+                .isEqualTo("v3.1-real-agent-workload");
+        assertThat(LlmMemoryEvalBaselineProfile.inferAuditProfileId(datasetLocation))
+                .isEqualTo("official-v3.1-real-agent-workload-strict");
+        assertThat(LlmMemoryEvalBaselineProfile.inferStrictVerifierProfileId(datasetLocation))
+                .isEqualTo("official-v3.1-real-agent-workload-strict");
+        assertThat(LlmMemoryEvalBaselineProfile.OFFICIAL_V3_1_REAL_AGENT_WORKLOAD_STRICT.strictReportProfile())
+                .isTrue();
+        assertThat(LlmMemoryEvalBaselineProfile.CANDIDATE_V3_1_REAL_AGENT_WORKLOAD.strictReportProfile())
+                .isFalse();
+    }
+
     private LlmMemoryEvalReport officialBaselineReport() {
         return LlmMemoryEvalReport.builder()
                 .generatedAt(Instant.parse("2026-05-29T14:00:02.368131900Z"))
@@ -221,5 +287,37 @@ class LlmMemoryEvalBaselineVerifierTest {
                         .modes(List.of("Baseline-NoMemory", "Vortex-Memory", "Vortex-RecoveredMemory"))
                         .build())
                 .build();
+    }
+
+    private LlmMemoryEvalReport officialV3RealAgentWorkloadReport() {
+        LlmMemoryEvalReport report = officialBaselineReport();
+        report.setTotalCases(12);
+        report.setTotalRuns(36);
+        report.getEnvironment().setDatasetLocation("classpath:llm-memory-eval-set-v3-real-agent-workload.json");
+        report.getEnvironment().setDatasetVersion("v3-real-agent-workload");
+        report.getEnvironment().setBaselineProfileId("official-v3-real-agent-workload-strict");
+        report.getEnvironment().setStrictVerifierProfileId("official-v3-real-agent-workload-strict");
+        report.getModeSummaries().get("Baseline-NoMemory").setTotal(12);
+        report.getModeSummaries().get("Vortex-Memory").setTotal(12);
+        report.getModeSummaries().get("Vortex-Memory").setCorrect(12);
+        report.getModeSummaries().get("Vortex-RecoveredMemory").setTotal(12);
+        report.getModeSummaries().get("Vortex-RecoveredMemory").setCorrect(12);
+        return report;
+    }
+
+    private LlmMemoryEvalReport officialV31RealAgentWorkloadReport() {
+        LlmMemoryEvalReport report = officialBaselineReport();
+        report.setTotalCases(20);
+        report.setTotalRuns(60);
+        report.getEnvironment().setDatasetLocation("classpath:llm-memory-eval-set-v3-1-real-agent-workload.json");
+        report.getEnvironment().setDatasetVersion("v3.1-real-agent-workload");
+        report.getEnvironment().setBaselineProfileId("official-v3.1-real-agent-workload-strict");
+        report.getEnvironment().setStrictVerifierProfileId("official-v3.1-real-agent-workload-strict");
+        report.getModeSummaries().get("Baseline-NoMemory").setTotal(20);
+        report.getModeSummaries().get("Vortex-Memory").setTotal(20);
+        report.getModeSummaries().get("Vortex-Memory").setCorrect(20);
+        report.getModeSummaries().get("Vortex-RecoveredMemory").setTotal(20);
+        report.getModeSummaries().get("Vortex-RecoveredMemory").setCorrect(20);
+        return report;
     }
 }

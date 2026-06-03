@@ -393,6 +393,137 @@ class LlmMemoryEvalRunnerTest {
     }
 
     @Test
+    void runV3RealAgentWorkloadShouldMatchStrictBaselineWithoutCallingRealModel() {
+        List<LlmMemoryEvalCase> cases =
+                runner.loadCaseSet("classpath:llm-memory-eval-set-v3-real-agent-workload.json");
+        assertV3StyleWorkloadMatchesStrictShapeWithoutCallingRealModel(cases, 12);
+    }
+
+    @Test
+    void loadV31RealAgentWorkloadShouldBroadenHardAgentMemoryCoverageAsOfficialWorkload() {
+        List<LlmMemoryEvalCase> cases =
+                runner.loadCaseSet("classpath:llm-memory-eval-set-v3-1-real-agent-workload.json");
+
+        assertThat(cases).hasSize(20);
+        assertThat(cases)
+                .extracting(LlmMemoryEvalCase::getCaseId)
+                .containsExactly("v3.1-agent-001", "v3.1-agent-002", "v3.1-agent-003", "v3.1-agent-004",
+                        "v3.1-agent-005", "v3.1-agent-006", "v3.1-agent-007", "v3.1-agent-008",
+                        "v3.1-agent-009", "v3.1-agent-010", "v3.1-agent-011", "v3.1-agent-012",
+                        "v3.1-agent-013", "v3.1-agent-014", "v3.1-agent-015", "v3.1-agent-016",
+                        "v3.1-agent-017", "v3.1-agent-018", "v3.1-agent-019", "v3.1-agent-020");
+        assertThat(cases)
+                .allSatisfy(evalCase -> {
+                    assertThat(evalCase.getTags()).contains("agent-workload");
+                    assertThat(evalCase.getMemoryFragments()).hasSizeGreaterThanOrEqualTo(4);
+                    assertThat(evalCase.getExpectedFragments()).isNotEmpty();
+                    assertThat(evalCase.getFailureCategories()).isNotEmpty();
+                })
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v3.1-agent-002");
+                    assertThat(evalCase.getFailureCategories()).contains("namespace_collision");
+                    assertThat(evalCase.getMustNotContain()).contains("Pavel");
+                })
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v3.1-agent-008");
+                    assertThat(evalCase.getExpectedFragments()).hasSize(3);
+                    assertThat(evalCase.getFailureCategories()).contains("multi_fragment_synthesis");
+                })
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v3.1-agent-018");
+                    assertThat(evalCase.getFailureCategories()).contains("avoid_repeating_done_work");
+                    assertThat(evalCase.getExpectedAnswer()).isEqualTo("compare");
+                    assertThat(evalCase.getMustContain()).containsExactly("CDN logs", "origin latency samples");
+                    assertThat(evalCase.getMustNotContain()).contains("gather CDN logs");
+                })
+                .anySatisfy(evalCase -> {
+                    assertThat(evalCase.getCaseId()).isEqualTo("v3.1-agent-019");
+                    assertThat(evalCase.getExpectedAnswer()).isEqualTo("APAC");
+                    assertThat(evalCase.getMustContain()).containsExactly("APAC", "only");
+                });
+        assertThat(cases.stream().filter(evalCase -> evalCase.getExpectedFragments().size() >= 2))
+                .hasSizeGreaterThanOrEqualTo(6);
+    }
+
+    @Test
+    void runV31RealAgentWorkloadShouldPassDeterministicOfficialShapeWithoutCallingRealModel() {
+        List<LlmMemoryEvalCase> cases =
+                runner.loadCaseSet("classpath:llm-memory-eval-set-v3-1-real-agent-workload.json");
+        assertV3StyleWorkloadMatchesStrictShapeWithoutCallingRealModel(cases, 20);
+    }
+
+    private void assertV3StyleWorkloadMatchesStrictShapeWithoutCallingRealModel(
+            List<LlmMemoryEvalCase> cases,
+            int expectedTotalCases) {
+        Map<String, LlmMemoryEvalCase> casesById = cases.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        LlmMemoryEvalCase::getCaseId,
+                        evalCase -> evalCase));
+        when(generationServiceProvider.getIfAvailable()).thenReturn(request -> {
+            String mode = request.getMetadata().get("mode");
+            String caseId = request.getMetadata().get("caseId");
+            LlmMemoryEvalCase evalCase = casesById.get(caseId);
+            boolean hasExpectedMemory = evalCase != null && evalCase.getMemoryFragments().stream()
+                    .filter(fragment -> evalCase.getExpectedFragments().contains(fragment.getFragmentId()))
+                    .allMatch(fragment -> request.getUserPrompt().contains(fragment.getContent()));
+            String answer = !"Baseline-NoMemory".equals(mode) && hasExpectedMemory
+                    ? deterministicPassingAnswer(evalCase)
+                    : "memory insufficient";
+            return GenerationResult.builder()
+                    .content(answer)
+                    .latencyMs(1L)
+                    .build();
+        });
+
+        LlmMemoryEvalReport report = runner.run(cases, List.of(
+                LlmMemoryEvalMode.BASELINE_NO_MEMORY,
+                LlmMemoryEvalMode.VORTEX_MEMORY,
+                LlmMemoryEvalMode.VORTEX_RECOVERED_MEMORY));
+
+        assertThat(report.getTotalCases()).isEqualTo(expectedTotalCases);
+        assertThat(report.getTotalRuns()).isEqualTo(expectedTotalCases * 3);
+        assertThat(report.getResults()).hasSize(expectedTotalCases * 3);
+        assertThat(report.getModeSummaries()).satisfies(summaries -> {
+            assertThat(summaries.get("Baseline-NoMemory")).satisfies(summary -> {
+                assertThat(summary.getTotal()).isEqualTo(expectedTotalCases);
+                assertThat(summary.getCorrect()).isZero();
+                assertThat(summary.getAccuracy()).isEqualTo(0.0d);
+                assertThat(summary.getFeedbackSubmitted()).isZero();
+            });
+            assertThat(summaries.get("Vortex-Memory")).satisfies(summary -> {
+                assertThat(summary.getTotal()).isEqualTo(expectedTotalCases);
+                assertThat(summary.getCorrect()).isEqualTo(expectedTotalCases);
+                assertThat(summary.getAccuracy()).isEqualTo(1.0d);
+                assertThat(summary.getRecallHitRate()).isEqualTo(1.0d);
+                assertThat(summary.getFeedbackSubmitted()).isEqualTo(expectedTotalCases);
+            });
+            assertThat(summaries.get("Vortex-RecoveredMemory")).satisfies(summary -> {
+                assertThat(summary.getTotal()).isEqualTo(expectedTotalCases);
+                assertThat(summary.getCorrect()).isEqualTo(expectedTotalCases);
+                assertThat(summary.getAccuracy()).isEqualTo(1.0d);
+                assertThat(summary.getRecoveredRuns()).isEqualTo(expectedTotalCases);
+                assertThat(summary.getRecoveredAccuracy()).isEqualTo(1.0d);
+                assertThat(summary.getRecoveredL2HitRate()).isEqualTo(1.0d);
+                assertThat(summary.getFeedbackSubmitted()).isEqualTo(expectedTotalCases);
+            });
+        });
+        assertThat(report.getResults().stream()
+                .filter(result -> "Baseline-NoMemory".equals(result.getMode())))
+                .allSatisfy(result -> {
+                    assertThat(result.isCorrect()).isFalse();
+                    assertThat(result.isRecallHit()).isFalse();
+                    assertThat(result.getFailureReason()).isEqualTo(RuleBasedAnswerJudge.FAILURE_INSUFFICIENT_ANSWER);
+                });
+        assertThat(report.getResults().stream()
+                .filter(result -> "Vortex-RecoveredMemory".equals(result.getMode())))
+                .allSatisfy(result -> {
+                    assertThat(result.isCorrect()).isTrue();
+                    assertThat(result.getEvictedBeforeAnswer()).isTrue();
+                    assertThat(result.getRecalledFromTiers()).contains("L2");
+                });
+    }
+
+    @Test
     void runConfiguredModesShouldUseConfiguredDatasetLocation(@org.junit.jupiter.api.io.TempDir Path tempDir) throws Exception {
         Path datasetPath = tempDir.resolve("custom-eval-set.json");
         Files.writeString(datasetPath, """
@@ -880,13 +1011,19 @@ class LlmMemoryEvalRunnerTest {
         assertThat(plan.maxFillers()).isEqualTo(12);
     }
 
+    private String deterministicPassingAnswer(LlmMemoryEvalCase evalCase) {
+        List<String> anchors = evalCase.getMustContain() == null ? List.of() : evalCase.getMustContain();
+        return (evalCase.getExpectedAnswer() + " " + String.join(" ", anchors)).trim();
+    }
+
     private Map<String, String> loadExpectedAnswers() {
         Map<String, String> answers = new LinkedHashMap<>();
         try {
             List<String> datasets = List.of(
                     "classpath:llm-memory-eval-set.json",
                     "classpath:llm-memory-eval-set-v2.json",
-                    "classpath:llm-memory-eval-set-v3-real-agent-workload.json");
+                    "classpath:llm-memory-eval-set-v3-real-agent-workload.json",
+                    "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json");
             for (String dataset : datasets) {
                 for (LlmMemoryEvalCase evalCase : runner.loadCaseSet(dataset)) {
                     answers.put(evalCase.getCaseId(), evalCase.getExpectedAnswer());
