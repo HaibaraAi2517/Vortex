@@ -68,6 +68,7 @@ public class LlmMemoryEvalResult {
     private Integer generationHttpStatusCode;
     private Integer generationRequestBytes;
     private Integer generationResponseBytes;
+    private String actualGenerationModel;
     private long feedbackLatencyMs;
     private Integer promptTokens;
     private Integer completionTokens;

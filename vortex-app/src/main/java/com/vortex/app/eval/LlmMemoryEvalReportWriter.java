@@ -155,11 +155,12 @@ public class LlmMemoryEvalReportWriter {
                     .append(diagnostics == null ? "" : diagnostics.getEnrichTagRejectedCount()).append(" |\n");
         });
         builder.append("\n## Generation Telemetry\n\n");
-        builder.append("| CaseId | Mode | HTTP Status | Attempts | Req Bytes | Resp Bytes | Gen Total ns | Serialize ns | Request Build ns | HTTP ns | Decode ns | JSON Parse ns | Parse ns |\n");
-        builder.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+        builder.append("| CaseId | Mode | Actual Model | HTTP Status | Attempts | Req Bytes | Resp Bytes | Gen Total ns | Serialize ns | Request Build ns | HTTP ns | Decode ns | JSON Parse ns | Parse ns |\n");
+        builder.append("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
         safeList(report.getResults()).forEach(result -> builder.append("| ")
                 .append(result.getCaseId()).append(" | ")
                 .append(result.getMode()).append(" | ")
+                .append(formatNullable(result.getActualGenerationModel())).append(" | ")
                 .append(formatNullable(result.getGenerationHttpStatusCode())).append(" | ")
                 .append(formatNullable(result.getGenerationAttemptCount())).append(" | ")
                 .append(formatNullable(result.getGenerationRequestBytes())).append(" | ")
@@ -182,6 +183,9 @@ public class LlmMemoryEvalReportWriter {
         builder.append("- CLI Main Class: ").append(nullToEmpty(environment.getCliMainClass())).append('\n');
         builder.append("- Generation Base URL: ").append(nullToEmpty(environment.getGenerationBaseUrl())).append('\n');
         builder.append("- Generation Model: ").append(nullToEmpty(environment.getGenerationModel())).append('\n');
+        builder.append("- Actual Generation Models: ")
+                .append(sanitizeMarkdown(String.join(", ", safeList(environment.getActualGenerationModels()))))
+                .append('\n');
         builder.append("- Generation Timeout (ms): ").append(formatNullable(environment.getGenerationTimeoutMs())).append('\n');
         builder.append("- BGE Model Path: ").append(nullToEmpty(environment.getBgeModelPath())).append('\n');
         builder.append("- BGE Safe Hash Mode: ").append(environment.isBgeSafeHashMode()).append('\n');

@@ -27,6 +27,7 @@ class LlmMemoryEvalReportWriterTest {
                 .results(List.of(LlmMemoryEvalResult.builder()
                         .caseId("profile-001")
                         .mode("Vortex-Memory")
+                        .actualGenerationModel("gpt-5.4")
                         .question("q")
                         .generatedAnswer("a")
                         .correct(true)
@@ -73,6 +74,7 @@ class LlmMemoryEvalReportWriterTest {
                 .environment(LlmMemoryEvalEnvironmentSnapshot.builder()
                         .generationBaseUrl("https://sub2.congmingai.com/v1")
                         .generationModel("gpt-5.2")
+                        .actualGenerationModels(List.of("gpt-5.4"))
                         .generationTimeoutMs(30000L)
                         .bgeModelPath("E:/1projects/claude/Vortex/models/bge-small-zh")
                         .bgeSafeHashMode(false)
@@ -118,6 +120,7 @@ class LlmMemoryEvalReportWriterTest {
         String json = Files.readString(writtenReport.jsonPath());
         assertThat(markdown).contains("## Environment");
         assertThat(markdown).contains("Generation Base URL: https://sub2.congmingai.com/v1");
+        assertThat(markdown).contains("Actual Generation Models: gpt-5.4");
         assertThat(markdown).contains("Eval System Prompt SHA-256: 7f6d9c7d4f0cbe4f6c2c0e1b97c7b0f5b91f0d7d31ef9d0620d7f3c56f7f5a01");
         assertThat(markdown).contains("Eval System Prompt Chars: 512");
         assertThat(markdown).contains("Eval Parallelism: 32");
@@ -133,8 +136,10 @@ class LlmMemoryEvalReportWriterTest {
         assertThat(markdown).contains("profile-001 | Vortex-Memory | true | answer_missing_fact | generation_timeout | true | CSV | XLSX");
         assertThat(markdown).contains("profile-001 | Vortex-Memory |  | 1 | llm-memory-eval-memory | 1 | 1 | 1");
         assertThat(markdown).contains("## Generation Telemetry");
-        assertThat(markdown).contains("profile-001 | Vortex-Memory | 200 | 1 | 321 | 654");
+        assertThat(markdown).contains("profile-001 | Vortex-Memory | gpt-5.4 | 200 | 1 | 321 | 654");
         assertThat(json).contains("\"environment\"");
+        assertThat(json).contains("\"actualGenerationModels\" : [ \"gpt-5.4\" ]");
+        assertThat(json).contains("\"actualGenerationModel\" : \"gpt-5.4\"");
         assertThat(json).contains("\"recallDiagnostics\"");
         assertThat(json).contains("\"failureReason\" : \"answer_missing_fact\"");
         assertThat(json).contains("\"runtimeErrorType\" : \"generation_timeout\"");

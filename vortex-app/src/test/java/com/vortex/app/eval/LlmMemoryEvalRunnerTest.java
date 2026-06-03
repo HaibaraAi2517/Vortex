@@ -110,6 +110,7 @@ class LlmMemoryEvalRunnerTest {
                     : "memory insufficient";
             return GenerationResult.builder()
                     .content(answer)
+                    .model("provider-gpt-5.4")
                     .latencyMs(31L)
                     .latencyBreakdown(GenerationLatencyBreakdown.builder()
                             .requestBuildLatencyMs(3L)
@@ -258,6 +259,9 @@ class LlmMemoryEvalRunnerTest {
         assertThat(report.getModeSummaries().get("Baseline-NoMemory").getAccuracy()).isEqualTo(0.0d);
         assertThat(report.getModeSummaries().get("Vortex-Memory").getAccuracy()).isEqualTo(1.0d);
         assertThat(report.getModeSummaries().get("Vortex-Memory").getRecallHitRate()).isEqualTo(1.0d);
+        assertThat(report.getResults())
+                .extracting(LlmMemoryEvalResult::getActualGenerationModel)
+                .containsOnly("provider-gpt-5.4");
         assertThat(report.getRuntimeTelemetry()).satisfies(telemetry -> {
             assertThat(telemetry.getConfiguredParallelism()).isEqualTo(1);
             assertThat(telemetry.getActualWorkerCount()).isEqualTo(1);

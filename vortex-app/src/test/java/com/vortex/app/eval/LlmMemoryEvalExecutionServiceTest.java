@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,6 +25,9 @@ class LlmMemoryEvalExecutionServiceTest {
                 .generatedAt(Instant.now())
                 .totalCases(20)
                 .totalRuns(60)
+                .results(List.of(LlmMemoryEvalResult.builder()
+                        .actualGenerationModel("gpt-5.4")
+                        .build()))
                 .modeSummaries(Map.of(
                         "Baseline-NoMemory", LlmMemoryEvalReport.ModeSummary.builder()
                                 .total(20)
@@ -48,6 +52,7 @@ class LlmMemoryEvalExecutionServiceTest {
         assertThat(report.getTotalRuns()).isEqualTo(60);
         assertThat(report.getEnvironment()).isNotNull();
         assertThat(report.getEnvironment().getGenerationBaseUrl()).isEqualTo("https://sub2.congmingai.com/v1");
+        assertThat(report.getEnvironment().getActualGenerationModels()).containsExactly("gpt-5.4");
         verify(evalRunner).runConfiguredModes();
         verify(environmentSnapshotFactory).snapshot();
         try (var files = Files.list(tempDir)) {

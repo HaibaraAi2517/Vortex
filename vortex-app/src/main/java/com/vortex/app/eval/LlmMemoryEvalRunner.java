@@ -331,6 +331,7 @@ public class LlmMemoryEvalRunner {
                     .missingMustContain(judgment.missingMustContain())
                     .matchedForbiddenTerms(judgment.matchedForbiddenTerms())
                     .latencyMs(elapsedMillis(startedAt))
+                    .actualGenerationModel(generationResult.getModel())
                     .promptTokens(generationResult.getPromptTokens() != null
                             ? generationResult.getPromptTokens()
                             : prompt.promptTokens())

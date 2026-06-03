@@ -4,8 +4,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -27,6 +29,7 @@ public class LlmMemoryEvalExecutionService {
 
         LlmMemoryEvalReport report = evalRunner.runConfiguredModes();
         report.setEnvironment(environmentSnapshotFactory.snapshot());
+        report.getEnvironment().setActualGenerationModels(actualGenerationModels(report));
         if (properties.isWriteReport()) {
             LlmMemoryEvalReportWriter.WrittenReport writtenReport = reportWriter.write(report);
             log.info("LLM memory eval reports written json={} markdown={}",
@@ -60,5 +63,18 @@ public class LlmMemoryEvalExecutionService {
         return properties.getModes() == null
                 ? List.of()
                 : properties.getModes().stream().map(LlmMemoryEvalMode::reportName).toList();
+    }
+
+    private List<String> actualGenerationModels(LlmMemoryEvalReport report) {
+        Set<String> models = new LinkedHashSet<>();
+        if (report == null || report.getResults() == null) {
+            return List.of();
+        }
+        for (LlmMemoryEvalResult result : report.getResults()) {
+            if (result.getActualGenerationModel() != null && !result.getActualGenerationModel().isBlank()) {
+                models.add(result.getActualGenerationModel());
+            }
+        }
+        return List.copyOf(models);
     }
 }

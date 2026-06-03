@@ -665,10 +665,27 @@ function New-AuditGateResult {
     $recoveredL2Mean = Get-MeanValue -Values $RecoveredL2HitRateValues
     $thresholdEpsilon = 0.0000001
     $baselineMax = if (@($BaselineCorrectValues).Count -eq 0) { $null } else { ($BaselineCorrectValues | Measure-Object -Maximum).Maximum }
+    $actualGenerationModelSequences = @($completedRuns | ForEach-Object {
+        (@($_.ActualGenerationModels) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique) -join ","
+    })
+    $actualGenerationModelRecordedSequences = @($actualGenerationModelSequences | Where-Object {
+        -not [string]::IsNullOrWhiteSpace([string]$_)
+    })
+    $actualGenerationModels = @($completedRuns | ForEach-Object {
+        @($_.ActualGenerationModels)
+    } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
+    $actualGenerationModelsStable = $actualGenerationModelRecordedSequences.Count -eq 0 `
+        -or @($actualGenerationModelRecordedSequences | Sort-Object -Unique).Count -eq 1
+    $actualGenerationModelLabel = if ($actualGenerationModels.Count -eq 0) {
+        "not recorded"
+    } else {
+        $actualGenerationModels -join ","
+    }
     $environmentStable = $completedRuns.Count -gt 0 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "DatasetLocation") -eq 1 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "GenerationBaseUrl") -eq 1 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "GenerationModel") -eq 1 `
+        -and $actualGenerationModelsStable `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "L1MaxTokens") -eq 1 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "EvalSystemPromptSha256") -eq 1 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "EvalParallelism") -eq 1 `
@@ -682,8 +699,11 @@ function New-AuditGateResult {
         New-AuditGateCheck `
             -Name "environmentStable" `
             -Passed $environmentStable `
-            -Expected "all completed runs share dataset/baseUrl/model/l1MaxTokens/promptSha/parallelism/modes" `
-            -Actual ("completedRuns={0}" -f $completedRuns.Count)
+            -Expected "all completed runs share dataset/baseUrl/requestedModel/actualModelsWhenRecorded/l1MaxTokens/promptSha/parallelism/modes" `
+            -Actual ("completedRuns={0}; actualModels={1}; actualModelRunCount={2}" -f `
+                $completedRuns.Count, `
+                $actualGenerationModelLabel, `
+                $actualGenerationModelRecordedSequences.Count)
         New-AuditGateCheck `
             -Name "baselineNoMemoryMaxCorrect" `
             -Passed ($null -ne $baselineMax -and [double]$baselineMax -le $BaselineNoMemoryMaxCorrect -and @($BaselineCorrectValues).Count -eq $RequestedRounds) `
@@ -718,6 +738,9 @@ function New-AuditGateResult {
             RecoveredMeanAccuracy = $recoveredMean
             RecoveredL2MeanHitRate = $recoveredL2Mean
             BaselineNoMemoryMaxCorrect = $baselineMax
+            ActualGenerationModels = $actualGenerationModels
+            ActualGenerationModelRunCount = $actualGenerationModelRecordedSequences.Count
+            ActualGenerationModelsStable = $actualGenerationModelsStable
         }
         Checks = $checks
     }
@@ -1011,6 +1034,11 @@ function Import-ExistingRun {
     } else {
         1
     }
+    $actualGenerationModels = if ($report.environment.PSObject.Properties["actualGenerationModels"]) {
+        @($report.environment.actualGenerationModels | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
+    } else {
+        @()
+    }
     return [pscustomobject]@{
         Stamp = $RoundStamp
         ReportDir = $ReportDir
@@ -1025,6 +1053,7 @@ function Import-ExistingRun {
         StrictVerifierProfileId = $runStrictVerifierProfileId
         GenerationBaseUrl = $report.environment.generationBaseUrl
         GenerationModel = $report.environment.generationModel
+        ActualGenerationModels = $actualGenerationModels
         L1MaxTokens = $report.environment.l1MaxTokens
         EvalSystemPromptSha256 = $report.environment.evalSystemPromptSha256
         EvalParallelism = $runEvalParallelism
@@ -1333,6 +1362,7 @@ for ($round = 1; $round -le $Rounds; $round++) {
             StrictVerifierProfileId = if ($singleRun.PSObject.Properties["StrictVerifierProfileId"]) { $singleRun.StrictVerifierProfileId } else { $StrictVerifierProfile }
             GenerationBaseUrl = $singleRun.GenerationBaseUrl
             GenerationModel = $singleRun.GenerationModel
+            ActualGenerationModels = @($singleRun.ActualGenerationModels)
             L1MaxTokens = $singleRun.L1MaxTokens
             EvalSystemPromptSha256 = $singleRun.EvalSystemPromptSha256
             EvalParallelism = if ($singleRun.PSObject.Properties["EvalParallelism"]) { $singleRun.EvalParallelism } else { $EvalParallelism }
@@ -1362,6 +1392,7 @@ for ($round = 1; $round -le $Rounds; $round++) {
             StrictVerifierProfileId = $StrictVerifierProfile
             GenerationBaseUrl = $BaseUrl
             GenerationModel = $Model
+            ActualGenerationModels = @()
             L1MaxTokens = $L1MaxTokens
             EvalSystemPromptSha256 = $null
             EvalParallelism = $EvalParallelism
@@ -1396,6 +1427,16 @@ try {
     $caseFailureDetails = Get-CaseFailureDetails -Runs $completedRuns -DatasetCases $datasetCaseMap
     $caseFailureSummary = Get-CaseFailureSummary -Failures $caseFailureDetails -RoundCount $Rounds
     $runtimeTelemetryAggregate = New-RuntimeTelemetryAggregate -Runs $completedRuns
+    $actualGenerationModels = @($completedRuns | ForEach-Object {
+        @($_.ActualGenerationModels)
+    } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
+    $actualGenerationModelRunCount = @($completedRuns | Where-Object {
+        @($_.ActualGenerationModels | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0
+    }).Count
+    $actualGenerationModelsStable = $actualGenerationModelRunCount -eq 0 `
+        -or @($completedRuns | ForEach-Object {
+            (@($_.ActualGenerationModels) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique) -join ","
+        } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique).Count -eq 1
     $runtimeErrorTypeCounts = @($caseFailureDetails | Where-Object {
         $_.FailureReason -eq "runtime_error" -and -not [string]::IsNullOrWhiteSpace($_.RuntimeErrorType)
     } | Group-Object RuntimeErrorType | Sort-Object -Property @{Expression = "Count"; Descending = $true}, Name | ForEach-Object {
@@ -1472,6 +1513,9 @@ try {
             CaseFailureGroupCount = @($caseFailureSummary).Count
             RuntimeErrorTypeCounts = $runtimeErrorTypeCounts
             TransientRuntimeErrorCount = $transientRuntimeErrorCount
+            ActualGenerationModels = $actualGenerationModels
+            ActualGenerationModelRunCount = $actualGenerationModelRunCount
+            ActualGenerationModelsStable = $actualGenerationModelsStable
             RuntimeTelemetry = $runtimeTelemetryAggregate
         }
         AuditGate = $auditGate
@@ -1488,6 +1532,11 @@ try {
     $runtimeErrorTypeCountSummary = ($runtimeErrorTypeCounts | ForEach-Object {
         "{0}={1} transient={2}" -f $_.RuntimeErrorType, $_.Count, $_.TransientCount
     }) -join "; "
+    $actualGenerationModelsMarkdown = if ($actualGenerationModels.Count -eq 0) {
+        "not recorded"
+    } else {
+        $actualGenerationModels -join ", "
+    }
     $markdown = @(
         "# LLM Memory Baseline Audit"
         ""
@@ -1517,6 +1566,9 @@ try {
         "- Vortex-Memory accuracy values: $(Format-MetricSequence -Values $memoryAccuracyValues)"
         "- RecoveredAccuracy values: $(Format-MetricSequence -Values $recoveredAccuracyValues)"
         "- RecoveredL2HitRate values: $(Format-MetricSequence -Values $recoveredL2HitRateValues)"
+        "- Actual generation models: $actualGenerationModelsMarkdown"
+        "- Actual generation model run count: $actualGenerationModelRunCount"
+        "- Actual generation models stable: $actualGenerationModelsStable"
         "- Case failure count: $(@($caseFailureDetails).Count)"
         "- Case failure groups: $(@($caseFailureSummary).Count)"
         "- Transient runtime error count: $transientRuntimeErrorCount"

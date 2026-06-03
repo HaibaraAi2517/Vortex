@@ -15,6 +15,7 @@ public class LlmMemoryEvalEnvironmentSnapshot {
 
     private String generationBaseUrl;
     private String generationModel;
+    private List<String> actualGenerationModels;
     private Long generationTimeoutMs;
     private String bgeModelPath;
     private boolean bgeSafeHashMode;
