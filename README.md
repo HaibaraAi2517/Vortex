@@ -106,6 +106,8 @@ LLM memory baseline 的本地/CI 治理门禁不调用真实模型，也不需�
 powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1
 ```
 
+Evidence 目录规则见 [llm-memory-eval-evidence-assets.md](E:/1projects/claude/Vortex/ops/runbooks/llm-memory-eval-evidence-assets.md:1)。
+
 如果你希望 `verify` 后保留本地 compose 服务继续运行：
 
 ```bash
