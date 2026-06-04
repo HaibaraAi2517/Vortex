@@ -1,7 +1,7 @@
 param(
-    [string]$Profile = "official-v3-real-agent-workload-strict",
+    [string]$Profile = "official-v3.1-real-agent-workload-strict",
 
-    [string]$EvidenceStamp = "20260603-v3-real-agent-workload-official-strict-audit-001",
+    [string]$EvidenceStamp = "20260603-v3-1-real-agent-workload-official-strict-audit-003",
 
     [string]$ReportRoot = "ops/eval-reports",
 

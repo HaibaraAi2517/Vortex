@@ -1,0 +1,597 @@
+﻿{
+    "AuditStamp":  "20260603-v3-1-real-agent-workload-official-strict-audit-003",
+    "GeneratedAt":  "2026-06-03T11:25:11.1746305Z",
+    "BaselineId":  "20260603-v3-1-real-agent-workload-candidate-audit-003",
+    "BaselineProfile":  "official-v3.1-real-agent-workload-strict",
+    "DatasetVersion":  "v3.1-real-agent-workload",
+    "StrictVerifierProfile":  "official-v3.1-real-agent-workload-strict",
+    "OverallPassed":  true,
+    "StrictVerifierPassed":  true,
+    "Settings":  {
+                     "BaseUrl":  "https://sub2.congmingai.com",
+                     "Model":  "gpt-5.2",
+                     "DatasetLocation":  "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json",
+                     "DatasetVersion":  "v3.1-real-agent-workload",
+                     "BaselineProfile":  "official-v3.1-real-agent-workload-strict",
+                     "StrictVerifierProfile":  "official-v3.1-real-agent-workload-strict",
+                     "BgeModelPath":  "E:/1projects/claude/Vortex/models/bge-small-zh",
+                     "L1MaxTokens":  96,
+                     "Modes":  "BASELINE_NO_MEMORY,VORTEX_MEMORY,VORTEX_RECOVERED_MEMORY",
+                     "EvalParallelism":  24,
+                     "RequestedRounds":  3,
+                     "ReportRoot":  "ops/eval-reports",
+                     "BaselineNoMemoryMaxCorrect":  0,
+                     "MinVortexMemoryMeanAccuracy":  0.85,
+                     "MinRecoveredMeanAccuracy":  0.95,
+                     "MinRecoveredL2MeanHitRate":  0.95
+                 },
+    "Aggregate":  {
+                      "StartedAt":  "2026-06-03T11:22:33.2500036Z",
+                      "CompletedAt":  "2026-06-03T11:25:10.9854377Z",
+                      "TotalDurationSeconds":  157.735,
+                      "EvalSuccessCount":  3,
+                      "EvalFailureCount":  0,
+                      "VerifierPassCount":  3,
+                      "VerifierSkippedCount":  0,
+                      "VerifierFailCount":  0,
+                      "BaselineNoMemoryCorrectValues":  [
+                                                            0,
+                                                            0,
+                                                            0
+                                                        ],
+                      "VortexMemoryAccuracyValues":  [
+                                                         1,
+                                                         1,
+                                                         1
+                                                     ],
+                      "RecoveredAccuracyValues":  [
+                                                      1,
+                                                      1,
+                                                      1
+                                                  ],
+                      "RecoveredL2HitRateValues":  [
+                                                       1,
+                                                       1,
+                                                       1
+                                                   ],
+                      "CaseFailureCount":  0,
+                      "CaseFailureGroupCount":  0,
+                      "RuntimeErrorTypeCounts":  [
+
+                                                 ],
+                      "TransientRuntimeErrorCount":  0,
+                      "RuntimeTelemetry":  {
+                                               "PresentRunCount":  3,
+                                               "MissingRunCount":  0,
+                                               "ConfiguredParallelismValues":  [
+                                                                                   24,
+                                                                                   24,
+                                                                                   24
+                                                                               ],
+                                               "ActualWorkerCountValues":  [
+                                                                               20,
+                                                                               20,
+                                                                               20
+                                                                           ],
+                                               "ModePhasedParallelValues":  [
+                                                                                true
+                                                                            ],
+                                               "TotalElapsedMsValues":  [
+                                                                            41534,
+                                                                            36961,
+                                                                            39312
+                                                                        ],
+                                               "MeanTotalElapsedMs":  39269,
+                                               "MinTotalElapsedMs":  36961,
+                                               "MaxTotalElapsedMs":  41534,
+                                               "PhaseTimings":  [
+                                                                    {
+                                                                        "ModeIndex":  0,
+                                                                        "Mode":  "Baseline-NoMemory",
+                                                                        "RoundCount":  3,
+                                                                        "CaseCounts":  [
+                                                                                           20
+                                                                                       ],
+                                                                        "ElapsedMsValues":  [
+                                                                                                14991,
+                                                                                                5957,
+                                                                                                6495
+                                                                                            ],
+                                                                        "MeanElapsedMs":  9147.6666666666661,
+                                                                        "MinElapsedMs":  5957,
+                                                                        "MaxElapsedMs":  14991
+                                                                    },
+                                                                    {
+                                                                        "ModeIndex":  1,
+                                                                        "Mode":  "Vortex-Memory",
+                                                                        "RoundCount":  3,
+                                                                        "CaseCounts":  [
+                                                                                           20
+                                                                                       ],
+                                                                        "ElapsedMsValues":  [
+                                                                                                13220,
+                                                                                                15509,
+                                                                                                16436
+                                                                                            ],
+                                                                        "MeanElapsedMs":  15055,
+                                                                        "MinElapsedMs":  13220,
+                                                                        "MaxElapsedMs":  16436
+                                                                    },
+                                                                    {
+                                                                        "ModeIndex":  2,
+                                                                        "Mode":  "Vortex-RecoveredMemory",
+                                                                        "RoundCount":  3,
+                                                                        "CaseCounts":  [
+                                                                                           20
+                                                                                       ],
+                                                                        "ElapsedMsValues":  [
+                                                                                                13316,
+                                                                                                15492,
+                                                                                                16377
+                                                                                            ],
+                                                                        "MeanElapsedMs":  15061.666666666666,
+                                                                        "MinElapsedMs":  13316,
+                                                                        "MaxElapsedMs":  16377
+                                                                    }
+                                                                ]
+                                           }
+                  },
+    "AuditGate":  {
+                      "Passed":  true,
+                      "Thresholds":  {
+                                         "BaselineNoMemoryMaxCorrect":  0,
+                                         "MinVortexMemoryMeanAccuracy":  0.85,
+                                         "MinRecoveredMeanAccuracy":  0.95,
+                                         "MinRecoveredL2MeanHitRate":  0.95
+                                     },
+                      "Metrics":  {
+                                      "VortexMemoryMeanAccuracy":  1,
+                                      "RecoveredMeanAccuracy":  1,
+                                      "RecoveredL2MeanHitRate":  1,
+                                      "BaselineNoMemoryMaxCorrect":  0
+                                  },
+                      "Checks":  [
+                                     {
+                                         "Name":  "evalSuccessCount",
+                                         "Passed":  true,
+                                         "Expected":  "3/3",
+                                         "Actual":  "3/3",
+                                         "Details":  ""
+                                     },
+                                     {
+                                         "Name":  "environmentStable",
+                                         "Passed":  true,
+                                         "Expected":  "all completed runs share dataset/baseUrl/model/l1MaxTokens/promptSha/parallelism/modes",
+                                         "Actual":  "completedRuns=3",
+                                         "Details":  ""
+                                     },
+                                     {
+                                         "Name":  "baselineNoMemoryMaxCorrect",
+                                         "Passed":  true,
+                                         "Expected":  "max \u003c= 0",
+                                         "Actual":  "values=[0, 0, 0]",
+                                         "Details":  ""
+                                     },
+                                     {
+                                         "Name":  "vortexMemoryMeanAccuracy",
+                                         "Passed":  true,
+                                         "Expected":  "\u003e= 0.8500",
+                                         "Actual":  "1.0000",
+                                         "Details":  ""
+                                     },
+                                     {
+                                         "Name":  "recoveredMeanAccuracy",
+                                         "Passed":  true,
+                                         "Expected":  "\u003e= 0.9500",
+                                         "Actual":  "1.0000",
+                                         "Details":  ""
+                                     },
+                                     {
+                                         "Name":  "recoveredL2MeanHitRate",
+                                         "Passed":  true,
+                                         "Expected":  "\u003e= 0.9500",
+                                         "Actual":  "1.0000",
+                                         "Details":  ""
+                                     }
+                                 ]
+                  },
+    "ProfileGate":  {
+                        "Passed":  true,
+                        "Expected":  {
+                                         "DatasetLocation":  "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json",
+                                         "DatasetVersion":  "v3.1-real-agent-workload",
+                                         "BaselineProfile":  "official-v3.1-real-agent-workload-strict",
+                                         "StrictVerifierProfile":  "official-v3.1-real-agent-workload-strict"
+                                     },
+                        "Actual":  {
+                                       "DatasetLocation":  "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json",
+                                       "DatasetVersion":  "v3.1-real-agent-workload",
+                                       "BaselineProfile":  "official-v3.1-real-agent-workload-strict",
+                                       "StrictVerifierProfile":  "official-v3.1-real-agent-workload-strict",
+                                       "CompletedRuns":  3
+                                   },
+                        "Checks":  [
+                                       {
+                                           "Name":  "datasetVersion",
+                                           "Passed":  true,
+                                           "Expected":  "v3.1-real-agent-workload",
+                                           "Actual":  "v3.1-real-agent-workload",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "baselineProfileForDataset",
+                                           "Passed":  true,
+                                           "Expected":  "official-v3.1-real-agent-workload-strict",
+                                           "Actual":  "official-v3.1-real-agent-workload-strict",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "strictVerifierProfileForDataset",
+                                           "Passed":  true,
+                                           "Expected":  "official-v3.1-real-agent-workload-strict",
+                                           "Actual":  "official-v3.1-real-agent-workload-strict",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "baselineProfileDefinition",
+                                           "Passed":  true,
+                                           "Expected":  "known profile for v3.1-real-agent-workload/classpath:llm-memory-eval-set-v3-1-real-agent-workload.json",
+                                           "Actual":  "official-v3.1-real-agent-workload-strict",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "strictVerifierProfileDefinition",
+                                           "Passed":  true,
+                                           "Expected":  "strict-report profile for v3.1-real-agent-workload/classpath:llm-memory-eval-set-v3-1-real-agent-workload.json",
+                                           "Actual":  "official-v3.1-real-agent-workload-strict",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "runDatasetLocation",
+                                           "Passed":  true,
+                                           "Expected":  "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json",
+                                           "Actual":  "completedRuns=3",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "runDatasetVersion",
+                                           "Passed":  true,
+                                           "Expected":  "v3.1-real-agent-workload",
+                                           "Actual":  "completedRuns=3",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "runBaselineProfileId",
+                                           "Passed":  true,
+                                           "Expected":  "official-v3.1-real-agent-workload-strict",
+                                           "Actual":  "completedRuns=3",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "runStrictVerifierProfileId",
+                                           "Passed":  true,
+                                           "Expected":  "official-v3.1-real-agent-workload-strict",
+                                           "Actual":  "completedRuns=3",
+                                           "Details":  ""
+                                       },
+                                       {
+                                           "Name":  "runVerifyProfile",
+                                           "Passed":  true,
+                                           "Expected":  "official-v3.1-real-agent-workload-strict",
+                                           "Actual":  "completedRuns=3",
+                                           "Details":  ""
+                                       }
+                                   ]
+                    },
+    "CaseFailureSummary":  {
+
+                           },
+    "CaseFailureDetails":  {
+
+                           },
+    "Runs":  [
+                 {
+                     "RoundIndex":  1,
+                     "RoundStamp":  "20260603-v3-1-real-agent-workload-official-strict-audit-003-run01",
+                     "Status":  "completed",
+                     "DurationSeconds":  54.402,
+                     "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260603-v3-1-real-agent-workload-official-strict-audit-003\\runs\\20260603-v3-1-real-agent-workload-official-strict-audit-003-run01",
+                     "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260603-v3-1-real-agent-workload-official-strict-audit-003\\runs\\20260603-v3-1-real-agent-workload-official-strict-audit-003-run01\\llm-memory-eval-20260603-112324.json",
+                     "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260603-v3-1-real-agent-workload-official-strict-audit-003\\runs\\20260603-v3-1-real-agent-workload-official-strict-audit-003-run01\\llm-memory-eval-20260603-112324.md",
+                     "GeneratedAt":  "2026-06-03T11:23:24.291902700Z",
+                     "TotalCases":  20,
+                     "TotalRuns":  60,
+                     "DatasetLocation":  "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json",
+                     "DatasetVersion":  "v3.1-real-agent-workload",
+                     "BaselineProfileId":  "official-v3.1-real-agent-workload-strict",
+                     "StrictVerifierProfileId":  "official-v3.1-real-agent-workload-strict",
+                     "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
+                     "GenerationModel":  "gpt-5.2",
+                     "L1MaxTokens":  96,
+                     "EvalSystemPromptSha256":  "e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3",
+                     "EvalParallelism":  24,
+                     "Modes":  [
+                                   "Baseline-NoMemory",
+                                   "Vortex-Memory",
+                                   "Vortex-RecoveredMemory"
+                               ],
+                     "ModeSummaries":  {
+                                           "Baseline-NoMemory":  {
+                                                                     "total":  20,
+                                                                     "correct":  0,
+                                                                     "accuracy":  0.0,
+                                                                     "recallHitRate":  0.0,
+                                                                     "averageLatencyMs":  5100.3,
+                                                                     "recoveredRuns":  0,
+                                                                     "recoveredAccuracy":  0.0,
+                                                                     "recoveredL2HitRate":  0.0,
+                                                                     "feedbackSubmitted":  0,
+                                                                     "learningSampleCountDelta":  0,
+                                                                     "learningUpdateCountDelta":  0
+                                                                 },
+                                           "Vortex-Memory":  {
+                                                                 "total":  20,
+                                                                 "correct":  20,
+                                                                 "accuracy":  1.0,
+                                                                 "recallHitRate":  1.0,
+                                                                 "averageLatencyMs":  9369.75,
+                                                                 "recoveredRuns":  0,
+                                                                 "recoveredAccuracy":  0.0,
+                                                                 "recoveredL2HitRate":  0.0,
+                                                                 "feedbackSubmitted":  20,
+                                                                 "learningSampleCountDelta":  20,
+                                                                 "learningUpdateCountDelta":  1
+                                                             },
+                                           "Vortex-RecoveredMemory":  {
+                                                                          "total":  20,
+                                                                          "correct":  20,
+                                                                          "accuracy":  1.0,
+                                                                          "recallHitRate":  1.0,
+                                                                          "averageLatencyMs":  8900.65,
+                                                                          "recoveredRuns":  20,
+                                                                          "recoveredAccuracy":  1.0,
+                                                                          "recoveredL2HitRate":  1.0,
+                                                                          "feedbackSubmitted":  20,
+                                                                          "learningSampleCountDelta":  22,
+                                                                          "learningUpdateCountDelta":  0
+                                                                      }
+                                       },
+                     "RuntimeTelemetry":  {
+                                              "configuredParallelism":  24,
+                                              "actualWorkerCount":  20,
+                                              "modePhasedParallel":  true,
+                                              "totalElapsedMs":  41534,
+                                              "modePhaseTimings":  [
+                                                                       {
+                                                                           "modeIndex":  0,
+                                                                           "mode":  "Baseline-NoMemory",
+                                                                           "caseCount":  20,
+                                                                           "elapsedMs":  14991
+                                                                       },
+                                                                       {
+                                                                           "modeIndex":  1,
+                                                                           "mode":  "Vortex-Memory",
+                                                                           "caseCount":  20,
+                                                                           "elapsedMs":  13220
+                                                                       },
+                                                                       {
+                                                                           "modeIndex":  2,
+                                                                           "mode":  "Vortex-RecoveredMemory",
+                                                                           "caseCount":  20,
+                                                                           "elapsedMs":  13316
+                                                                       }
+                                                                   ]
+                                          },
+                     "Verify":  {
+                                    "Profile":  "official-v3.1-real-agent-workload-strict",
+                                    "Skipped":  false,
+                                    "Passed":  true,
+                                    "ExitCode":  0,
+                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260603-v3-1-real-agent-workload-official-strict-audit-003\\runs\\20260603-v3-1-real-agent-workload-official-strict-audit-003-run01\\llm-memory-eval-20260603-112324.json\u0027 still matches LLM memory eval baseline profile \u0027official-v3.1-real-agent-workload-strict\u0027 (baseline \u002720260603-v3-1-real-agent-workload-candidate-audit-003\u0027, dataset v3.1-real-agent-workload)."
+                                },
+                     "FailureMessage":  null
+                 },
+                 {
+                     "RoundIndex":  2,
+                     "RoundStamp":  "20260603-v3-1-real-agent-workload-official-strict-audit-003-run02",
+                     "Status":  "completed",
+                     "DurationSeconds":  50.142,
+                     "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260603-v3-1-real-agent-workload-official-strict-audit-003\\runs\\20260603-v3-1-real-agent-workload-official-strict-audit-003-run02",
+                     "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260603-v3-1-real-agent-workload-official-strict-audit-003\\runs\\20260603-v3-1-real-agent-workload-official-strict-audit-003-run02\\llm-memory-eval-20260603-112415.json",
+                     "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260603-v3-1-real-agent-workload-official-strict-audit-003\\runs\\20260603-v3-1-real-agent-workload-official-strict-audit-003-run02\\llm-memory-eval-20260603-112415.md",
+                     "GeneratedAt":  "2026-06-03T11:24:15.036441500Z",
+                     "TotalCases":  20,
+                     "TotalRuns":  60,
+                     "DatasetLocation":  "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json",
+                     "DatasetVersion":  "v3.1-real-agent-workload",
+                     "BaselineProfileId":  "official-v3.1-real-agent-workload-strict",
+                     "StrictVerifierProfileId":  "official-v3.1-real-agent-workload-strict",
+                     "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
+                     "GenerationModel":  "gpt-5.2",
+                     "L1MaxTokens":  96,
+                     "EvalSystemPromptSha256":  "e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3",
+                     "EvalParallelism":  24,
+                     "Modes":  [
+                                   "Baseline-NoMemory",
+                                   "Vortex-Memory",
+                                   "Vortex-RecoveredMemory"
+                               ],
+                     "ModeSummaries":  {
+                                           "Baseline-NoMemory":  {
+                                                                     "total":  20,
+                                                                     "correct":  0,
+                                                                     "accuracy":  0.0,
+                                                                     "recallHitRate":  0.0,
+                                                                     "averageLatencyMs":  3848.55,
+                                                                     "recoveredRuns":  0,
+                                                                     "recoveredAccuracy":  0.0,
+                                                                     "recoveredL2HitRate":  0.0,
+                                                                     "feedbackSubmitted":  0,
+                                                                     "learningSampleCountDelta":  0,
+                                                                     "learningUpdateCountDelta":  0
+                                                                 },
+                                           "Vortex-Memory":  {
+                                                                 "total":  20,
+                                                                 "correct":  20,
+                                                                 "accuracy":  1.0,
+                                                                 "recallHitRate":  1.0,
+                                                                 "averageLatencyMs":  9997.4,
+                                                                 "recoveredRuns":  0,
+                                                                 "recoveredAccuracy":  0.0,
+                                                                 "recoveredL2HitRate":  0.0,
+                                                                 "feedbackSubmitted":  20,
+                                                                 "learningSampleCountDelta":  22,
+                                                                 "learningUpdateCountDelta":  1
+                                                             },
+                                           "Vortex-RecoveredMemory":  {
+                                                                          "total":  20,
+                                                                          "correct":  20,
+                                                                          "accuracy":  1.0,
+                                                                          "recallHitRate":  1.0,
+                                                                          "averageLatencyMs":  9427.65,
+                                                                          "recoveredRuns":  20,
+                                                                          "recoveredAccuracy":  1.0,
+                                                                          "recoveredL2HitRate":  1.0,
+                                                                          "feedbackSubmitted":  20,
+                                                                          "learningSampleCountDelta":  24,
+                                                                          "learningUpdateCountDelta":  0
+                                                                      }
+                                       },
+                     "RuntimeTelemetry":  {
+                                              "configuredParallelism":  24,
+                                              "actualWorkerCount":  20,
+                                              "modePhasedParallel":  true,
+                                              "totalElapsedMs":  36961,
+                                              "modePhaseTimings":  [
+                                                                       {
+                                                                           "modeIndex":  0,
+                                                                           "mode":  "Baseline-NoMemory",
+                                                                           "caseCount":  20,
+                                                                           "elapsedMs":  5957
+                                                                       },
+                                                                       {
+                                                                           "modeIndex":  1,
+                                                                           "mode":  "Vortex-Memory",
+                                                                           "caseCount":  20,
+                                                                           "elapsedMs":  15509
+                                                                       },
+                                                                       {
+                                                                           "modeIndex":  2,
+                                                                           "mode":  "Vortex-RecoveredMemory",
+                                                                           "caseCount":  20,
+                                                                           "elapsedMs":  15492
+                                                                       }
+                                                                   ]
+                                          },
+                     "Verify":  {
+                                    "Profile":  "official-v3.1-real-agent-workload-strict",
+                                    "Skipped":  false,
+                                    "Passed":  true,
+                                    "ExitCode":  0,
+                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260603-v3-1-real-agent-workload-official-strict-audit-003\\runs\\20260603-v3-1-real-agent-workload-official-strict-audit-003-run02\\llm-memory-eval-20260603-112415.json\u0027 still matches LLM memory eval baseline profile \u0027official-v3.1-real-agent-workload-strict\u0027 (baseline \u002720260603-v3-1-real-agent-workload-candidate-audit-003\u0027, dataset v3.1-real-agent-workload)."
+                                },
+                     "FailureMessage":  null
+                 },
+                 {
+                     "RoundIndex":  3,
+                     "RoundStamp":  "20260603-v3-1-real-agent-workload-official-strict-audit-003-run03",
+                     "Status":  "completed",
+                     "DurationSeconds":  53.161,
+                     "ReportDir":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260603-v3-1-real-agent-workload-official-strict-audit-003\\runs\\20260603-v3-1-real-agent-workload-official-strict-audit-003-run03",
+                     "ReportJsonPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260603-v3-1-real-agent-workload-official-strict-audit-003\\runs\\20260603-v3-1-real-agent-workload-official-strict-audit-003-run03\\llm-memory-eval-20260603-112508.json",
+                     "ReportMarkdownPath":  "E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260603-v3-1-real-agent-workload-official-strict-audit-003\\runs\\20260603-v3-1-real-agent-workload-official-strict-audit-003-run03\\llm-memory-eval-20260603-112508.md",
+                     "GeneratedAt":  "2026-06-03T11:25:08.150938Z",
+                     "TotalCases":  20,
+                     "TotalRuns":  60,
+                     "DatasetLocation":  "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json",
+                     "DatasetVersion":  "v3.1-real-agent-workload",
+                     "BaselineProfileId":  "official-v3.1-real-agent-workload-strict",
+                     "StrictVerifierProfileId":  "official-v3.1-real-agent-workload-strict",
+                     "GenerationBaseUrl":  "https://sub2.congmingai.com/v1",
+                     "GenerationModel":  "gpt-5.2",
+                     "L1MaxTokens":  96,
+                     "EvalSystemPromptSha256":  "e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3",
+                     "EvalParallelism":  24,
+                     "Modes":  [
+                                   "Baseline-NoMemory",
+                                   "Vortex-Memory",
+                                   "Vortex-RecoveredMemory"
+                               ],
+                     "ModeSummaries":  {
+                                           "Baseline-NoMemory":  {
+                                                                     "total":  20,
+                                                                     "correct":  0,
+                                                                     "accuracy":  0.0,
+                                                                     "recallHitRate":  0.0,
+                                                                     "averageLatencyMs":  4631.15,
+                                                                     "recoveredRuns":  0,
+                                                                     "recoveredAccuracy":  0.0,
+                                                                     "recoveredL2HitRate":  0.0,
+                                                                     "feedbackSubmitted":  0,
+                                                                     "learningSampleCountDelta":  0,
+                                                                     "learningUpdateCountDelta":  0
+                                                                 },
+                                           "Vortex-Memory":  {
+                                                                 "total":  20,
+                                                                 "correct":  20,
+                                                                 "accuracy":  1.0,
+                                                                 "recallHitRate":  1.0,
+                                                                 "averageLatencyMs":  9586.0,
+                                                                 "recoveredRuns":  0,
+                                                                 "recoveredAccuracy":  0.0,
+                                                                 "recoveredL2HitRate":  0.0,
+                                                                 "feedbackSubmitted":  20,
+                                                                 "learningSampleCountDelta":  20,
+                                                                 "learningUpdateCountDelta":  1
+                                                             },
+                                           "Vortex-RecoveredMemory":  {
+                                                                          "total":  20,
+                                                                          "correct":  20,
+                                                                          "accuracy":  1.0,
+                                                                          "recallHitRate":  1.0,
+                                                                          "averageLatencyMs":  9584.4,
+                                                                          "recoveredRuns":  20,
+                                                                          "recoveredAccuracy":  1.0,
+                                                                          "recoveredL2HitRate":  1.0,
+                                                                          "feedbackSubmitted":  20,
+                                                                          "learningSampleCountDelta":  22,
+                                                                          "learningUpdateCountDelta":  0
+                                                                      }
+                                       },
+                     "RuntimeTelemetry":  {
+                                              "configuredParallelism":  24,
+                                              "actualWorkerCount":  20,
+                                              "modePhasedParallel":  true,
+                                              "totalElapsedMs":  39312,
+                                              "modePhaseTimings":  [
+                                                                       {
+                                                                           "modeIndex":  0,
+                                                                           "mode":  "Baseline-NoMemory",
+                                                                           "caseCount":  20,
+                                                                           "elapsedMs":  6495
+                                                                       },
+                                                                       {
+                                                                           "modeIndex":  1,
+                                                                           "mode":  "Vortex-Memory",
+                                                                           "caseCount":  20,
+                                                                           "elapsedMs":  16436
+                                                                       },
+                                                                       {
+                                                                           "modeIndex":  2,
+                                                                           "mode":  "Vortex-RecoveredMemory",
+                                                                           "caseCount":  20,
+                                                                           "elapsedMs":  16377
+                                                                       }
+                                                                   ]
+                                          },
+                     "Verify":  {
+                                    "Profile":  "official-v3.1-real-agent-workload-strict",
+                                    "Skipped":  false,
+                                    "Passed":  true,
+                                    "ExitCode":  0,
+                                    "Output":  "PASS: report \u0027E:\\1projects\\claude\\Vortex\\ops\\eval-reports\\20260603-v3-1-real-agent-workload-official-strict-audit-003\\runs\\20260603-v3-1-real-agent-workload-official-strict-audit-003-run03\\llm-memory-eval-20260603-112508.json\u0027 still matches LLM memory eval baseline profile \u0027official-v3.1-real-agent-workload-strict\u0027 (baseline \u002720260603-v3-1-real-agent-workload-candidate-audit-003\u0027, dataset v3.1-real-agent-workload)."
+                                },
+                     "FailureMessage":  null
+                 }
+             ]
+}

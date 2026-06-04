@@ -15,22 +15,22 @@
 
 ## 当前正式基线
 
-当前推荐作为正式对外引用的真实评测基线是 v2.1 extended official strict audit：
+当前推荐作为正式对外引用的真实评测基线是 v3.1 real agent workload official strict audit：
 
-- 数据集：`classpath:llm-memory-eval-set-v2-1-extended.json`
-- 报告批次：`20260603-v2-1-extended-post-summary-audit-004`
-- baseline profile：`official-v2.1-extended-strict`
-- strict verifier profile：`official-v2.1-extended-strict`
+- 数据集：`classpath:llm-memory-eval-set-v3-1-real-agent-workload.json`
+- 报告批次：`20260603-v3-1-real-agent-workload-official-strict-audit-003`
+- baseline profile：`official-v3.1-real-agent-workload-strict`
+- strict verifier profile：`official-v3.1-real-agent-workload-strict`
 - 汇总报告：
-  - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v2-1-extended-post-summary-audit-004/baseline-audit-summary.json:1)
-  - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v2-1-extended-post-summary-audit-004/baseline-audit-summary.md:1)
+  - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/baseline-audit-summary.json:1)
+  - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/baseline-audit-summary.md:1)
 - 结果：
   - `OverallPassed = true`
   - `AuditGate.Passed = true`
   - `ProfileGate.Passed = true`
   - `StrictVerifierPassed = true`
   - `VerifierPassCount = 3/3`
-  - `Baseline-NoMemory = 0/30` for all rounds
+  - `Baseline-NoMemory = 0/20` for all rounds
   - `Vortex-Memory accuracy = 1.0` for all rounds
   - `Vortex-RecoveredMemory recoveredAccuracy = 1.0` for all rounds
   - `RecoveredL2HitRate = 1.0` for all rounds
@@ -467,7 +467,7 @@ java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
 
 `ops/run-baseline-governance-check.ps1` 是本地/CI 用的 baseline governance 门禁。它不调用真实 generation API，不需要 API Key，也不会生成新的 eval 报告；它只检查当前代码中的 baseline profile、已接受的 official strict audit summary，以及既有每轮 JSON 报告是否仍通过 strict verifier。
 
-默认检查 v3 official strict baseline：
+默认检查 v3.1 official strict baseline：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1

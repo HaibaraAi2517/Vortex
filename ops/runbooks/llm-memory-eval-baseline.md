@@ -2,7 +2,27 @@
 
 ## 当前正式基线
 
-截至 2026-05-29，当前正式 LLM memory eval 基线定义如下：
+截至 2026-06-03，当前推荐作为正式对外引用的 LLM memory eval 基线是 v3.1 real agent workload official strict audit：
+
+- 数据集：`classpath:llm-memory-eval-set-v3-1-real-agent-workload.json`
+- generation model：`gpt-5.2`
+- generation base URL：`https://sub2.congmingai.com/v1`
+- BGE：真实 `BGE + ORT`
+- L1 max tokens：`96`
+- modes：
+  - `Baseline-NoMemory`
+  - `Vortex-Memory`
+  - `Vortex-RecoveredMemory`
+- baseline profile：`official-v3.1-real-agent-workload-strict`
+- strict verifier profile：`official-v3.1-real-agent-workload-strict`
+- accepted evidence：`20260603-v3-1-real-agent-workload-official-strict-audit-003`
+- 结果：3/3 轮通过，`Baseline-NoMemory = 0/20`，`Vortex-Memory = 20/20`，`Vortex-RecoveredMemory = 20/20`
+- eval system prompt SHA-256：`e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3`
+- eval system prompt chars：`833`
+- 评测 prompt 源：
+  - [LlmMemoryEvalProperties.java](E:/1projects/claude/Vortex/vortex-app/src/main/java/com/vortex/app/eval/LlmMemoryEvalProperties.java:38)
+
+历史 v2 单轮 strict baseline 定义如下：
 
 - 数据集：`classpath:llm-memory-eval-set-v2.json`
 - generation model：`gpt-5.2`
