@@ -3,7 +3,7 @@ param(
 
     [string]$EvidenceStamp = "20260603-v3-1-real-agent-workload-official-strict-audit-003",
 
-    [string]$ReportRoot = "ops/eval-reports",
+    [string]$ReportRoot = "ops/eval-fixtures/baselines",
 
     [ValidateRange(1, 10)]
     [int]$ExpectedRounds = 3,
@@ -62,7 +62,7 @@ $summaryJson = Join-Path $auditDir "baseline-audit-summary.json"
 Write-Host "Starting baseline governance check"
 Write-Host "  Profile        : $Profile"
 Write-Host "  Evidence Stamp : $EvidenceStamp"
-Write-Host "  Report Root    : $ReportRoot"
+Write-Host "  Evidence Root  : $ReportRoot"
 
 if (-not $SkipMavenTest) {
     Write-Host ""

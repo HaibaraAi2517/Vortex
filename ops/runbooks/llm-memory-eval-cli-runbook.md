@@ -22,8 +22,7 @@
 - baseline profile：`official-v3.1-real-agent-workload-strict`
 - strict verifier profile：`official-v3.1-real-agent-workload-strict`
 - 汇总报告：
-  - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/baseline-audit-summary.json:1)
-  - [baseline-audit-summary.md](E:/1projects/claude/Vortex/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/baseline-audit-summary.md:1)
+  - [baseline-audit-summary.json](E:/1projects/claude/Vortex/ops/eval-fixtures/baselines/20260603-v3-1-real-agent-workload-official-strict-audit-003/baseline-audit-summary.json:1)
 - 结果：
   - `OverallPassed = true`
   - `AuditGate.Passed = true`
@@ -465,7 +464,7 @@ java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
 
 ## 基线治理检查
 
-`ops/run-baseline-governance-check.ps1` 是本地/CI 用的 baseline governance 门禁。它不调用真实 generation API，不需要 API Key，也不会生成新的 eval 报告；它只检查当前代码中的 baseline profile、已接受的 official strict audit summary，以及既有每轮 JSON 报告是否仍通过 strict verifier。
+`ops/run-baseline-governance-check.ps1` 是本地/CI 用的 baseline governance 门禁。它不调用真实 generation API，不需要 API Key，也不会生成新的 eval 报告；它只检查当前代码中的 baseline profile、`ops/eval-fixtures/baselines` 中已接受的 official strict audit summary，以及既有每轮 JSON 报告是否仍通过 strict verifier。`ops/eval-reports` 继续作为本地真实 eval / audit 输出目录，默认不作为 CI fixture 来源。
 
 默认检查 v3.1 official strict baseline：
 

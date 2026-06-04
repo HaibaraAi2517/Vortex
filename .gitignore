@@ -26,6 +26,7 @@ Thumbs.db
 
 # Local/generated eval artifacts. Force-add intentionally promoted baselines.
 /ops/tmp/
+/ops/eval-fixtures/**/*.md
 /ops/eval-reports/*
 !/ops/eval-reports/20260529-real-bge-v2-006/
 !/ops/eval-reports/20260529-real-bge-v2-006/**
@@ -41,11 +42,3 @@ Thumbs.db
 !/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/runs/*/
 /ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/runs/*/*
 !/ops/eval-reports/20260603-v3-real-agent-workload-official-strict-audit-001/runs/*/llm-memory-eval-*.json
-!/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/
-/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/*
-!/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/baseline-audit-summary.json
-!/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/runs/
-/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/runs/*
-!/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/runs/*/
-/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/runs/*/*
-!/ops/eval-reports/20260603-v3-1-real-agent-workload-official-strict-audit-003/runs/*/llm-memory-eval-*.json

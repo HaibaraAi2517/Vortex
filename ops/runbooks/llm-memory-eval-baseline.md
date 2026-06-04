@@ -16,6 +16,7 @@
 - baseline profile：`official-v3.1-real-agent-workload-strict`
 - strict verifier profile：`official-v3.1-real-agent-workload-strict`
 - accepted evidence：`20260603-v3-1-real-agent-workload-official-strict-audit-003`
+- fixture path：`ops/eval-fixtures/baselines/20260603-v3-1-real-agent-workload-official-strict-audit-003`
 - 结果：3/3 轮通过，`Baseline-NoMemory = 0/20`，`Vortex-Memory = 20/20`，`Vortex-RecoveredMemory = 20/20`
 - eval system prompt SHA-256：`e61c3d26f927122fc933752ef727847b092c4e556a74047036c30cdbdecdfbe3`
 - eval system prompt chars：`833`
