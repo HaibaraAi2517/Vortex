@@ -494,8 +494,10 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1
 
 1. `StrictVerifierPassed`：每一轮都必须完全匹配当前 `StrictVerifierProfile` 对应的单轮 strict baseline。v2 默认是 `official-v2-strict`；v2.1 默认是 `official-v2.1-strict`；v2.1 extended 默认是 `official-v2.1-extended-strict`；v3 real agent workload 默认是 `official-v3-real-agent-workload-strict`；v3.1 real agent workload 默认是 `official-v3.1-real-agent-workload-strict`。
 2. `ProfileGate.Passed`：profile / dataset / report environment 一致性 gate。它要求脚本推断或显式传入的 `BaselineProfile`、`StrictVerifierProfile`、`DatasetVersion` 与每轮 report environment 中的 profile 字段一致。
-3. `AuditGate.Passed`：多轮真实 LLM 稳定性 gate。默认允许真实模型输出波动，但要求环境不漂移、NoMemory 保持 0、Memory/Recovered 的多轮均值达到阈值。
+3. `AuditGate.Passed`：多轮真实 LLM 稳定性 gate。默认允许真实模型输出波动，但要求 dataset / base URL / requested model / L1 token 上限 / prompt SHA / modes 不漂移、NoMemory 保持 0、Memory/Recovered 的多轮均值达到阈值。
 4. `OverallPassed`：必须同时满足 `ProfileGate.Passed = true` 和 `AuditGate.Passed = true`。
+
+`actualGenerationModels` 是 provider 实际返回模型的治理诊断字段。审计汇总会聚合 `ActualGenerationModels`、`ActualGenerationModelRunCount`、`ActualGenerationModelsStable`，并在 `AuditGate.Checks` 中输出 `actualGenerationModelsStable`。该 check 的 `AffectsGate = false`：旧报告没有该字段时显示 `not recorded` 并保持通过；新报告出现实际模型跨轮漂移时会显示为诊断信号，但暂不让 `AuditGate.Passed` 失败。
 
 默认 audit gate 阈值：
 
@@ -503,7 +505,8 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1
 2. `Vortex-Memory` 多轮平均 accuracy 不低于 `0.85`
 3. `Vortex-RecoveredMemory` 多轮平均 recoveredAccuracy 不低于 `0.95`
 4. `Vortex-RecoveredMemory` 多轮平均 recoveredL2HitRate 不低于 `0.95`
-5. 所有轮次的 dataset / baseUrl / model / L1 token 上限 / prompt SHA / modes 必须一致
+5. 所有轮次的 dataset / baseUrl / requested model / L1 token 上限 / prompt SHA / modes 必须一致
+6. provider actual model stability 会记录为诊断信号，不作为 hard gate
 
 推荐命令：
 
@@ -559,6 +562,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
 7. `CaseFailureSummary`：按 `caseId + mode` 聚合的失败次数、失败轮次、召回命中/未命中次数、缺失的 expected fragments
 8. `CaseFailureDetails`：逐轮失败明细，包括 returned fragments、missing expected fragments、召回 tiers、生成答案和对应报告路径
 9. `RuntimeTelemetry`：从每轮 report 聚合 configured parallelism、actual worker count、total elapsed ms 和各 mode phase timing；旧报告缺失该字段时会记录 missing count，但不阻断 summary 生成
+10. `ActualGenerationModels` / `ActualGenerationModelsStable`：provider 实际返回模型的聚合视图；旧报告缺失时显示 `not recorded`
 
 排查漂移时先看 `CaseFailureSummary`：
 

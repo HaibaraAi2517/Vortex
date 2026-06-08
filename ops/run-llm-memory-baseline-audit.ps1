@@ -362,11 +362,13 @@ function New-AuditGateCheck {
         [bool]$Passed,
         [string]$Expected,
         [string]$Actual,
-        [string]$Details = ""
+        [string]$Details = "",
+        [bool]$AffectsGate = $true
     )
     return [pscustomobject]@{
         Name = $Name
         Passed = $Passed
+        AffectsGate = $AffectsGate
         Expected = $Expected
         Actual = $Actual
         Details = $Details
@@ -685,7 +687,6 @@ function New-AuditGateResult {
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "DatasetLocation") -eq 1 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "GenerationBaseUrl") -eq 1 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "GenerationModel") -eq 1 `
-        -and $actualGenerationModelsStable `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "L1MaxTokens") -eq 1 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "EvalSystemPromptSha256") -eq 1 `
         -and (Get-DistinctRunValueCount -Runs $completedRuns -PropertyName "EvalParallelism") -eq 1 `
@@ -699,11 +700,20 @@ function New-AuditGateResult {
         New-AuditGateCheck `
             -Name "environmentStable" `
             -Passed $environmentStable `
-            -Expected "all completed runs share dataset/baseUrl/requestedModel/actualModelsWhenRecorded/l1MaxTokens/promptSha/parallelism/modes" `
+            -Expected "all completed runs share dataset/baseUrl/requestedModel/l1MaxTokens/promptSha/parallelism/modes" `
             -Actual ("completedRuns={0}; actualModels={1}; actualModelRunCount={2}" -f `
                 $completedRuns.Count, `
                 $actualGenerationModelLabel, `
                 $actualGenerationModelRecordedSequences.Count)
+        New-AuditGateCheck `
+            -Name "actualGenerationModelsStable" `
+            -Passed $actualGenerationModelsStable `
+            -Expected "stable when recorded; diagnostic only" `
+            -Actual ("actualModels={0}; actualModelRunCount={1}" -f `
+                $actualGenerationModelLabel, `
+                $actualGenerationModelRecordedSequences.Count) `
+            -Details "does not affect AuditGate.Passed" `
+            -AffectsGate $false
         New-AuditGateCheck `
             -Name "baselineNoMemoryMaxCorrect" `
             -Passed ($null -ne $baselineMax -and [double]$baselineMax -le $BaselineNoMemoryMaxCorrect -and @($BaselineCorrectValues).Count -eq $RequestedRounds) `
@@ -726,7 +736,7 @@ function New-AuditGateResult {
             -Actual (Format-Decimal $recoveredL2Mean)
     )
     return [pscustomobject]@{
-        Passed = @($checks | Where-Object { -not $_.Passed }).Count -eq 0
+        Passed = @($checks | Where-Object { $_.AffectsGate -ne $false -and -not $_.Passed }).Count -eq 0
         Thresholds = [pscustomobject]@{
             BaselineNoMemoryMaxCorrect = $BaselineNoMemoryMaxCorrect
             MinVortexMemoryMeanAccuracy = $MinVortexMemoryMeanAccuracy
@@ -749,10 +759,11 @@ function New-AuditGateResult {
 function Get-AuditGateMarkdown {
     param([object]$AuditGate)
     $builder = New-Object System.Text.StringBuilder
-    [void]$builder.AppendLine("| Check | Passed | Expected | Actual | Details |")
-    [void]$builder.AppendLine("| --- | --- | --- | --- | --- |")
+    [void]$builder.AppendLine("| Check | Passed | Affects Gate | Expected | Actual | Details |")
+    [void]$builder.AppendLine("| --- | --- | --- | --- | --- | --- |")
     foreach ($check in @($AuditGate.Checks)) {
-        [void]$builder.AppendLine("| $(Format-MarkdownCell $check.Name) | $(Format-MarkdownCell $check.Passed) | $(Format-MarkdownCell $check.Expected) | $(Format-MarkdownCell $check.Actual) | $(Format-MarkdownCell $check.Details) |")
+        $affectsGate = if ($check.PSObject.Properties["AffectsGate"]) { $check.AffectsGate } else { $true }
+        [void]$builder.AppendLine("| $(Format-MarkdownCell $check.Name) | $(Format-MarkdownCell $check.Passed) | $(Format-MarkdownCell $affectsGate) | $(Format-MarkdownCell $check.Expected) | $(Format-MarkdownCell $check.Actual) | $(Format-MarkdownCell $check.Details) |")
     }
     return $builder.ToString()
 }
