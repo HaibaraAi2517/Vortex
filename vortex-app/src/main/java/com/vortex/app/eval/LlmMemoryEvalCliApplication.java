@@ -14,6 +14,7 @@ import java.nio.file.Path;
 public final class LlmMemoryEvalCliApplication {
 
     private static final String VERIFY_COMMAND = "verify";
+    private static final String LEARNING_COMMAND = "learning";
     private static final String PROFILE_TYPE_STRICT_REPORT = "strict-report";
     private static final String PROFILE_TYPE_AUDIT_ONLY = "audit-only";
 
@@ -28,6 +29,12 @@ public final class LlmMemoryEvalCliApplication {
     static int execute(String[] args) {
         if (isVerifyCommand(args)) {
             return executeVerify(args);
+        }
+        if (isLearningCommand(args)) {
+            if (isLearningVerifyCommand(args)) {
+                return executeLearningVerify(args);
+            }
+            return executeLearningRun(args);
         }
         return executeEvalRun(args);
     }
@@ -57,6 +64,58 @@ public final class LlmMemoryEvalCliApplication {
             exitCode = 1;
         }
         return exitCode;
+    }
+
+    private static int executeLearningRun(String[] args) {
+        ConfigurableApplicationContext context = null;
+        int exitCode = 1;
+        try {
+            context = new SpringApplicationBuilder(VortexApplication.class)
+                    .web(WebApplicationType.NONE)
+                    .properties(
+                            "vortex.eval.run-on-startup=false",
+                            "spring.main.banner-mode=off")
+                    .run(trimCommand(args));
+            LearningMemoryEvalExecutionService executionService =
+                    context.getBean(LearningMemoryEvalExecutionService.class);
+            executionService.executeConfiguredRun();
+            exitCode = SpringApplication.exit(context, () -> 0);
+        } catch (RuntimeException e) {
+            if (context != null) {
+                try {
+                    SpringApplication.exit(context, () -> 1);
+                } catch (RuntimeException closeError) {
+                    log.warn("Failed to close CLI application context cleanly: {}", closeError.getMessage());
+                }
+            }
+            log.error("Learning memory eval CLI run failed: {}", e.getMessage(), e);
+            exitCode = 1;
+        }
+        return exitCode;
+    }
+
+    private static int executeLearningVerify(String[] args) {
+        try {
+            LearningVerifyCommand request = parseLearningVerifyCommand(args);
+            LearningMemoryEvalProperties properties = new LearningMemoryEvalProperties();
+            properties.setProfileId(request.profileId());
+            LearningMemoryEvalVerifier verifier = new LearningMemoryEvalVerifier(
+                    JsonMapperFactory.create(),
+                    properties);
+            LearningMemoryEvalVerificationResult result = verifier.verify(request.reportPath(), request.profileId());
+            if (result.isPassed()) {
+                System.out.println(result.renderHumanReadable());
+                return 0;
+            }
+            System.err.println(result.renderHumanReadable());
+            return 2;
+        } catch (IllegalArgumentException e) {
+            System.err.println(e.getMessage());
+            return 1;
+        } catch (RuntimeException e) {
+            log.error("Learning memory eval verification failed: {}", e.getMessage(), e);
+            return 1;
+        }
     }
 
     private static int executeVerify(String[] args) {
@@ -91,6 +150,27 @@ public final class LlmMemoryEvalCliApplication {
         return args != null
                 && args.length > 0
                 && VERIFY_COMMAND.equalsIgnoreCase(args[0]);
+    }
+
+    private static boolean isLearningCommand(String[] args) {
+        return args != null
+                && args.length > 0
+                && LEARNING_COMMAND.equalsIgnoreCase(args[0]);
+    }
+
+    private static boolean isLearningVerifyCommand(String[] args) {
+        return args != null
+                && args.length > 1
+                && "verify".equalsIgnoreCase(args[1]);
+    }
+
+    private static String[] trimCommand(String[] args) {
+        if (args == null || args.length <= 1) {
+            return new String[0];
+        }
+        String[] trimmed = new String[args.length - 1];
+        System.arraycopy(args, 1, trimmed, 0, trimmed.length);
+        return trimmed;
     }
 
     private static VerifyCommand parseVerifyCommand(String[] args) {
@@ -151,6 +231,35 @@ public final class LlmMemoryEvalCliApplication {
         return new VerifyCommand(Path.of(reportPath).toAbsolutePath().normalize(), profile, false, false);
     }
 
+    private static LearningVerifyCommand parseLearningVerifyCommand(String[] args) {
+        if (args == null || args.length < 2 || !isLearningVerifyCommand(args)) {
+            throw new IllegalArgumentException(learningVerifyUsage());
+        }
+        String profileId = new LearningMemoryEvalProperties().getProfileId();
+        String reportPath = null;
+        int index = 2;
+        while (index < args.length) {
+            String current = args[index];
+            if ("--profile".equals(current)) {
+                if (index + 1 >= args.length) {
+                    throw new IllegalArgumentException(learningVerifyUsage());
+                }
+                profileId = args[index + 1];
+                index += 2;
+                continue;
+            }
+            if (reportPath != null) {
+                throw new IllegalArgumentException(learningVerifyUsage());
+            }
+            reportPath = current;
+            index++;
+        }
+        if (reportPath == null) {
+            throw new IllegalArgumentException(learningVerifyUsage());
+        }
+        return new LearningVerifyCommand(Path.of(reportPath).toAbsolutePath().normalize(), profileId);
+    }
+
     private static void printProfileList() {
         System.out.println("LLM memory eval baseline profiles:");
         for (LlmMemoryEvalBaselineProfile profile : LlmMemoryEvalBaselineProfile.allProfiles()) {
@@ -200,10 +309,18 @@ public final class LlmMemoryEvalCliApplication {
                 + "[--profile <baseline-profile-id>] --describe";
     }
 
+    private static String learningVerifyUsage() {
+        return "Usage: java -jar vortex-app-<version>-eval-cli.jar learning verify "
+                + "[--profile <learning-profile-id>] <path-to-learning-memory-eval-report.json>";
+    }
+
     private record VerifyCommand(
             Path reportPath,
             LlmMemoryEvalBaselineProfile profile,
             boolean listProfiles,
             boolean describeProfile) {
+    }
+
+    private record LearningVerifyCommand(Path reportPath, String profileId) {
     }
 }

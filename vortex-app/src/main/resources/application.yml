@@ -154,6 +154,21 @@ vortex:
     eviction-filler-fragments: ${VORTEX_EVAL_EVICTION_FILLER_FRAGMENTS:6}
     eviction-filler-tokens: ${VORTEX_EVAL_EVICTION_FILLER_TOKENS:0}
     eviction-filler-importance: ${VORTEX_EVAL_EVICTION_FILLER_IMPORTANCE:0.95}
+    learning:
+      profile-id: ${VORTEX_LEARNING_EVAL_PROFILE_ID:learning-v1-agent-feedback-audit}
+      dataset-location: ${VORTEX_LEARNING_EVAL_DATASET_LOCATION:classpath:llm-memory-eval-set-learning-v1-agent-feedback.json}
+      dataset-version: ${VORTEX_LEARNING_EVAL_DATASET_VERSION:learning-v1-agent-feedback}
+      write-report: ${VORTEX_LEARNING_EVAL_WRITE_REPORT:true}
+      report-output-dir: ${VORTEX_LEARNING_EVAL_REPORT_OUTPUT_DIR:ops/eval-reports}
+      default-top-k: ${VORTEX_LEARNING_EVAL_TOP_K:4}
+      default-token-budget: ${VORTEX_LEARNING_EVAL_TOKEN_BUDGET:1024}
+      default-memory-scenario: ${VORTEX_LEARNING_EVAL_MEMORY_SCENARIO:CHAT}
+      min-scenario-count: ${VORTEX_LEARNING_EVAL_MIN_SCENARIO_COUNT:5}
+      min-feedback-sample-count: ${VORTEX_LEARNING_EVAL_MIN_FEEDBACK_SAMPLE_COUNT:30}
+      min-probe-all-relevant-hit-rate: ${VORTEX_LEARNING_EVAL_MIN_PROBE_ALL_RELEVANT_HIT_RATE:0.90}
+      min-probe-average-ndcg: ${VORTEX_LEARNING_EVAL_MIN_PROBE_AVERAGE_NDCG:0.90}
+      min-rank-improved-scenario-count: ${VORTEX_LEARNING_EVAL_MIN_RANK_IMPROVED_SCENARIO_COUNT:0}
+      min-ndcg-improved-scenario-count: ${VORTEX_LEARNING_EVAL_MIN_NDCG_IMPROVED_SCENARIO_COUNT:0}
 
 logging:
   level:

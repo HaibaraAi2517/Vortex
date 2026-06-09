@@ -1,0 +1,317 @@
+[
+  {
+    "scenarioId": "learning-v1-preference-disambiguation-001",
+    "namespace": "learning-v1-agent-feedback",
+    "memoryScenario": "CHAT",
+    "topK": 4,
+    "tokenBudget": 1024,
+    "tags": ["learning-v1", "preference-disambiguation"],
+    "fragments": [
+      {
+        "fragmentId": "pref-current-runtime",
+        "content": "Current team preference for the Atlas release is to run the migration checker in dry-run mode before any deploy.",
+        "relevant": true,
+        "importance": 0.98
+      },
+      {
+        "fragmentId": "pref-current-owner",
+        "content": "The Atlas release owner for migration checker questions is Mira from platform operations.",
+        "relevant": true,
+        "importance": 0.96
+      },
+      {
+        "fragmentId": "pref-old-runtime",
+        "content": "Last quarter the Atlas release notes allowed direct deploy mode for the migration checker.",
+        "relevant": false,
+        "importance": 0.20
+      },
+      {
+        "fragmentId": "pref-sandbox-runtime",
+        "content": "Sandbox experiments may skip the migration checker when the branch is disposable.",
+        "relevant": false,
+        "importance": 0.22
+      },
+      {
+        "fragmentId": "pref-unrelated-owner",
+        "content": "Kai owns the billing export cleanup and does not own Atlas release migration checks.",
+        "relevant": false,
+        "importance": 0.18
+      },
+      {
+        "fragmentId": "pref-archive-note",
+        "content": "Archived Atlas release discussions mention a retired deployment checklist from the pilot phase.",
+        "relevant": false,
+        "importance": 0.16
+      }
+    ],
+    "calibrationQueries": [
+      "For the current Atlas release, how should the migration checker be run and who owns the question?",
+      "Which migration checker mode is the current team preference for Atlas?",
+      "Who is responsible for Atlas migration checker questions now?",
+      "For Atlas deploy preparation, should the checker use dry-run or direct deploy mode?",
+      "Which current Atlas memory should be kept for migration checker decisions?",
+      "When Atlas migration checker guidance conflicts with old notes, which current facts matter?"
+    ],
+    "feedback": {
+      "usedFragmentIds": ["pref-current-runtime", "pref-current-owner"],
+      "answerAccepted": true,
+      "regretRate": 0.0
+    },
+    "probeQueries": [
+      "For the Atlas release today, name the migration checker mode and owner.",
+      "Which Atlas migration checker guidance should be recalled for a deploy decision?"
+    ]
+  },
+  {
+    "scenarioId": "learning-v1-current-vs-history-001",
+    "namespace": "learning-v1-agent-feedback",
+    "memoryScenario": "CHAT",
+    "topK": 4,
+    "tokenBudget": 1024,
+    "tags": ["learning-v1", "current-vs-history"],
+    "fragments": [
+      {
+        "fragmentId": "current-ledger-region",
+        "content": "The current ledger incident is in the eu-central production region.",
+        "relevant": true,
+        "importance": 0.98
+      },
+      {
+        "fragmentId": "current-ledger-channel",
+        "content": "Current ledger incident updates must be posted in the #ledger-prod-war-room channel.",
+        "relevant": true,
+        "importance": 0.96
+      },
+      {
+        "fragmentId": "history-ledger-region",
+        "content": "A previous ledger incident in March happened in us-west staging.",
+        "relevant": false,
+        "importance": 0.20
+      },
+      {
+        "fragmentId": "history-ledger-channel",
+        "content": "Historical staging ledger issues were discussed in #ledger-staging.",
+        "relevant": false,
+        "importance": 0.20
+      },
+      {
+        "fragmentId": "ledger-maintenance",
+        "content": "Monthly ledger maintenance windows are tracked by the finance tooling calendar.",
+        "relevant": false,
+        "importance": 0.18
+      },
+      {
+        "fragmentId": "ledger-archive",
+        "content": "Archived ledger experiments mention a prototype reconciliation script that is no longer used.",
+        "relevant": false,
+        "importance": 0.16
+      }
+    ],
+    "calibrationQueries": [
+      "For the current ledger incident, which region and channel are correct?",
+      "Which production region is the active ledger incident in now?",
+      "Where should current ledger incident updates be posted?",
+      "When old staging ledger notes are present, what current region should be used?",
+      "Which current channel should be retained for the ledger production incident?",
+      "What facts distinguish the active ledger incident from historical staging incidents?"
+    ],
+    "feedback": {
+      "usedFragmentIds": ["current-ledger-region", "current-ledger-channel"],
+      "answerAccepted": true,
+      "regretRate": 0.0
+    },
+    "probeQueries": [
+      "Summarize the current ledger incident region and update channel.",
+      "For the live ledger issue, which production facts should recall return?"
+    ]
+  },
+  {
+    "scenarioId": "learning-v1-tool-policy-001",
+    "namespace": "learning-v1-agent-feedback",
+    "memoryScenario": "CHAT",
+    "topK": 4,
+    "tokenBudget": 1024,
+    "tags": ["learning-v1", "tool-policy"],
+    "fragments": [
+      {
+        "fragmentId": "tool-current-console",
+        "content": "For production ledger debugging, the current allowed tool is the read-only SQL console.",
+        "relevant": true,
+        "importance": 0.99
+      },
+      {
+        "fragmentId": "tool-current-escalation",
+        "content": "If production ledger debugging needs writes, escalate to the database reliability owner instead of using a write console.",
+        "relevant": true,
+        "importance": 0.96
+      },
+      {
+        "fragmentId": "tool-old-console",
+        "content": "Earlier sandbox debugging allowed the write-enabled SQL console for test data.",
+        "relevant": false,
+        "importance": 0.18
+      },
+      {
+        "fragmentId": "tool-local-script",
+        "content": "Local developer scripts can rewrite fixture databases during isolated unit tests.",
+        "relevant": false,
+        "importance": 0.16
+      },
+      {
+        "fragmentId": "tool-chatbot-policy",
+        "content": "The support chatbot can search documentation but cannot execute SQL queries.",
+        "relevant": false,
+        "importance": 0.15
+      },
+      {
+        "fragmentId": "tool-archive",
+        "content": "A retired incident runbook mentioned manual write-console cleanup before the read-only policy existed.",
+        "relevant": false,
+        "importance": 0.14
+      }
+    ],
+    "calibrationQueries": [
+      "Which SQL console should be used for current production ledger debugging and what happens if writes are needed?",
+      "For production ledger debugging, is the read-only or write-enabled SQL console allowed now?",
+      "What is the current escalation path when ledger debugging needs database writes?",
+      "Which tool policy should override old sandbox write-console notes?",
+      "What current production ledger tool guidance should be retained?",
+      "When selecting a debugging tool for production ledger data, which safe policy applies?"
+    ],
+    "feedback": {
+      "usedFragmentIds": ["tool-current-console", "tool-current-escalation"],
+      "answerAccepted": true,
+      "regretRate": 0.0
+    },
+    "probeQueries": [
+      "For a live ledger production issue, which SQL tool and escalation rule should be recalled?",
+      "Which current tool policy prevents use of the write console in production ledger debugging?"
+    ]
+  },
+  {
+    "scenarioId": "learning-v1-branch-continuation-001",
+    "namespace": "learning-v1-agent-feedback",
+    "memoryScenario": "CHAT",
+    "topK": 4,
+    "tokenBudget": 1024,
+    "tags": ["learning-v1", "branch-continuation"],
+    "fragments": [
+      {
+        "fragmentId": "branch-accepted-plan",
+        "content": "The accepted branch for the search index repair uses incremental backfill with read traffic kept online.",
+        "relevant": true,
+        "importance": 0.98
+      },
+      {
+        "fragmentId": "branch-accepted-owner",
+        "content": "The accepted search index repair branch is owned by Nia and requires a checkpoint after each shard group.",
+        "relevant": true,
+        "importance": 0.96
+      },
+      {
+        "fragmentId": "branch-rejected-plan",
+        "content": "A rejected branch proposed a full index rebuild with read traffic disabled for the whole cluster.",
+        "relevant": false,
+        "importance": 0.18
+      },
+      {
+        "fragmentId": "branch-rejected-owner",
+        "content": "The rejected search index branch was drafted by a temporary migration group.",
+        "relevant": false,
+        "importance": 0.17
+      },
+      {
+        "fragmentId": "branch-unrelated",
+        "content": "The image thumbnail cache repair uses a separate branch and does not affect search indexing.",
+        "relevant": false,
+        "importance": 0.16
+      },
+      {
+        "fragmentId": "branch-archive",
+        "content": "Archived index experiments mention offline rebuilds used before the current branch policy.",
+        "relevant": false,
+        "importance": 0.15
+      }
+    ],
+    "calibrationQueries": [
+      "For the accepted search index repair branch, what plan and owner should continue?",
+      "Which search index branch keeps read traffic online?",
+      "Who owns the accepted search index repair and what checkpoint rule applies?",
+      "When rejected branch notes compete with accepted branch notes, which plan should be recalled?",
+      "Which branch continuation facts are relevant for search index repair?",
+      "What accepted branch details should be kept for the next search index repair step?"
+    ],
+    "feedback": {
+      "usedFragmentIds": ["branch-accepted-plan", "branch-accepted-owner"],
+      "answerAccepted": true,
+      "regretRate": 0.0
+    },
+    "probeQueries": [
+      "Continue the accepted search index repair: which plan, owner, and checkpoint rule matter?",
+      "Which accepted branch facts should recall prefer over the rejected full rebuild branch?"
+    ]
+  },
+  {
+    "scenarioId": "learning-v1-multi-fragment-synthesis-001",
+    "namespace": "learning-v1-agent-feedback",
+    "memoryScenario": "CHAT",
+    "topK": 4,
+    "tokenBudget": 1024,
+    "tags": ["learning-v1", "multi-fragment-synthesis"],
+    "fragments": [
+      {
+        "fragmentId": "synthesis-alert",
+        "content": "The Aurora agent should page the on-call only when the payment retry queue exceeds 800 jobs for ten minutes.",
+        "relevant": true,
+        "importance": 0.98
+      },
+      {
+        "fragmentId": "synthesis-dashboard",
+        "content": "The payment retry queue duration and job count are checked on the Payments Reliability dashboard.",
+        "relevant": true,
+        "importance": 0.96
+      },
+      {
+        "fragmentId": "synthesis-old-threshold",
+        "content": "An old Aurora alert draft used a threshold of 300 retry jobs for five minutes.",
+        "relevant": false,
+        "importance": 0.18
+      },
+      {
+        "fragmentId": "synthesis-unrelated-dashboard",
+        "content": "The Fraud Review dashboard tracks manual review backlog and not payment retry queue duration.",
+        "relevant": false,
+        "importance": 0.16
+      },
+      {
+        "fragmentId": "synthesis-dev-alert",
+        "content": "Development environments can page a test channel for any retry queue change.",
+        "relevant": false,
+        "importance": 0.15
+      },
+      {
+        "fragmentId": "synthesis-archive",
+        "content": "Archived alert discussions mention temporary retry queue experiments from the pilot phase.",
+        "relevant": false,
+        "importance": 0.14
+      }
+    ],
+    "calibrationQueries": [
+      "When should Aurora page on-call for payment retries and where is that checked?",
+      "What current payment retry queue threshold controls on-call paging?",
+      "Which dashboard provides payment retry queue job count and duration?",
+      "Which two memories are needed to decide Aurora payment retry paging?",
+      "When old alert thresholds are present, what current threshold and dashboard should be retained?",
+      "For Aurora payment retries, combine the alert threshold with the dashboard source."
+    ],
+    "feedback": {
+      "usedFragmentIds": ["synthesis-alert", "synthesis-dashboard"],
+      "answerAccepted": true,
+      "regretRate": 0.0
+    },
+    "probeQueries": [
+      "For Aurora, state the current payment retry paging rule and dashboard source.",
+      "Which current fragments should recall combine for payment retry queue paging?"
+    ]
+  }
+]

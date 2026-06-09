@@ -1,0 +1,317 @@
+[
+  {
+    "scenarioId": "learning-v1-hard-preference-001",
+    "namespace": "learning-v1-hard-agent-feedback",
+    "memoryScenario": "CHAT",
+    "topK": 1,
+    "tokenBudget": 256,
+    "tags": ["learning-v1-hard", "preference"],
+    "fragments": [
+      {
+        "fragmentId": "hard-pref-current",
+        "content": "LEARN_PREF_R42 = mode:DRY_RUN owner:MIRA",
+        "relevant": true,
+        "importance": 0.95
+      },
+      {
+        "fragmentId": "hard-pref-direct-deploy",
+        "content": "Atlas migration checker direct deploy mode was discussed in older rollout preference notes.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-pref-owner-kai",
+        "content": "Kai owned an Atlas deploy checklist experiment before the current migration checker preference.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-pref-sandbox",
+        "content": "Sandbox Atlas migration checker preference allows skipped checks for throwaway branches.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-pref-archive",
+        "content": "Archived Atlas preference notes mention manual checker review during pilot rollout.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-pref-unrelated",
+        "content": "Billing export preference is owned by platform finance and unrelated to Atlas migration checks.",
+        "relevant": false,
+        "importance": 0.60
+      }
+    ],
+    "calibrationQueries": [
+      "For Atlas migration checker preference, should direct deploy or dry run be used?",
+      "Which Atlas checker preference is current despite old direct deploy notes?",
+      "Who owns the current Atlas migration checker preference?",
+      "Select the retained Atlas preference for deploy preparation.",
+      "Which Atlas migration checker memory should future recalls prefer?",
+      "Resolve Atlas checker preference against sandbox and archive notes."
+    ],
+    "feedback": {
+      "usedFragmentIds": ["hard-pref-current"],
+      "answerAccepted": true,
+      "regretRate": 0.0
+    },
+    "probeQueries": [
+      "For Atlas deploy prep now, which migration checker preference is retained?",
+      "Which current Atlas checker memory gives both mode and owner?"
+    ]
+  },
+  {
+    "scenarioId": "learning-v1-hard-current-001",
+    "namespace": "learning-v1-hard-agent-feedback",
+    "memoryScenario": "CHAT",
+    "topK": 1,
+    "tokenBudget": 256,
+    "tags": ["learning-v1-hard", "current-vs-history"],
+    "fragments": [
+      {
+        "fragmentId": "hard-current-ledger",
+        "content": "LEARN_LEDGER_R42 = region:EU_CENTRAL_PROD channel:LEDGER_PROD_WAR_ROOM",
+        "relevant": true,
+        "importance": 0.95
+      },
+      {
+        "fragmentId": "hard-current-us-west",
+        "content": "Previous ledger incident history says us-west staging used #ledger-staging for updates.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-current-staging-channel",
+        "content": "Historical ledger staging channel #ledger-staging appears in old incident notes.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-current-maintenance",
+        "content": "Ledger maintenance history uses the finance tooling calendar, not incident war-room routing.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-current-old-prod",
+        "content": "Older production ledger routing once used #ledger-ops during a retired migration.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-current-archive",
+        "content": "Archived ledger history records a prototype reconciliation path from the pilot phase.",
+        "relevant": false,
+        "importance": 0.60
+      }
+    ],
+    "calibrationQueries": [
+      "For the ledger incident, which region and channel should override us-west staging history?",
+      "Which current ledger routing memory should future recall prefer?",
+      "Resolve ledger production region and update channel against staging history.",
+      "Where is the active ledger incident and where are updates posted?",
+      "Which ledger memory is current rather than old production or staging?",
+      "Select the retained ledger incident memory for continuation."
+    ],
+    "feedback": {
+      "usedFragmentIds": ["hard-current-ledger"],
+      "answerAccepted": true,
+      "regretRate": 0.0
+    },
+    "probeQueries": [
+      "For the active ledger issue now, which retained memory gives region and channel?",
+      "Which current ledger incident fact should recall use instead of staging history?"
+    ]
+  },
+  {
+    "scenarioId": "learning-v1-hard-tool-policy-001",
+    "namespace": "learning-v1-hard-agent-feedback",
+    "memoryScenario": "CHAT",
+    "topK": 1,
+    "tokenBudget": 256,
+    "tags": ["learning-v1-hard", "tool-policy"],
+    "fragments": [
+      {
+        "fragmentId": "hard-tool-current",
+        "content": "LEARN_TOOL_R42 = c:ROSQL w:DBREL_ESC",
+        "relevant": true,
+        "importance": 0.95
+      },
+      {
+        "fragmentId": "hard-tool-write-console",
+        "content": "Write-enabled SQL console was allowed for sandbox ledger debugging in older tool policy notes.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-tool-local-script",
+        "content": "Local fixture reset scripts can rewrite isolated databases during unit tests.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-tool-chatbot",
+        "content": "Support chatbot tool policy allows documentation search but not SQL execution.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-tool-archive",
+        "content": "Archived production cleanup runbooks mention manual write console operations.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-tool-staging",
+        "content": "Staging ledger tool policy allows write console experiments with synthetic data.",
+        "relevant": false,
+        "importance": 0.60
+      }
+    ],
+    "calibrationQueries": [
+      "For production ledger SQL, should write console or read-only console be used?",
+      "Which retained tool policy overrides sandbox write-enabled console notes?",
+      "What should happen if production ledger SQL debugging needs writes?",
+      "Select the current production ledger SQL tool policy.",
+      "Which tool policy memory should future recalls prefer for ledger production?",
+      "Resolve ledger SQL console policy against staging and archived write-console notes."
+    ],
+    "feedback": {
+      "usedFragmentIds": ["hard-tool-current"],
+      "answerAccepted": true,
+      "regretRate": 0.0
+    },
+    "probeQueries": [
+      "Which current retained policy controls production ledger SQL console use?",
+      "For live ledger SQL debugging, which tool memory gives console and escalation?"
+    ]
+  },
+  {
+    "scenarioId": "learning-v1-hard-branch-001",
+    "namespace": "learning-v1-hard-agent-feedback",
+    "memoryScenario": "CHAT",
+    "topK": 1,
+    "tokenBudget": 256,
+    "tags": ["learning-v1-hard", "branch-continuation"],
+    "fragments": [
+      {
+        "fragmentId": "hard-branch-current",
+        "content": "LEARN_BRANCH_R42 = repair:INCREMENTAL_BACKFILL traffic:ONLINE owner:NIA checkpoint:EACH_SHARD_GROUP",
+        "relevant": true,
+        "importance": 0.95
+      },
+      {
+        "fragmentId": "hard-branch-rebuild",
+        "content": "Rejected search branch proposed full index rebuild with read traffic disabled.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-branch-temp-owner",
+        "content": "A temporary migration group drafted a rejected search index repair branch.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-branch-thumbnail",
+        "content": "Thumbnail cache repair branch uses a separate offline rebuild process.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-branch-archive",
+        "content": "Archived search index branch history mentions offline rebuilds before current policy.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-branch-checkpoint-old",
+        "content": "Old search branch notes checkpointed only after the whole cluster rebuild finished.",
+        "relevant": false,
+        "importance": 0.60
+      }
+    ],
+    "calibrationQueries": [
+      "Which search index repair branch should continue instead of full rebuild?",
+      "For search repair, what retained branch keeps traffic online?",
+      "Who owns the accepted search branch and when are checkpoints required?",
+      "Resolve accepted search branch against rejected rebuild notes.",
+      "Which search branch memory should future continuation recall prefer?",
+      "Select current search repair branch policy and checkpoint rule."
+    ],
+    "feedback": {
+      "usedFragmentIds": ["hard-branch-current"],
+      "answerAccepted": true,
+      "regretRate": 0.0
+    },
+    "probeQueries": [
+      "Which retained search branch memory gives repair plan, owner, and checkpoint?",
+      "For continuing search index repair now, which branch should recall use?"
+    ]
+  },
+  {
+    "scenarioId": "learning-v1-hard-synthesis-001",
+    "namespace": "learning-v1-hard-agent-feedback",
+    "memoryScenario": "CHAT",
+    "topK": 1,
+    "tokenBudget": 256,
+    "tags": ["learning-v1-hard", "synthesis"],
+    "fragments": [
+      {
+        "fragmentId": "hard-synthesis-current",
+        "content": "LEARN_AURORA_R42 = p:QGT800_10M d:PAYREL",
+        "relevant": true,
+        "importance": 0.95
+      },
+      {
+        "fragmentId": "hard-synthesis-old-threshold",
+        "content": "Old Aurora alert draft used retry queue threshold 300 jobs for five minutes.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-synthesis-fraud-dashboard",
+        "content": "Fraud Review dashboard tracks manual review backlog, not payment retry queue jobs.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-synthesis-dev",
+        "content": "Development Aurora alert policy can page a test channel for any retry queue change.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-synthesis-archive",
+        "content": "Archived payment retry alert history mentions temporary pilot thresholds.",
+        "relevant": false,
+        "importance": 0.60
+      },
+      {
+        "fragmentId": "hard-synthesis-count-only",
+        "content": "Payment retry queue job count without duration is insufficient for on-call paging.",
+        "relevant": false,
+        "importance": 0.60
+      }
+    ],
+    "calibrationQueries": [
+      "When should Aurora page on-call for payment retries and which dashboard is used?",
+      "Which retained Aurora payment rule overrides the old 300 jobs threshold?",
+      "What current retry queue threshold and duration control paging?",
+      "Select the current payment retry alert memory.",
+      "Which Aurora payment memory should future recall prefer for on-call paging?",
+      "Resolve payment retry paging against old threshold and dev alert notes."
+    ],
+    "feedback": {
+      "usedFragmentIds": ["hard-synthesis-current"],
+      "answerAccepted": true,
+      "regretRate": 0.0
+    },
+    "probeQueries": [
+      "Which retained Aurora payment rule gives threshold, duration, and dashboard?",
+      "For payment retry paging now, which current memory should recall use?"
+    ]
+  }
+]

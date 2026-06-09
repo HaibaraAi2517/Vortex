@@ -2,7 +2,12 @@
 
 ## Status
 
-Proposed on 2026-06-08.
+Proposed on 2026-06-08. First deterministic implementation completed on 2026-06-09.
+Accepted hard-governance JSON evidence was promoted on 2026-06-09:
+
+```text
+ops/eval-fixtures/learning/20260609-learning-v1-agent-feedback-hard-governance-001/
+```
 
 This proposal defines the next benchmark after the v3.1 official strict memory/recovery baseline. It does not replace or modify `official-v3.1-real-agent-workload-strict`.
 
@@ -147,6 +152,14 @@ For the first candidate gate, keep thresholds conservative:
 
 Do not require shadow promotion in v1. Promotion depends on configured thresholds and windows; v1 should prove measurable learning signal before it proves production deployment promotion.
 
+The hard governance run uses a stricter candidate threshold:
+
+1. `rankImprovedScenarioCount >= 5`
+2. `ndcgImprovedScenarioCount >= 5`
+3. `probeAverageNdcg >= 0.90`
+
+This makes the run prove that every scenario starts with an initial distractor recall and reaches correct probe ranking after feedback.
+
 ## Report Artifacts
 
 Generated reports should go under:
@@ -158,7 +171,7 @@ ops/eval-reports/<stamp>/
 If a candidate is promoted later, only minimum JSON evidence should be copied into:
 
 ```text
-ops/eval-fixtures/baselines/<stamp>/
+ops/eval-fixtures/learning/<stamp>/
 ```
 
 Do not commit generated Markdown as fixture evidence unless a governance decision explicitly needs it.
@@ -173,6 +186,19 @@ Do not commit generated Markdown as fixture evidence unless a governance decisio
 6. Add one integration test that runs a small deterministic learning scenario without real generation.
 7. Add an ops script only after the runner is stable.
 8. Keep the default baseline governance script unchanged until a promoted learning fixture exists.
+
+Implemented entry points:
+
+1. `java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar learning`
+2. `java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar learning verify <report.json>`
+3. `ops/run-learning-memory-eval.ps1`
+4. `ops/run-learning-governance-check.ps1`
+
+The learning governance script now defaults to verifying the accepted evidence stamp:
+
+```text
+20260609-learning-v1-agent-feedback-hard-governance-001
+```
 
 ## Risk Controls
 
