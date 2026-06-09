@@ -9,6 +9,7 @@ The goal is to keep generated eval output separate from CI fixtures:
 ```text
 ops/eval-reports/             Local generated eval and audit output
 ops/eval-fixtures/baselines/  Accepted baseline JSON used by governance checks and CI
+ops/eval-fixtures/learning/   Accepted learning JSON used by governance checks and CI
 ops/runbooks/                 Decisions, interpretation, and promotion notes
 ```
 
@@ -35,9 +36,19 @@ Use it for:
 
 Do not store Markdown reports in fixtures unless a specific governance decision says otherwise. Markdown is useful for humans, but JSON is the machine contract.
 
-## Current Default Fixture
+`ops/eval-fixtures/learning/` is the stable fixture directory for accepted learning evidence.
 
-The current default governance fixture is:
+Use it for:
+
+1. The minimum JSON reports needed by `ops/run-learning-governance-check.ps1`.
+2. Accepted deterministic learning reports that prove recall ranking improves after feedback.
+3. No-generation CI replay of learning metrics and gate thresholds.
+
+Do not store generated Markdown reports or temporary learning run directories in fixtures unless a specific governance decision says otherwise.
+
+## Current Default Fixtures
+
+The current default baseline governance fixture is:
 
 ```text
 ops/eval-fixtures/baselines/20260603-v3-1-real-agent-workload-official-strict-audit-003/
@@ -54,6 +65,24 @@ The default profile is:
 
 ```text
 official-v3.1-real-agent-workload-strict
+```
+
+The current default learning governance fixture is:
+
+```text
+ops/eval-fixtures/learning/20260609-learning-v1-agent-feedback-hard-governance-001/
+```
+
+It contains:
+
+```text
+learning-memory-eval-*.json
+```
+
+The default learning profile is:
+
+```text
+learning-v1-agent-feedback-audit
 ```
 
 ## Promotion Flow
@@ -86,6 +115,27 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1
 powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1
 ```
 
+When promoting a new deterministic learning fixture:
+
+1. Run the learning workload into `ops/eval-reports/<learning-stamp>/`.
+2. Verify the candidate report with `learning verify --profile learning-v1-agent-feedback-audit`.
+3. Confirm `gatePassed = true` and the aggregate learning thresholds pass.
+4. Scan JSON evidence for secrets before staging.
+5. Copy only the accepted `learning-memory-eval-*.json` into `ops/eval-fixtures/learning/<learning-stamp>/`.
+6. Keep generated Markdown and local runtime state in `ops/eval-reports/`.
+7. Update `ops/run-learning-governance-check.ps1` defaults if this becomes the default learning governance target.
+8. Run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\run-learning-governance-check.ps1 -SkipMavenTest -SkipPackage -SkipLearningRun
+```
+
+9. Run the full deterministic learning governance check before release when practical:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\run-learning-governance-check.ps1
+```
+
 ## Commit Rules
 
 Commit accepted evidence as a focused change.
@@ -95,6 +145,7 @@ Allowed fixture files by default:
 ```text
 ops/eval-fixtures/baselines/<audit-stamp>/baseline-audit-summary.json
 ops/eval-fixtures/baselines/<audit-stamp>/runs/*/llm-memory-eval-*.json
+ops/eval-fixtures/learning/<learning-stamp>/learning-memory-eval-*.json
 ```
 
 Avoid committing:

@@ -200,6 +200,21 @@ The learning governance script now defaults to verifying the accepted evidence s
 20260609-learning-v1-agent-feedback-hard-governance-001
 ```
 
+CI now replays the promoted learning fixture without generating a new run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\run-learning-governance-check.ps1 `
+  -SkipMavenTest `
+  -SkipPackage `
+  -SkipLearningRun
+```
+
+The full local/release check can still run the deterministic hard workload and then verify both the generated report and the promoted fixture:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\run-learning-governance-check.ps1
+```
+
 ## Risk Controls
 
 1. Use a per-run `vortex.kernel.learning.shadow-persistence-path` so old local state cannot contaminate results.

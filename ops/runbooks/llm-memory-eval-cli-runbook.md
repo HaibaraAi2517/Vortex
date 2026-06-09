@@ -486,6 +486,31 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1
 
 它和 `ops/run-llm-memory-baseline-audit.ps1` 的职责不同：`run-baseline-governance-check.ps1` 用于无模型、可重复、低成本的回归门禁；`run-llm-memory-baseline-audit.ps1` 用于真实 LLM 多轮审计，必须提供 generation API 环境，并会产生新的报告证据。
 
+## 学习治理检查
+
+`ops/run-learning-governance-check.ps1` 是 learning-specific workload 的治理门禁。它验证 `learning-v1-agent-feedback-audit` 报告是否证明 feedback 后 recall ranking 稳定改善，默认 evidence stamp 是：
+
+```text
+20260609-learning-v1-agent-feedback-hard-governance-001
+```
+
+CI 默认只做 promoted fixture replay，不调用真实 generation API，不需要 API Key，也不要求本地 BGE 模型或 Docker 服务：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\run-learning-governance-check.ps1 `
+  -SkipMavenTest `
+  -SkipPackage `
+  -SkipLearningRun
+```
+
+发布前或本地完整检查可以运行 deterministic hard workload，并同时复验 promoted fixture：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\run-learning-governance-check.ps1
+```
+
+完整检查会通过 `ops/run-learning-memory-eval.ps1` 启动 deterministic learning eval。它需要本地 BGE 模型、eval CLI jar、以及默认 Docker compose 依赖；仍然不会调用真实 generation API。
+
 ## 基线审计
 
 `ops/run-llm-memory-baseline-audit.ps1` 会连续跑多轮真实 eval，并在每轮结束后自动调用 `verify`，最后生成稳定性汇总报告。

@@ -451,7 +451,19 @@ official-v2-strict
 5. 检查 accepted evidence summary。
 6. 逐轮 strict verify 既有 JSON report。
 
-### 8.2 CI
+### 8.2 Learning governance check
+
+`ops/run-learning-governance-check.ps1` 是无 generation 的 learning 门禁。CI 默认使用 `-SkipLearningRun` 复验 accepted fixture；发布前或本地完整检查可以运行 deterministic hard workload，再复验 promoted fixture。
+
+当前默认 learning evidence 是：
+
+```text
+Profile = learning-v1-agent-feedback-audit
+EvidenceStamp = 20260609-learning-v1-agent-feedback-hard-governance-001
+EvidenceRoot = ops/eval-fixtures/learning
+```
+
+### 8.3 CI
 
 `.github/workflows/ci.yml` 当前包含：
 
@@ -459,11 +471,12 @@ official-v2-strict
 mvn -B test -pl vortex-common,vortex-kernel,vortex-storage -am
 mvn -B verify -pl vortex-app -am
 ./ops/run-baseline-governance-check.ps1 -SkipMavenTest -SkipPackage
+./ops/run-learning-governance-check.ps1 -SkipMavenTest -SkipPackage -SkipLearningRun
 ```
 
 CI 使用 Ubuntu runner + JDK 21 + PowerShell Core。
 
-### 8.3 重要治理闭环
+### 8.4 重要治理闭环
 
 v3.1 默认治理缺口已经处理完成。`ops/run-baseline-governance-check.ps1` 当前默认指向：
 
@@ -670,20 +683,23 @@ AuditGate.Passed 不因 actual model drift 直接失败
 ```text
 ops/eval-reports/                 本地生成，默认 ignored
 ops/eval-fixtures/baselines/       CI 必需的最小 accepted JSON
+ops/eval-fixtures/learning/        CI 必需的 learning accepted JSON
 ops/runbooks/...                   决策文档引用 fixture
 ```
 
 这已经避免 `.gitignore` allowlist 继续膨胀，也降低了误提交临时报告的风险。不要迁移全部历史 evidence，除非有明确清理任务。
 
-### P3：设计 learning-specific workload
+### P3：learning-specific workload
 
-当前 v3.1 主要证明 memory/recovery。下一类真正有价值的 benchmark 是：
+状态：已完成第一阶段，并已接入 CI fixture replay。
+
+当前 v3.1 主要证明 memory/recovery。learning-specific benchmark 现在独立证明：
 
 ```text
 同一类任务经过 feedback 后，recall ranking / eviction decision 是否稳定改善。
 ```
 
-建议新增独立 learning workload：
+当前已新增独立 learning workload：
 
 1. 多轮同 namespace。
 2. 初始有多个相似 fragments。
@@ -691,13 +707,19 @@ ops/runbooks/...                   决策文档引用 fixture
 4. 后续同类 query 观察 active profile ranking 是否提升。
 5. 输出 shadow lift、baseline lift、selection precision、selection coverage、active/shadow/baseline NDCG、learning sample / update deltas。
 
-不要把它混入 v3.1 official strict baseline。它应该是独立 profile，例如：
+它没有混入 v3.1 official strict baseline，而是独立 profile：
 
 ```text
 learning-v1-agent-feedback-audit
 ```
 
-设计稿见：
+默认 promoted fixture：
+
+```text
+ops/eval-fixtures/learning/20260609-learning-v1-agent-feedback-hard-governance-001/
+```
+
+设计与实现说明见：
 
 - [llm-memory-eval-learning-workload-proposal.md](E:/1projects/claude/Vortex/ops/runbooks/llm-memory-eval-learning-workload-proposal.md:1)
 

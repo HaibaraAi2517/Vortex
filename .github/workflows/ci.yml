@@ -32,3 +32,7 @@ jobs:
       - name: Baseline governance check
         shell: pwsh
         run: ./ops/run-baseline-governance-check.ps1 -SkipMavenTest -SkipPackage
+
+      - name: Learning governance check
+        shell: pwsh
+        run: ./ops/run-learning-governance-check.ps1 -SkipMavenTest -SkipPackage -SkipLearningRun
