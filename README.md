@@ -712,3 +712,9 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1
 
 - `ops/eval-fixtures/baselines/20260603-v3-1-real-agent-workload-official-strict-audit-003`
 - `ops/eval-fixtures/learning/20260609-learning-v1-agent-feedback-hard-governance-001`
+
+## License
+
+Vortex 的代码与文档使用 Apache License 2.0，见 `LICENSE`。
+
+仓库中的第三方模型文件、数据集或外部服务名称仍受其各自上游许可和服务条款约束；公开分发前应单独确认这些资产的再分发许可。
