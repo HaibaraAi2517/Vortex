@@ -2,36 +2,47 @@
 
 Vortex 是一个面向长时运行 AI Agent 的记忆与状态管理内核。它把 Agent 运行中产生的事实、偏好、工具结果、任务状态和 checkpoint 组织成可召回、可淘汰、可恢复、可观测的分级记忆系统。
 
-当前项目不是一个完整的多租户 SaaS 产品，也不是通用 Agent 执行框架。它的定位更准确地说是：
+这个仓库当前更准确的定位是：
 
 ```text
 已通过真实 LLM 长任务 Agent memory workload 验证的分级记忆与状态管理内核。
 ```
 
-## 当前状态
+它不是完整的多租户 SaaS，也不是通用 Agent 执行框架。项目重点是 memory kernel、task state kernel、eval/governance harness 三部分：把长期上下文写入分级存储，在 L1 token pressure 下从 L2 恢复，并用真实模型评测证明记忆是否真的被模型使用。
 
-当前最强的已验证结论来自 v3.1 real-agent workload official strict baseline：
+## 当前结论
+
+当前最强的已验证结论来自 v3.1 real-agent workload official strict audit：
 
 | 项 | 当前值 |
 | --- | --- |
 | Profile | `official-v3.1-real-agent-workload-strict` |
 | Dataset | `classpath:llm-memory-eval-set-v3-1-real-agent-workload.json` |
+| Dataset version | `v3.1-real-agent-workload` |
 | Case count | 20 |
 | Modes | `Baseline-NoMemory`, `Vortex-Memory`, `Vortex-RecoveredMemory` |
+| L1 audit capacity | `96` tokens |
 | Accepted evidence | `ops/eval-fixtures/baselines/20260603-v3-1-real-agent-workload-official-strict-audit-003` |
-| 结果 | 3/3 轮通过；`Baseline-NoMemory = 0/20`，`Vortex-Memory = 20/20`，`Vortex-RecoveredMemory = 20/20` |
+| Result | 3/3 轮通过；`Baseline-NoMemory = 0/20`，`Vortex-Memory = 20/20`，`Vortex-RecoveredMemory = 20/20` |
+| Recovery signal | `RecoveredL2HitRate = 1.0` in all 3 rounds |
 
 这个结论说明：在受控的真实 LLM 长任务记忆评测中，接入 Vortex 后模型可以找回并使用长期上下文；在压低 L1 容量、强制触发 L2 recovery 的场景下也能保持正确。
 
-需要明确边界：这证明的是“受控 workload 下的真实模型记忆增强能力”，不是生产级多租户、安全、长期高并发平台已经完成。
+边界也要明确：这证明的是“受控 workload 下的真实模型记忆增强能力”，不是生产级多租户、安全、长期高并发平台已经完成。
 
-## 项目亮点
+## 证据索引
 
-- 设计并实现 AI Agent 三层记忆内核：L1 Caffeine 热缓存、L2 Milvus 向量召回、L3 MinIO 持久化。
-- 支持语义召回、tag/namespace 过滤、token budget、feedback-driven adaptive ranking、pin/unpin 和语义淘汰。
-- 实现任务 DAG 状态管理：WAL、FULL/DELTA checkpoint、branch、merge、recover、Graphviz DOT export。
-- 提供 semantic paging / prefetch、SLO health、Prometheus 指标、health signal catalog 和 runbook 体系。
-- 建立真实 LLM memory eval 与无模型 governance：v3.1 official strict fixture 可在 CI 中复验，不依赖 API key。
+| 主张 | 代码 / 证据 |
+| --- | --- |
+| 三层记忆写入与 L1 admission | `HierarchicalMemoryController`, `TieredEvictionCoordinator` |
+| 异步 L2/L3 持久化、幂等与 DLQ | `FragmentPersistenceManager`, `FragmentPersistenceTask`, `FileBackedDeadLetterQueue`, `FileBackedProcessedTaskStore` |
+| L1 语义召回、L2 recovery、feedback session | `RecallOrchestrator`, `AdaptiveWeightLearner`, `RecallSessionRecord` |
+| semantic-LRU 淘汰、分组淘汰、pin 保护 | `SemanticEvictionPolicy`, `TieredEvictionCoordinator`, `FragmentPinManager` |
+| task DAG / WAL / checkpoint / branch / recover | `SnapshotService`, `DagMutationService`, `RecoveryEngine`, `BranchManager`, `IncrementalCheckpointManager` |
+| semantic paging / prefetch | `SemanticPagingManager`, `SemanticPageTable`, `PrefetchEngine` |
+| health / SLO / diagnostic signal | `MemorySloHealthIndicator`, `MemoryDiagnosticsCollector`, `MemoryHealthSignalCatalog` |
+| 真实 LLM memory eval 与 fixture replay | `LlmMemoryEvalRunner`, `LlmMemoryEvalBaselineVerifier`, `ops/eval-fixtures/baselines/...official-strict-audit-003` |
+| 测试覆盖面 | 当前仓库包含 55 个 `*Test.java` / `*IT.java` 文件 |
 
 ## 核心能力
 
@@ -39,11 +50,13 @@ Vortex 是一个面向长时运行 AI Agent 的记忆与状态管理内核。它
 
 | 层级 | 实现 | 作用 |
 | --- | --- | --- |
-| L1 Hot | Caffeine | 热记忆缓存、token capacity 管理、毫秒级读写 |
-| L2 Warm | Milvus | 向量检索、namespace/tag 过滤、L1 eviction 后的语义恢复 |
+| L1 Hot | Caffeine | 热记忆缓存、token capacity 管理、低延迟读写 |
+| L2 Warm | Milvus | 向量检索、namespace 过滤、L1 eviction 后的语义恢复 |
 | L3 Cold | MinIO | fragment 冷存档、checkpoint/WAL 相关持久化、page table 持久化 |
 
-写入路径由 `HierarchicalMemoryController` 驱动：原始文本经 `SemanticTextSplitter` 分片，使用 BGE embedding，进入 L1，并异步持久化到 L2/L3。
+写入路径由 `HierarchicalMemoryController` 驱动：原始文本经 `SemanticTextSplitter` 分片，先生成 L1 embedding 并进入 Caffeine；`FragmentPersistenceManager` 再通过 bounded executor 异步 upsert L2、archive L3。持久化任务带 idempotency key，失败会进入 file-backed DLQ，启动时可 replay。
+
+Embedding 路径是显式分层的：L1 默认使用本地 BGE-Small-ZH 512 维；L2 可选使用 cloud embedding，未启用时 Milvus 使用 L1 embedding。`MilvusWarmStore` 会校验 collection vector dimension，维度迁移需要显式确认后重建 collection。
 
 L3 默认 key layout：
 
@@ -58,11 +71,13 @@ system/semantic-page-table.bin
 
 召回路径由 `RecallOrchestrator` 驱动：
 
-1. 先在 L1 内按 query embedding 做语义排序。
+1. 用 BGE-Small 生成 query embedding，在 L1 候选集内按语义相关性、重要性、冗余/新颖度等特征排序。
 2. 支持 namespace、required tags、`topK`、`tokenBudget` 和 `scenario`。
-3. L1 不足时查 L2 Milvus。
-4. L2 命中后补全 fragment，并重新 admit 回 L1。
-5. 每次召回生成 `recallSessionId`，后续 feedback 会驱动 `AdaptiveWeightLearner`。
+3. L1 不足时查 L2 Milvus；若向量召回不足，还有 namespace fallback。
+4. L2 命中后补全 fragment，重新 admit 回 L1，并触发持久化/访问记录。
+5. 每次召回生成 `recallSessionId`，后续 `/feedback` 会驱动 `AdaptiveWeightLearner`。
+
+`AdaptiveWeightLearner` 不是只改一个静态参数。它记录 active / shadow / baseline ranking，使用 feedback、regret、selection precision/coverage、nDCG-like ranking reward 等信号更新不同 `MemoryScenario` 的权重 profile。
 
 `MemoryScenario` 当前支持：
 
@@ -80,13 +95,14 @@ L1 淘汰不是简单 LRU，而是 semantic-LRU 变体：
 score = alpha * recency + beta * similarity + gamma * importance
 ```
 
-低分优先淘汰。实现还包含：
+低分优先淘汰。实现上没有在每次淘汰时无条件全量重算所有 fragment，而是由 `TieredEvictionCoordinator` 维护 hot/cold tier index，并在 admission/capacity/quota 场景下选取 scoped candidate pool。具体包括：
 
-- `reasoningChainId` 分组淘汰，避免拆散推理链上下文。
-- redundancy penalty / novelty bonus。
-- pinned fragment 保护。
-- namespace quota、regret 追踪和 SLO 诊断。
-- active / shadow / baseline ranking，用 feedback 调整权重。
+- `reasoningChainId` 分组淘汰，避免只淘汰推理链中的单个关键片段。
+- redundancy penalty / novelty bonus，降低重复片段保留优先级。
+- pinned fragment 保护，pin 过期会在 admission/eviction 前清理。
+- namespace quota，优先在本 namespace 内回收，必要时处理跨 namespace 借用。
+- regret-aware ordering，避免反复淘汰近期被证明有用的 fragment。
+- eviction decision log、regret rate、tiered selection 进入 SLO/diagnostics。
 
 ### 4. 任务 DAG、checkpoint 与恢复
 
@@ -108,7 +124,7 @@ WAL-before-state
 FULL -> DELTA... -> WAL replay
 ```
 
-终态任务会尝试 final checkpoint；删除任务会先记录 durable delete intent，再清理 WAL/checkpoint artifacts。
+恢复路径由 `RecoveryEngine` 处理：先解析目标 checkpoint 或最新 durable state，再 replay checkpoint 之后的 WAL。终态任务会尝试 final checkpoint；删除任务会先记录 durable delete intent，再清理 WAL/checkpoint artifacts。
 
 ### 5. 语义分页与预取
 
@@ -139,6 +155,25 @@ FULL -> DELTA... -> WAL replay
 - Grafana query reference：`ops/grafana/memory-health-queries.md`
 - Health signal runbook：`ops/runbooks/memory-health-signals.md`
 - Migration guide：`ops/runbooks/memory-health-migration.md`
+
+## Eval Workload
+
+v3.1 workload 不是只验证“答案里有没有关键词”的单点测试。数据集 `llm-memory-eval-set-v3-1-real-agent-workload.json` 包含 20 个长任务 Agent 记忆场景，每个 case 包含多条 memory fragments、`expectedFragments`、`mustContain`、`mustNotContain`、`failureCategories` 和 tags。
+
+覆盖的主要失败模式包括：
+
+- 多步 current-state overwrite，避免回答旧 owner / 旧计划。
+- namespace collision，同名实体在不同 namespace 下含义不同。
+- branch-specific final decision，避免拿未采纳分支作为最终方案。
+- checkpoint continuation，恢复后继续下一步而不是重复已完成动作。
+- tool policy / safety-sensitive recall，避免使用旧的高风险工具策略。
+- preference reversal，识别用户当前偏好而不是历史偏好。
+- long-context distractor，与当前事实相似但已经过期的干扰项。
+- multi-fragment synthesis，单个 fragment 不足以推出最终答案。
+
+`Vortex-RecoveredMemory` 模式会在 store 后等待目标 fragment 可恢复，然后强制制造 L1 pressure，让答案所需 fragment 离开 L1，再要求 recall 从 L2 找回。official audit 使用 `L1MaxTokens = 96`、3 轮真实 LLM 运行、每轮 20 cases，并用 strict verifier 检查 dataset、model、base URL、prompt SHA、modes、L1 容量和 mode summaries 是否漂移。
+
+评测仍有边界：答案正确性由 `RuleBasedAnswerJudge` 根据 `mustContain` / `mustNotContain` 等契约判断，不是人工主观评审；workload 是面向 memory recovery 能力的受控集合，不等价于开放世界 Agent benchmark。
 
 ## 架构
 
