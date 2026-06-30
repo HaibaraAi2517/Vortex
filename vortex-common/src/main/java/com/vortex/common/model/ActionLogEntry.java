@@ -36,6 +36,10 @@ public class ActionLogEntry {
      *   ADD_EDGE → {"sourceNodeId":"...","targetNodeId":"...","type":"DATA_DEP"}
      *   UPDATE_CONTEXT → {"key":"...","value":"..."}
      *   SET_STATUS → {"status":"FAILED"}
+     *   APPEND_CONVERSATION_MESSAGE → {"conversationId":"...","messageId":"...","role":"user","content":"..."}
+     *   START_TOOL_EXECUTION → {"executionId":"...","toolName":"...","input":"..."}
+     *   FAIL_TOOL_EXECUTION → {"executionId":"...","errorMessage":"..."}
+     *   TIMEOUT_LLM_CALL → {"callId":"...","errorMessage":"..."}
      */
     private String payload;
 
@@ -52,6 +56,14 @@ public class ActionLogEntry {
         CREATE_BRANCH,
         MERGE_BRANCH,
         SWITCH_BRANCH,
+        APPEND_CONVERSATION_MESSAGE,
+        START_TOOL_EXECUTION,
+        COMPLETE_TOOL_EXECUTION,
+        FAIL_TOOL_EXECUTION,
+        START_LLM_CALL,
+        COMPLETE_LLM_CALL,
+        TIMEOUT_LLM_CALL,
+        MARK_LLM_CALL_RETRY,
         DELETE_TASK
     }
 }

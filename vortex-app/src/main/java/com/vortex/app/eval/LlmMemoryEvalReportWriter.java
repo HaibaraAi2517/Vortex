@@ -59,8 +59,8 @@ public class LlmMemoryEvalReportWriter {
         appendEnvironment(builder, report.getEnvironment());
         appendRuntimeTelemetry(builder, report.getRuntimeTelemetry());
         builder.append("## Mode Summary\n\n");
-        builder.append("| Mode | Accuracy | Recall Hit Rate | Recovered Accuracy | L2 Recovery Hit Rate | Avg Latency (ms) | Feedback | Learning Sample Δ | Learning Update Δ | Correct | Total |\n");
-        builder.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+        builder.append("| Mode | Accuracy | Recall Hit Rate | Recall Lift vs VectorOnly | Recall Rel Lift vs VectorOnly | Recovered Accuracy | L2 Recovery Hit Rate | Avg Latency (ms) | Feedback | Learning Sample Δ | Learning Update Δ | Correct | Total |\n");
+        builder.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
         safeMap(report.getModeSummaries()).entrySet().stream()
                 .sorted(Map.Entry.comparingByKey(Comparator.naturalOrder()))
                 .forEach(entry -> {
@@ -69,6 +69,8 @@ public class LlmMemoryEvalReportWriter {
                             .append(entry.getKey()).append(" | ")
                             .append(formatDecimal(summary.getAccuracy())).append(" | ")
                             .append(formatDecimal(summary.getRecallHitRate())).append(" | ")
+                            .append(formatDecimal(summary.getRecallHitRateLiftVsVectorOnly())).append(" | ")
+                            .append(formatDecimal(summary.getRecallHitRateRelativeLiftVsVectorOnly())).append(" | ")
                             .append(formatDecimal(summary.getRecoveredAccuracy())).append(" | ")
                             .append(formatDecimal(summary.getRecoveredL2HitRate())).append(" | ")
                             .append(formatDecimal(summary.getAverageLatencyMs())).append(" | ")
@@ -121,16 +123,25 @@ public class LlmMemoryEvalReportWriter {
                 .append(result.getRecoveryForcePollCount()).append(" | ")
                 .append(result.getRecoveryFillerFragmentsInserted()).append(" |\n"));
         builder.append("\n## Recall Diagnostics\n\n");
-        builder.append("| CaseId | Mode | Empty Reason | Final Returned | Required Tags | L1 Cand | L1 Tag | L1 Sel | L1 Budget Reject | L2 Search Cand | L2 Search Accepted | L2 Search Dup Reject | L2 Search Tag Reject | L2 Search Budget Reject | L2 Fallback Cand | L2 Fallback Accepted | L2 Fallback Dup Reject | L2 Fallback Tag Reject | L2 Fallback Budget Reject | Find L1 | Find L3 | Find L2 | Find Miss | Enrich Fragment | Enrich Candidate | Enrich L2 Fallback | Enrich Reject |\n");
-        builder.append("| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+        builder.append("| CaseId | Mode | Retrieval | Empty Reason | Final Returned | Required Tags | Keyword Cand | Keyword Accepted | Keyword Dup Reject | Keyword Tag Reject | Keyword Budget Reject | Vector Cand | Vector Accepted | Rerank Cand | L1 Cand | L1 Tag | L1 Sel | L1 Budget Reject | L2 Search Cand | L2 Search Accepted | L2 Search Dup Reject | L2 Search Tag Reject | L2 Search Budget Reject | L2 Fallback Cand | L2 Fallback Accepted | L2 Fallback Dup Reject | L2 Fallback Tag Reject | L2 Fallback Budget Reject | Find L1 | Find L3 | Find L2 | Find Miss | Enrich Fragment | Enrich Candidate | Enrich L2 Fallback | Enrich Reject |\n");
+        builder.append("| --- | --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
         safeList(report.getResults()).forEach(result -> {
             RecallDiagnostics diagnostics = result.getRecallDiagnostics();
             builder.append("| ")
                     .append(result.getCaseId()).append(" | ")
                     .append(result.getMode()).append(" | ")
+                    .append(diagnostics == null ? "" : formatNullable(diagnostics.getRetrievalMode())).append(" | ")
                     .append(diagnostics == null ? "" : formatNullable(diagnostics.getEmptyRecallReason())).append(" | ")
                     .append(diagnostics == null ? "" : diagnostics.getFinalReturnedCount()).append(" | ")
                     .append(diagnostics == null ? "" : sanitizeMarkdown(String.join(",", safeList(diagnostics.getRequiredTags())))).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getKeywordCandidateCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getKeywordAcceptedCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getKeywordDuplicateRejectedCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getKeywordTagRejectedCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getKeywordTokenBudgetRejectedCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getVectorCandidateCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getVectorAcceptedCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getRerankCandidateCount()).append(" | ")
                     .append(diagnostics == null ? "" : diagnostics.getL1CandidateCount()).append(" | ")
                     .append(diagnostics == null ? "" : diagnostics.getL1TagMatchedCount()).append(" | ")
                     .append(diagnostics == null ? "" : diagnostics.getL1SelectedCount()).append(" | ")

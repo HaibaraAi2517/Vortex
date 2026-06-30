@@ -137,10 +137,21 @@ public class HierarchicalMemoryController {
             List<String> tags,
             String reasoningChainId,
             Long pinTtlMillis) {
+        return storeProcessed(content, namespace, tags, reasoningChainId, pinTtlMillis, "initial-store", false);
+    }
+
+    List<String> storeProcessed(
+            String content,
+            String namespace,
+            List<String> tags,
+            String reasoningChainId,
+            Long pinTtlMillis,
+            String persistenceReason,
+            boolean waitForPersistence) {
         List<MemoryFragment> chunks = splitter.split(content, namespace, tags, reasoningChainId, pinTtlMillis);
         List<String> ids = new ArrayList<>();
         for (MemoryFragment chunk : chunks) {
-            storeFragment(chunk);
+            storeFragment(chunk, persistenceReason, waitForPersistence);
             ids.add(chunk.getId());
         }
         return ids;
@@ -152,11 +163,19 @@ public class HierarchicalMemoryController {
      * When cloud embedding is enabled, also generates L2 embedding (DeepSeek) for Milvus.
      */
     public void storeFragment(MemoryFragment fragment) {
+        storeFragment(fragment, "initial-store", false);
+    }
+
+    void storeFragment(MemoryFragment fragment, String persistenceReason, boolean waitForPersistence) {
         long startedAt = System.nanoTime();
         ensureL1Embedding(fragment);
         populateOptionalL2Embedding(fragment);
-        evictionCoordinator.admitToL1(fragment, "initial-store");
-        persistenceManager.persistAsync(fragment, "initial-store");
+        evictionCoordinator.admitToL1(fragment, persistenceReason);
+        if (waitForPersistence) {
+            persistenceManager.persistBlocking(fragment, persistenceReason);
+        } else {
+            persistenceManager.persistAsync(fragment, persistenceReason);
+        }
         sloTracker.recordStoreLatency(System.nanoTime() - startedAt);
     }
 

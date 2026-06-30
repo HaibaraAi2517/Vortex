@@ -32,6 +32,8 @@ public class LlmMemoryEvalReport {
         private int correct;
         private double accuracy;
         private double recallHitRate;
+        private double recallHitRateLiftVsVectorOnly;
+        private double recallHitRateRelativeLiftVsVectorOnly;
         private double averageLatencyMs;
         private int recoveredRuns;
         private double recoveredAccuracy;

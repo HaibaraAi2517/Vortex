@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: vortex
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: ${REDIS_TIMEOUT:2s}
 
 management:
   endpoints:
@@ -40,6 +45,12 @@ vortex:
         bucket: ${MINIO_BUCKET:vortex}
         key-prefix: ${MINIO_KEY_PREFIX:}
 
+  runtime:
+    execution-id:
+      backend: ${VORTEX_EXECUTION_ID_BACKEND:MEMORY}
+      ttl: ${VORTEX_EXECUTION_ID_TTL:24h}
+      key-prefix: ${VORTEX_EXECUTION_ID_KEY_PREFIX:vortex:execution-id:}
+
   # ---- Kernel config ----
   kernel:
     slo:
@@ -72,6 +83,12 @@ vortex:
         path: ${VORTEX_PERSISTENCE_PROCESSED_KEYS_PATH:${java.io.tmpdir}/vortex-hmc-processed-keys.txt}
         max-entries: ${VORTEX_PERSISTENCE_PROCESSED_KEYS_MAX_ENTRIES:10000}
       replay-on-startup: ${VORTEX_PERSISTENCE_REPLAY_ON_STARTUP:true}
+    memory-pipeline:
+      max-workers: ${VORTEX_MEMORY_PIPELINE_MAX_WORKERS:4}
+      max-statuses: ${VORTEX_MEMORY_PIPELINE_MAX_STATUSES:2048}
+      queue-capacity: ${VORTEX_MEMORY_PIPELINE_QUEUE_CAPACITY:256}
+      extraction-max-units: ${VORTEX_MEMORY_PIPELINE_EXTRACTION_MAX_UNITS:12}
+      summary-max-chars: ${VORTEX_MEMORY_PIPELINE_SUMMARY_MAX_CHARS:1200}
     pin:
       cleanup-interval-ms: ${VORTEX_PIN_CLEANUP_INTERVAL_MS:30000}
     splitter:
@@ -139,7 +156,7 @@ vortex:
         max-fragments: 1000
   eval:
     dataset-location: ${VORTEX_EVAL_DATASET_LOCATION:classpath:llm-memory-eval-set.json}
-    modes: ${VORTEX_EVAL_MODES:BASELINE_NO_MEMORY,VORTEX_MEMORY,VORTEX_RECOVERED_MEMORY}
+    modes: ${VORTEX_EVAL_MODES:BASELINE_NO_MEMORY,VORTEX_VECTOR_ONLY,VORTEX_MEMORY,VORTEX_RECOVERED_MEMORY}
     run-on-startup: ${VORTEX_EVAL_RUN_ON_STARTUP:false}
     fail-on-startup-error: ${VORTEX_EVAL_FAIL_ON_STARTUP_ERROR:true}
     write-report: ${VORTEX_EVAL_WRITE_REPORT:true}
@@ -151,6 +168,9 @@ vortex:
     learning-scenario: ${VORTEX_EVAL_LEARNING_SCENARIO:CHAT}
     recovery-poll-timeout: ${VORTEX_EVAL_RECOVERY_POLL_TIMEOUT:10s}
     recovery-poll-interval: ${VORTEX_EVAL_RECOVERY_POLL_INTERVAL:250ms}
+    async-pipeline-benchmark-fragments: ${VORTEX_EVAL_ASYNC_PIPELINE_BENCHMARK_FRAGMENTS:24}
+    async-pipeline-benchmark-warmup-fragments: ${VORTEX_EVAL_ASYNC_PIPELINE_BENCHMARK_WARMUP_FRAGMENTS:3}
+    async-pipeline-benchmark-async-parallelism: ${VORTEX_EVAL_ASYNC_PIPELINE_BENCHMARK_ASYNC_PARALLELISM:4}
     eviction-filler-fragments: ${VORTEX_EVAL_EVICTION_FILLER_FRAGMENTS:6}
     eviction-filler-tokens: ${VORTEX_EVAL_EVICTION_FILLER_TOKENS:0}
     eviction-filler-importance: ${VORTEX_EVAL_EVICTION_FILLER_IMPORTANCE:0.95}

@@ -43,6 +43,20 @@ services:
       timeout: 20s
       retries: 3
 
+  redis:
+    image: redis:7.2-alpine
+    container_name: vortex-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   minio:
     image: minio/minio:RELEASE.2024-07-04T14-25-45Z
     container_name: vortex-minio
@@ -65,3 +79,4 @@ volumes:
   etcd-data:
   milvus-data:
   minio-data:
+  redis-data:

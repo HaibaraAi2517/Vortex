@@ -1,20 +1,26 @@
 package com.vortex.app.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vortex.app.runtime.ExecutionIdService;
 import com.vortex.common.model.TaskState;
 import com.vortex.kernel.snapshot.SnapshotService;
 import com.vortex.kernel.snapshot.TaskLifecycleManager;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -37,6 +43,15 @@ class TaskControllerTest {
     @MockBean
     private SnapshotService snapshotService;
 
+    @MockBean
+    private ExecutionIdService executionIdService;
+
+    @BeforeEach
+    void setUpExecutionIdPassthrough() {
+        doAnswer(invocation -> ((Supplier<?>) invocation.getArgument(3)).get())
+                .when(executionIdService).execute(any(), any(), any(), any());
+    }
+
     @Test
     void listTasks_returnsPagedPayload() throws Exception {
         TaskState task = TaskState.builder()
@@ -54,6 +69,28 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.size").value(1))
                 .andExpect(jsonPath("$.total").value(3))
                 .andExpect(jsonPath("$.hasNext").value(true));
+    }
+
+    @Test
+    void createTask_usesExecutionIdWhenHeaderIsPresent() throws Exception {
+        TaskState created = TaskState.builder()
+                .taskId("task-1")
+                .description("demo")
+                .namespace("ns")
+                .createdAt(Instant.parse("2026-05-25T00:00:00Z"))
+                .build();
+        when(snapshotService.createTask("demo", "ns")).thenReturn(created);
+
+        mockMvc.perform(post("/api/v1/tasks")
+                        .header(ExecutionIdService.HEADER_NAME, "exec-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskController.CreateTaskRequest("demo", "ns"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskId").value("task-1"));
+
+        verify(executionIdService).execute(any(), any(), any(), any());
+        verify(snapshotService).createTask("demo", "ns");
     }
 
     @Test

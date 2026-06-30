@@ -60,6 +60,18 @@ public class TaskState {
     @Builder.Default
     private Map<String, String> context = new HashMap<>();
 
+    /** Conversation runtime state keyed by conversation ID. */
+    @Builder.Default
+    private Map<String, ConversationState> conversations = new HashMap<>();
+
+    /** Tool execution runtime state keyed by execution ID. */
+    @Builder.Default
+    private Map<String, ToolExecutionState> toolExecutions = new HashMap<>();
+
+    /** LLM call runtime state keyed by call ID. */
+    @Builder.Default
+    private Map<String, LlmCallState> llmCalls = new HashMap<>();
+
     /** Namespace / agent session. */
     private String namespace;
 

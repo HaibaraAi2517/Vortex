@@ -1,5 +1,6 @@
 package com.vortex.app.controller;
 
+import com.vortex.app.runtime.ExecutionIdConflictException;
 import com.vortex.kernel.snapshot.CheckpointRecoveryException;
 import com.vortex.kernel.snapshot.CheckpointRecoveryFailureReason;
 import com.vortex.kernel.snapshot.InvalidRequestException;
@@ -56,6 +57,14 @@ public class TaskExceptionHandler {
         detail.setProperty("resourceType", ex.getResourceType());
         detail.setProperty("resourceId", ex.getResourceId());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(detail);
+    }
+
+    @ExceptionHandler(ExecutionIdConflictException.class)
+    public ResponseEntity<ProblemDetail> handleExecutionIdConflict(ExecutionIdConflictException ex) {
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        detail.setProperty("error", "EXECUTION_ID_CONFLICT");
+        detail.setProperty("executionId", ex.getExecutionId());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(detail);
     }
 
     @ExceptionHandler({InvalidRequestException.class, IllegalArgumentException.class})

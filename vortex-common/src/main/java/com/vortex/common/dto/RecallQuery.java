@@ -38,4 +38,12 @@ public class RecallQuery {
     /** Scenario for adaptive scoring profile selection: coding/chat/search. */
     @Builder.Default
     private MemoryScenario scenario = MemoryScenario.CHAT;
+
+    /** Retrieval pipeline variant. HYBRID combines lexical and vector candidates. */
+    @Builder.Default
+    private RetrievalMode retrievalMode = RetrievalMode.HYBRID;
+
+    /** Whether to apply the recall reranker after candidate generation. */
+    @Builder.Default
+    private boolean rerankEnabled = true;
 }

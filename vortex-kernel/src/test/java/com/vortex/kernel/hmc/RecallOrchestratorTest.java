@@ -3,9 +3,11 @@ package com.vortex.kernel.hmc;
 import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.dto.RetrievalMode;
 import com.vortex.common.exception.EmbeddingException;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.kernel.embedding.EmbeddingService;
+import com.vortex.kernel.paging.SemanticPagingManager;
 import com.vortex.storage.api.L2WarmStore;
 import com.vortex.storage.api.L3ColdStore;
 import com.vortex.storage.l1.CaffeineHotStore;
@@ -18,8 +20,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.verify;
 
 /**
  * Unit tests for {@link RecallOrchestrator}.
@@ -276,6 +280,70 @@ class RecallOrchestratorTest {
         assertThat(recalled.isPinned()).isTrue();
     }
 
+    @Test
+    void hybridRecallUsesKeywordBranchWhenVectorSearchMissesExactFact() {
+        MemoryFragment exact = fragment("kw-exact", "ns", "Pegasus owner is avery-deploy@example.com", List.of("role:user"), 4);
+        l2.seedSearchResults(List.of());
+        l2.seedNamespaceResults(List.of(exact));
+
+        RecallResult result = orchestrator.recall(RecallQuery.builder()
+                .query("Which Pegasus owner email should be used?")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .tags(List.of("role:user"))
+                .build());
+
+        assertThat(result.getFragments()).hasSize(1);
+        assertThat(result.getFragments().getFirst().getFragment().getId()).isEqualTo("kw-exact");
+        assertThat(result.getDiagnostics().getRetrievalMode()).isEqualTo(RetrievalMode.HYBRID.name());
+        assertThat(result.getDiagnostics().getKeywordCandidateCount()).isGreaterThan(0);
+        assertThat(result.getDiagnostics().getRerankCandidateCount()).isGreaterThan(0);
+    }
+
+    @Test
+    void vectorOnlyRecallSkipsKeywordCandidateCollection() {
+        MemoryFragment exact = fragment("kw-vector-only", "ns", "Pegasus owner is avery-deploy@example.com", List.of("role:user"), 4);
+        l2.seedSearchResults(List.of());
+        l2.seedNamespaceResults(List.of(exact));
+
+        RecallResult result = orchestrator.recall(RecallQuery.builder()
+                .query("Which Pegasus owner email should be used?")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .tags(List.of("role:user"))
+                .retrievalMode(RetrievalMode.VECTOR_ONLY)
+                .build());
+
+        assertThat(result.getFragments()).isEmpty();
+        assertThat(result.getDiagnostics().getRetrievalMode()).isEqualTo(RetrievalMode.VECTOR_ONLY.name());
+        assertThat(result.getDiagnostics().getKeywordCandidateCount()).isZero();
+    }
+    @Test
+    void recallTriggersPageFaultForSelectedL2Fragment() {
+        MemoryFragment l2Hit = fragment("l2-page-fault", "ns", "L2 page fault candidate", List.of(), 4);
+        l2.seedSearchResults(List.of(l2Hit));
+        RecordingSemanticPagingManager pagingManager = new RecordingSemanticPagingManager();
+        RecallOrchestrator pagingAwareOrchestrator = new RecallOrchestrator(
+                l1, l2, l3, embedding, emptyProvider(),
+                WEIGHT_LEARNER, evictionPolicy, regretTracker, SLO_TRACKER,
+                persistenceManager, pagingProvider(pagingManager),
+                redundancyAnalyzer, pinManager, evictionCoordinator);
+
+        RecallResult result = pagingAwareOrchestrator.recall(RecallQuery.builder()
+                .query("query")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .retrievalMode(RetrievalMode.VECTOR_ONLY)
+                .build());
+
+        assertThat(result.getFragments()).hasSize(1);
+        assertThat(result.getFragments().getFirst().getFragment().getId()).isEqualTo("l2-page-fault");
+        assertThat(pagingManager.pageFaultFragmentIds).containsExactly("l2-page-fault");
+        assertThat(pagingManager.pageFaultNamespaces).containsExactly("ns");
+    }
     // ========================================================================
     // recall: topK and tokenBudget
     // ========================================================================
@@ -577,6 +645,22 @@ class RecallOrchestratorTest {
         };
     }
 
+    private static ObjectProvider<SemanticPagingManager> pagingProvider(SemanticPagingManager pagingManager) {
+        return new ObjectProvider<>() {
+            @Override
+            public SemanticPagingManager getObject(Object... args) { return pagingManager; }
+            @Override
+            public SemanticPagingManager getIfAvailable() { return pagingManager; }
+            @Override
+            public SemanticPagingManager getIfUnique() { return pagingManager; }
+            @Override
+            public SemanticPagingManager getObject() { return pagingManager; }
+            @Override
+            public Iterator<SemanticPagingManager> iterator() { return pagingManager == null
+                    ? Collections.emptyIterator()
+                    : List.of(pagingManager).iterator(); }
+        };
+    }
     private static ObjectProvider<com.vortex.kernel.paging.SemanticPagingManager> emptyPagingProvider() {
         return new ObjectProvider<>() {
             @Override
@@ -608,6 +692,31 @@ class RecallOrchestratorTest {
         }
     }
 
+    private static final class RecordingSemanticPagingManager extends SemanticPagingManager {
+        private final List<String> pageFaultFragmentIds = new ArrayList<>();
+        private final List<String> pageFaultNamespaces = new ArrayList<>();
+
+        private RecordingSemanticPagingManager() {
+            super(null, null, null, null, null, null, null, null, null, true, 10, 1000);
+        }
+
+        @Override
+        public CompletableFuture<com.vortex.common.model.SemanticPage> handlePageFault(String fragmentId, String namespace) {
+            pageFaultFragmentIds.add(fragmentId);
+            pageFaultNamespaces.add(namespace);
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public void onRecall(float[] queryEmbedding) {
+            // No-op for this integration test.
+        }
+
+        @Override
+        public void onFragmentAccess(String fragmentId) {
+            // No-op for this integration test.
+        }
+    }
     private static class FixedEmbeddingService implements EmbeddingService {
         private final int dimension;
 

@@ -4,20 +4,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.Collections;
-import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Tracks which DAG elements have been modified since the last checkpoint.
- *
- * Maintains dirty sets per task for:
- * - node IDs (added or modified)
- * - edge IDs (added)
- * - context keys (added or modified)
- *
- * After a checkpoint, the dirty set is atomically retrieved and cleared.
+ * Tracks which runtime elements have been modified since the last checkpoint.
  */
 @Slf4j
 @Component
@@ -26,6 +17,9 @@ public class DirtySetTracker {
     private final ConcurrentHashMap<String, Set<String>> dirtyNodeIds = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Set<String>> dirtyEdgeIds = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Set<String>> dirtyContextKeys = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Set<String>> dirtyConversationIds = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Set<String>> dirtyToolExecutionIds = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Set<String>> dirtyLlmCallIds = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Set<String>> deletedNodeIds = new ConcurrentHashMap<>();
 
     // ---- Mark dirty ----
@@ -40,6 +34,18 @@ public class DirtySetTracker {
 
     public void markContextDirty(String taskId, String key) {
         dirtyContextKeys.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).add(key);
+    }
+
+    public void markConversationDirty(String taskId, String conversationId) {
+        dirtyConversationIds.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).add(conversationId);
+    }
+
+    public void markToolExecutionDirty(String taskId, String executionId) {
+        dirtyToolExecutionIds.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).add(executionId);
+    }
+
+    public void markLlmCallDirty(String taskId, String callId) {
+        dirtyLlmCallIds.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).add(callId);
     }
 
     public void markNodeDeleted(String taskId, String nodeId) {
@@ -66,12 +72,18 @@ public class DirtySetTracker {
         Set<String> nodeIds = dirtyNodeIds.remove(taskId);
         Set<String> edgeIds = dirtyEdgeIds.remove(taskId);
         Set<String> contextKeys = dirtyContextKeys.remove(taskId);
+        Set<String> conversationIds = dirtyConversationIds.remove(taskId);
+        Set<String> toolExecutionIds = dirtyToolExecutionIds.remove(taskId);
+        Set<String> llmCallIds = dirtyLlmCallIds.remove(taskId);
         Set<String> deletedNodes = deletedNodeIds.remove(taskId);
 
         return new DirtySnapshot(
                 nodeIds != null ? nodeIds : Collections.emptySet(),
                 edgeIds != null ? edgeIds : Collections.emptySet(),
                 contextKeys != null ? contextKeys : Collections.emptySet(),
+                conversationIds != null ? conversationIds : Collections.emptySet(),
+                toolExecutionIds != null ? toolExecutionIds : Collections.emptySet(),
+                llmCallIds != null ? llmCallIds : Collections.emptySet(),
                 deletedNodes != null ? deletedNodes : Collections.emptySet()
         );
     }
@@ -92,6 +104,15 @@ public class DirtySetTracker {
         if (!snapshot.contextKeys().isEmpty()) {
             dirtyContextKeys.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).addAll(snapshot.contextKeys());
         }
+        if (!snapshot.conversationIds().isEmpty()) {
+            dirtyConversationIds.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).addAll(snapshot.conversationIds());
+        }
+        if (!snapshot.toolExecutionIds().isEmpty()) {
+            dirtyToolExecutionIds.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).addAll(snapshot.toolExecutionIds());
+        }
+        if (!snapshot.llmCallIds().isEmpty()) {
+            dirtyLlmCallIds.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).addAll(snapshot.llmCallIds());
+        }
         if (!snapshot.deletedNodeIds().isEmpty()) {
             deletedNodeIds.computeIfAbsent(taskId, k -> ConcurrentHashMap.newKeySet()).addAll(snapshot.deletedNodeIds());
         }
@@ -101,14 +122,13 @@ public class DirtySetTracker {
      * Check if a task has any dirty state (without clearing).
      */
     public boolean isDirty(String taskId) {
-        Set<String> nodes = dirtyNodeIds.get(taskId);
-        Set<String> edges = dirtyEdgeIds.get(taskId);
-        Set<String> context = dirtyContextKeys.get(taskId);
-        Set<String> deleted = deletedNodeIds.get(taskId);
-        return (nodes != null && !nodes.isEmpty())
-                || (edges != null && !edges.isEmpty())
-                || (context != null && !context.isEmpty())
-                || (deleted != null && !deleted.isEmpty());
+        return hasAny(dirtyNodeIds.get(taskId))
+                || hasAny(dirtyEdgeIds.get(taskId))
+                || hasAny(dirtyContextKeys.get(taskId))
+                || hasAny(dirtyConversationIds.get(taskId))
+                || hasAny(dirtyToolExecutionIds.get(taskId))
+                || hasAny(dirtyLlmCallIds.get(taskId))
+                || hasAny(deletedNodeIds.get(taskId));
     }
 
     public boolean hasDirty(String taskId) {
@@ -122,7 +142,14 @@ public class DirtySetTracker {
         dirtyNodeIds.remove(taskId);
         dirtyEdgeIds.remove(taskId);
         dirtyContextKeys.remove(taskId);
+        dirtyConversationIds.remove(taskId);
+        dirtyToolExecutionIds.remove(taskId);
+        dirtyLlmCallIds.remove(taskId);
         deletedNodeIds.remove(taskId);
+    }
+
+    private boolean hasAny(Set<String> values) {
+        return values != null && !values.isEmpty();
     }
 
     /**
@@ -132,17 +159,29 @@ public class DirtySetTracker {
             Set<String> nodeIds,
             Set<String> edgeIds,
             Set<String> contextKeys,
+            Set<String> conversationIds,
+            Set<String> toolExecutionIds,
+            Set<String> llmCallIds,
             Set<String> deletedNodeIds
     ) {
         public boolean isEmpty() {
             return nodeIds.isEmpty()
                     && edgeIds.isEmpty()
                     && contextKeys.isEmpty()
+                    && conversationIds.isEmpty()
+                    && toolExecutionIds.isEmpty()
+                    && llmCallIds.isEmpty()
                     && deletedNodeIds.isEmpty();
         }
 
         public int totalChanges() {
-            return nodeIds.size() + edgeIds.size() + contextKeys.size() + deletedNodeIds.size();
+            return nodeIds.size()
+                    + edgeIds.size()
+                    + contextKeys.size()
+                    + conversationIds.size()
+                    + toolExecutionIds.size()
+                    + llmCallIds.size()
+                    + deletedNodeIds.size();
         }
     }
 }

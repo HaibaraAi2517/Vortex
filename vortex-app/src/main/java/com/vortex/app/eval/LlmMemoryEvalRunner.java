@@ -273,6 +273,7 @@ public class LlmMemoryEvalRunner {
                         .topK(Math.max(properties.getRecallTopK(), expectedFragments.size()))
                         .tokenBudget(properties.getRecallTokenBudget())
                         .scenario(properties.getLearningScenario())
+                        .retrievalMode(mode.retrievalMode())
                         .tags(recallTags(evalCase))
                         .build());
                 latencyBreakdown.recallLatencyMs = elapsedMillis(recallStartedAt);
@@ -481,7 +482,7 @@ public class LlmMemoryEvalRunner {
     }
 
     private Map<String, LlmMemoryEvalReport.ModeSummary> buildModeSummaries(List<LlmMemoryEvalResult> results) {
-        return results.stream()
+        Map<String, LlmMemoryEvalReport.ModeSummary> summaries = results.stream()
                 .collect(Collectors.groupingBy(
                         LlmMemoryEvalResult::getMode,
                         LinkedHashMap::new,
@@ -489,15 +490,17 @@ public class LlmMemoryEvalRunner {
                             int total = grouped.size();
                             long correct = grouped.stream().filter(LlmMemoryEvalResult::isCorrect).count();
                             long recallHits = grouped.stream().filter(LlmMemoryEvalResult::isRecallHit).count();
-                            long recoveredRuns = grouped.stream()
+                            double averageLatency = grouped.stream()
+                                    .mapToLong(LlmMemoryEvalResult::getLatencyMs)
+                                    .average()
+                                    .orElse(0.0d);
+                            List<LlmMemoryEvalResult> recovered = grouped.stream()
                                     .filter(result -> Boolean.TRUE.equals(result.getEvictedBeforeAnswer()))
-                                    .count();
-                            long recoveredCorrect = grouped.stream()
-                                    .filter(result -> Boolean.TRUE.equals(result.getEvictedBeforeAnswer()) && result.isCorrect())
-                                    .count();
-                            long recoveredL2Hits = grouped.stream()
-                                    .filter(result -> Boolean.TRUE.equals(result.getEvictedBeforeAnswer()))
-                                    .filter(result -> safeList(result.getRecalledFromTiers()).contains("L2"))
+                                    .toList();
+                            long recoveredCorrect = recovered.stream().filter(LlmMemoryEvalResult::isCorrect).count();
+                            long recoveredL2 = recovered.stream()
+                                    .filter(result -> result.getRecalledFromTiers() != null
+                                            && result.getRecalledFromTiers().contains("L2"))
                                     .count();
                             long feedbackSubmitted = grouped.stream()
                                     .filter(result -> Boolean.TRUE.equals(result.getFeedbackSubmitted()))
@@ -508,26 +511,37 @@ public class LlmMemoryEvalRunner {
                             long learningUpdateDelta = grouped.stream()
                                     .mapToLong(result -> delta(result.getLearningActiveUpdateCountBefore(), result.getLearningActiveUpdateCountAfter()))
                                     .sum();
-                            double averageLatency = grouped.stream()
-                                    .mapToLong(LlmMemoryEvalResult::getLatencyMs)
-                                    .average()
-                                    .orElse(0.0d);
                             return LlmMemoryEvalReport.ModeSummary.builder()
                                     .total(total)
                                     .correct((int) correct)
                                     .accuracy(total == 0 ? 0.0d : (double) correct / total)
                                     .recallHitRate(total == 0 ? 0.0d : (double) recallHits / total)
                                     .averageLatencyMs(averageLatency)
-                                    .recoveredRuns((int) recoveredRuns)
-                                    .recoveredAccuracy(recoveredRuns == 0 ? 0.0d : (double) recoveredCorrect / recoveredRuns)
-                                    .recoveredL2HitRate(recoveredRuns == 0 ? 0.0d : (double) recoveredL2Hits / recoveredRuns)
+                                    .recoveredRuns(recovered.size())
+                                    .recoveredAccuracy(recovered.isEmpty() ? 0.0d : (double) recoveredCorrect / recovered.size())
+                                    .recoveredL2HitRate(recovered.isEmpty() ? 0.0d : (double) recoveredL2 / recovered.size())
                                     .feedbackSubmitted((int) feedbackSubmitted)
                                     .learningSampleCountDelta(learningSampleDelta)
                                     .learningUpdateCountDelta(learningUpdateDelta)
                                     .build();
                         })));
+        applyVectorOnlyLift(summaries);
+        return summaries;
     }
 
+    private void applyVectorOnlyLift(Map<String, LlmMemoryEvalReport.ModeSummary> summaries) {
+        LlmMemoryEvalReport.ModeSummary vectorOnly = summaries.get(LlmMemoryEvalMode.VORTEX_VECTOR_ONLY.reportName());
+        if (vectorOnly == null) {
+            return;
+        }
+        double baseline = vectorOnly.getRecallHitRate();
+        for (Map.Entry<String, LlmMemoryEvalReport.ModeSummary> entry : summaries.entrySet()) {
+            LlmMemoryEvalReport.ModeSummary summary = entry.getValue();
+            double lift = summary.getRecallHitRate() - baseline;
+            summary.setRecallHitRateLiftVsVectorOnly(lift);
+            summary.setRecallHitRateRelativeLiftVsVectorOnly(baseline == 0.0d ? 0.0d : lift / baseline);
+        }
+    }
     private FeedbackObservation maybeSubmitFeedback(
             LlmMemoryEvalMode mode,
             RecallResult recallResult,

@@ -2,7 +2,11 @@ package com.vortex.app.controller;
 
 import com.vortex.app.health.MemorySloHealthIndicator;
 import com.vortex.common.model.MemoryFragment;
+import com.vortex.kernel.hmc.AsyncMemoryPipeline;
 import com.vortex.kernel.hmc.HierarchicalMemoryController;
+import com.vortex.kernel.hmc.MemoryPipelineRequest;
+import com.vortex.kernel.hmc.MemoryPipelineStatus;
+import com.vortex.kernel.hmc.MemoryPipelineStatusCode;
 import com.vortex.storage.api.L1HotStore;
 import com.vortex.storage.api.CheckpointStoreException;
 import org.junit.jupiter.api.Test;
@@ -33,6 +37,9 @@ class MemoryControllerTest {
 
     @MockBean
     private HierarchicalMemoryController hmc;
+
+    @MockBean
+    private AsyncMemoryPipeline asyncMemoryPipeline;
 
     @MockBean
     private MemorySloHealthIndicator memorySloHealthIndicator;
@@ -171,5 +178,48 @@ class MemoryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(2))
                 .andExpect(jsonPath("$.fragmentIds[0]").value("frag-1"));
+    }
+
+    @Test
+    void storeAsyncAcceptsValidRequestAndReturnsPipelineStatus() throws Exception {
+        when(asyncMemoryPipeline.submit(any(MemoryPipelineRequest.class))).thenReturn(MemoryPipelineStatus.builder()
+                .pipelineId("pipeline-1")
+                .namespace("ns")
+                .status(MemoryPipelineStatusCode.ACCEPTED)
+                .build());
+
+        mockMvc.perform(post("/api/v1/memory/store/async")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"hello","namespace":"ns","reasoningChainId":"chain-1","pinTtlMillis":1000}
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.pipelineId").value("pipeline-1"))
+                .andExpect(jsonPath("$.namespace").value("ns"))
+                .andExpect(jsonPath("$.status").value("ACCEPTED"));
+    }
+
+    @Test
+    void pipelineStatusReturnsCurrentStatusWhenPresent() throws Exception {
+        when(asyncMemoryPipeline.snapshot("pipeline-1")).thenReturn(Optional.of(MemoryPipelineStatus.builder()
+                .pipelineId("pipeline-1")
+                .namespace("ns")
+                .status(MemoryPipelineStatusCode.COMPLETED)
+                .fragmentIds(List.of("frag-1"))
+                .build()));
+
+        mockMvc.perform(get("/api/v1/memory/pipeline/pipeline-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pipelineId").value("pipeline-1"))
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.fragmentIds[0]").value("frag-1"));
+    }
+
+    @Test
+    void pipelineStatusReturnsNotFoundWhenMissing() throws Exception {
+        when(asyncMemoryPipeline.snapshot("missing")).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/v1/memory/pipeline/missing"))
+                .andExpect(status().isNotFound());
     }
 }

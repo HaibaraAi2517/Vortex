@@ -57,6 +57,12 @@ class LlmMemoryEvalReportWriterTest {
                         .generationResponseBytes(654)
                         .recallDiagnostics(RecallDiagnostics.builder()
                                 .requiredTags(List.of("llm-memory-eval-memory"))
+                                .retrievalMode("HYBRID")
+                                .keywordCandidateCount(1)
+                                .keywordAcceptedCount(1)
+                                .vectorCandidateCount(1)
+                                .vectorAcceptedCount(1)
+                                .rerankCandidateCount(1)
                                 .l1CandidateCount(1)
                                 .l1TagMatchedCount(1)
                                 .l1SelectedCount(1)
@@ -134,7 +140,7 @@ class LlmMemoryEvalReportWriterTest {
         assertThat(markdown).contains("## Recall Diagnostics");
         assertThat(markdown).contains("Failure Reason | Runtime Type | Transient Runtime");
         assertThat(markdown).contains("profile-001 | Vortex-Memory | true | answer_missing_fact | generation_timeout | true | CSV | XLSX");
-        assertThat(markdown).contains("profile-001 | Vortex-Memory |  | 1 | llm-memory-eval-memory | 1 | 1 | 1");
+        assertThat(markdown).contains("profile-001 | Vortex-Memory | HYBRID |  | 1 | llm-memory-eval-memory | 1 | 1 | 0 | 0 | 0 | 1 | 1 | 1 | 1 | 1 | 1");
         assertThat(markdown).contains("## Generation Telemetry");
         assertThat(markdown).contains("profile-001 | Vortex-Memory | gpt-5.4 | 200 | 1 | 321 | 654");
         assertThat(json).contains("\"environment\"");

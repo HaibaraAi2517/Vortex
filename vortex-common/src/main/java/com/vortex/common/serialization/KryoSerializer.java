@@ -117,6 +117,12 @@ public class KryoSerializer {
         kryo.register(CheckpointMetadata.CheckpointType.class, 35);
         kryo.register(ActionLogEntry.OperationType.class, 36);
         kryo.register(TaskState.TaskFinalizationStatus.class, 37);
+        kryo.register(ConversationState.class, 38);
+        kryo.register(ConversationMessage.class, 39);
+        kryo.register(ToolExecutionState.class, 40);
+        kryo.register(ToolExecutionStatus.class, 41);
+        kryo.register(LlmCallState.class, 42);
+        kryo.register(LlmCallStatus.class, 43);
     }
 
     /**

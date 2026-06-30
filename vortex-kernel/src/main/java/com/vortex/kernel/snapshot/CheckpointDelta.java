@@ -1,9 +1,12 @@
 package com.vortex.kernel.snapshot;
 
+import com.vortex.common.model.ConversationState;
 import com.vortex.common.model.DagEdge;
 import com.vortex.common.model.DagNode;
+import com.vortex.common.model.LlmCallState;
 import com.vortex.common.model.TaskBranch;
 import com.vortex.common.model.TaskState;
+import com.vortex.common.model.ToolExecutionState;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -35,6 +38,15 @@ public class CheckpointDelta {
     /** Context entries that were added or modified since the base checkpoint. */
     private Map<String, String> contextDiff;
 
+    /** Conversation states that were created or modified since the base checkpoint. */
+    private Map<String, ConversationState> conversationDiff;
+
+    /** Tool execution states that were created or modified since the base checkpoint. */
+    private Map<String, ToolExecutionState> toolExecutionDiff;
+
+    /** LLM call states that were created or modified since the base checkpoint. */
+    private Map<String, LlmCallState> llmCallDiff;
+
     /** Node IDs that were deleted since the base checkpoint. */
     private Set<String> deletedNodeIds;
 
@@ -54,9 +66,20 @@ public class CheckpointDelta {
     private TaskState.TaskFinalizationStatus finalizationStatus;
 
     public boolean isEmpty() {
-        return changedNodes.isEmpty()
-                && newEdges.isEmpty()
-                && contextDiff.isEmpty()
-                && deletedNodeIds.isEmpty();
+        return isEmpty(changedNodes)
+                && isEmpty(newEdges)
+                && isEmpty(contextDiff)
+                && isEmpty(conversationDiff)
+                && isEmpty(toolExecutionDiff)
+                && isEmpty(llmCallDiff)
+                && isEmpty(deletedNodeIds);
+    }
+
+    private boolean isEmpty(java.util.Collection<?> values) {
+        return values == null || values.isEmpty();
+    }
+
+    private boolean isEmpty(Map<?, ?> values) {
+        return values == null || values.isEmpty();
     }
 }

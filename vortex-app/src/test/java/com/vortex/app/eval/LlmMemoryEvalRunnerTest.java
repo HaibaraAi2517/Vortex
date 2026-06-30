@@ -8,6 +8,7 @@ import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.RecallDiagnostics;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.dto.RetrievalMode;
 import com.vortex.common.exception.GenerationException;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.serialization.JsonMapperFactory;
@@ -217,6 +218,8 @@ class LlmMemoryEvalRunnerTest {
             List<String> requiredTags = query.getTags() == null ? List.of() : query.getTags();
             List<RecallResult.ScoredFragment> scoredFragments = fragments.stream()
                     .filter(fragment -> fragmentMatchesTags(fragment, requiredTags))
+                    .filter(fragment -> query.getRetrievalMode() != RetrievalMode.VECTOR_ONLY
+                            || !fragment.getId().contains("keyword-only"))
                     .limit(query.getTopK())
                     .map(fragment -> RecallResult.ScoredFragment.builder()
                             .fragment(fragment)
@@ -234,11 +237,15 @@ class LlmMemoryEvalRunnerTest {
                     .sourceTrace(scoredFragments.stream().map(RecallResult.ScoredFragment::getTier).toList())
                     .diagnostics(RecallDiagnostics.builder()
                             .requiredTags(requiredTags)
+                            .retrievalMode(query.getRetrievalMode() == null ? null : query.getRetrievalMode().name())
                             .l1CandidateCount(fragments.size())
                             .l1TagMatchedCount(scoredFragments.size())
                             .l1SelectedCount((int) scoredFragments.stream()
                                     .filter(fragment -> "L1".equals(fragment.getTier()))
                                     .count())
+                            .keywordCandidateCount(query.getRetrievalMode() == RetrievalMode.VECTOR_ONLY ? 0 : scoredFragments.size())
+                            .vectorCandidateCount(scoredFragments.size())
+                            .rerankCandidateCount(scoredFragments.size())
                             .l2SearchCandidateCount(fragments.size())
                             .l2SearchAcceptedCount((int) scoredFragments.stream()
                                     .filter(fragment -> "L2".equals(fragment.getTier()))
@@ -275,6 +282,34 @@ class LlmMemoryEvalRunnerTest {
                 .isTrue();
     }
 
+    @Test
+    void runShouldReportHybridRecallLiftAgainstVectorOnly() {
+        LlmMemoryEvalCase evalCase = LlmMemoryEvalCase.builder()
+                .caseId("keyword-lift-001")
+                .namespace("llm-eval-keyword-lift")
+                .memoryFragments(List.of(LlmMemoryEvalCase.EvalMemoryFragment.builder()
+                        .fragmentId("keyword-only-owner")
+                        .content("Pegasus owner is avery-deploy@example.com")
+                        .tags(List.of("keyword-lift"))
+                        .build()))
+                .question("Which Pegasus owner email should be used?")
+                .expectedAnswer("avery-deploy@example.com")
+                .mustContain(List.of("avery-deploy@example.com"))
+                .expectedFragments(List.of("keyword-only-owner"))
+                .tags(List.of("keyword-lift"))
+                .build();
+        expectedAnswers.put("keyword-lift-001", "avery-deploy@example.com");
+
+        LlmMemoryEvalReport report = runner.run(List.of(evalCase), List.of(
+                LlmMemoryEvalMode.VORTEX_VECTOR_ONLY,
+                LlmMemoryEvalMode.VORTEX_MEMORY));
+
+        LlmMemoryEvalReport.ModeSummary vectorOnly = report.getModeSummaries().get("Vortex-VectorOnly");
+        LlmMemoryEvalReport.ModeSummary hybrid = report.getModeSummaries().get("Vortex-Memory");
+        assertThat(vectorOnly.getRecallHitRate()).isEqualTo(0.0d);
+        assertThat(hybrid.getRecallHitRate()).isEqualTo(1.0d);
+        assertThat(hybrid.getRecallHitRateLiftVsVectorOnly()).isEqualTo(1.0d);
+    }
     @Test
     void loadDefaultCaseSetShouldReadRuntimeClasspathDataset() {
         List<LlmMemoryEvalCase> cases = runner.loadDefaultCaseSet();

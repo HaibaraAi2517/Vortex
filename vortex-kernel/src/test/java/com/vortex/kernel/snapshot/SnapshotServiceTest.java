@@ -211,6 +211,37 @@ class SnapshotServiceTest {
     }
 
     @Test
+    void recover_withWalReplay_replaysRuntimeStateEntries() {
+        TaskState task = service.createTask("runtime wal replay", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "before checkpoint");
+        String checkpointId = service.checkpoint(task.getTaskId());
+
+        service.appendConversationMessage(task.getTaskId(), "conversation-1", "user", "retry deployment");
+        service.startToolExecution(task.getTaskId(), "tool-1", "shell", "deploy --dry-run");
+        service.failToolExecution(task.getTaskId(), "tool-1", "exit code 1");
+        service.startLlmCall(task.getTaskId(), "llm-1", "openai", "gpt-test", "summarize failure", 250L);
+        service.timeoutLlmCall(task.getTaskId(), "llm-1", "timeout after 250ms");
+        service.markLlmCallRetry(task.getTaskId(), "llm-1");
+
+        service.evictFromCacheForTest(task.getTaskId());
+        TaskState recovered = service.recover(task.getTaskId(), checkpointId);
+
+        assertThat(recovered.getConversations()).containsKey("conversation-1");
+        assertThat(recovered.getConversations().get("conversation-1").getMessages())
+                .extracting(ConversationMessage::getContent)
+                .containsExactly("retry deployment");
+        assertThat(recovered.getToolExecutions()).containsKey("tool-1");
+        assertThat(recovered.getToolExecutions().get("tool-1").getStatus())
+                .isEqualTo(ToolExecutionStatus.FAILED);
+        assertThat(recovered.getToolExecutions().get("tool-1").getErrorMessage())
+                .isEqualTo("exit code 1");
+        assertThat(recovered.getLlmCalls()).containsKey("llm-1");
+        assertThat(recovered.getLlmCalls().get("llm-1").getStatus())
+                .isEqualTo(LlmCallStatus.RETRY_PENDING);
+        assertThat(recovered.getLlmCalls().get("llm-1").isRetryable()).isTrue();
+        assertThat(recovered.getLlmCalls().get("llm-1").getAttempt()).isEqualTo(2);
+    }
+    @Test
     void recover_sameCheckpointTwice_replaysWalEachTime() {
         TaskState task = service.createTask("repeat-recovery test", "ns");
         DagNode beforeCheckpoint = service.appendNode(task.getTaskId(), "THOUGHT", "before checkpoint");
@@ -423,6 +454,38 @@ class SnapshotServiceTest {
     }
 
     @Test
+    void recover_fromDeltaCheckpoint_restoresRuntimeStateDiffs() {
+        service = newService(fakeL3, 10, 20);
+
+        TaskState task = service.createTask("runtime delta recovery", "ns");
+        service.appendNode(task.getTaskId(), "THOUGHT", "before full");
+        String fullCheckpointId = service.checkpoint(task.getTaskId());
+
+        service.appendConversationMessage(task.getTaskId(), "conversation-delta", "assistant", "captured in delta");
+        service.startToolExecution(task.getTaskId(), "tool-delta", "http", "GET /health");
+        service.failToolExecution(task.getTaskId(), "tool-delta", "503");
+        service.startLlmCall(task.getTaskId(), "llm-delta", "openai", "gpt-test", "recover me", 500L);
+        service.timeoutLlmCall(task.getTaskId(), "llm-delta", "timeout");
+        String deltaCheckpointId = service.checkpoint(task.getTaskId());
+
+        assertThat(deltaCheckpointId).isNotEqualTo(fullCheckpointId);
+        assertThat(service.listCheckpoints(task.getTaskId()))
+                .extracting(CheckpointMetadata::getType)
+                .containsExactly(CheckpointMetadata.CheckpointType.FULL, CheckpointMetadata.CheckpointType.DELTA);
+
+        service.evictFromCacheForTest(task.getTaskId());
+        TaskState recovered = service.recover(task.getTaskId(), deltaCheckpointId);
+
+        assertThat(recovered.getConversations().get("conversation-delta").getMessages())
+                .extracting(ConversationMessage::getContent)
+                .containsExactly("captured in delta");
+        assertThat(recovered.getToolExecutions().get("tool-delta").getStatus())
+                .isEqualTo(ToolExecutionStatus.FAILED);
+        assertThat(recovered.getLlmCalls().get("llm-delta").getStatus())
+                .isEqualTo(LlmCallStatus.TIMED_OUT);
+        assertThat(recovered.getLlmCalls().get("llm-delta").isRetryable()).isTrue();
+    }
+    @Test
     void recover_fromFullCheckpoint_recordsFullRecoveryMetric() {
         TaskState task = service.createTask("full recovery metrics", "ns");
         service.appendNode(task.getTaskId(), "THOUGHT", "full");
@@ -580,6 +643,9 @@ class SnapshotServiceTest {
                 0,
                 Set.of(),
                 Set.of(),
+                java.util.Map.of(),
+                java.util.Map.of(),
+                java.util.Map.of(),
                 java.util.Map.of(),
                 Set.of(),
                 null,
@@ -1173,6 +1239,9 @@ class SnapshotServiceTest {
                 Set.of(orphan),
                 Set.of(brokenEdge),
                 java.util.Map.of(),
+                java.util.Map.of(),
+                java.util.Map.of(),
+                java.util.Map.of(),
                 Set.of(),
                 orphan.getNodeId(),
                 null,
@@ -1377,12 +1446,14 @@ class SnapshotServiceTest {
                 scheduler, dirtySetTracker, memorySloTracker, new TaskFinalizationMetrics(meterRegistry), null);
         DagMutationService dagMutationSvc = new DagMutationService(
                 walWriter, dirtySetTracker, scheduler, eventPublisher, branchManager, taskLifecycleMgr);
+        RuntimeMutationService runtimeMutationSvc = new RuntimeMutationService(
+                walWriter, dirtySetTracker, scheduler, taskLifecycleMgr);
         RecoveryEngine recoveryEng = new RecoveryEngine(
                 walReader, walWriter, checkpointManager, checkpointRecoveryMetrics, memorySloTracker,
                 branchManager, scheduler);
 
         SnapshotService snapshotService = new SnapshotService(
-                taskLifecycleMgr, dagMutationSvc, recoveryEng,
+                taskLifecycleMgr, dagMutationSvc, runtimeMutationSvc, recoveryEng,
                 branchManager, dotExporter, walWriter, walTruncator,
                 checkpointManager, lifecycleManager, scheduler, checkpointRecoveryMetrics, memorySloTracker);
         taskLifecycleMgr.setRecoveryEngine(recoveryEng);

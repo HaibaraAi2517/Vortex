@@ -81,6 +81,10 @@ public class FragmentPersistenceManager {
                 });
     }
 
+    public void persistBlocking(MemoryFragment fragment, String reason) {
+        persistTask(buildTask(fragment, reason));
+    }
+
     public int replayPendingTasks() {
         int pending = deadLetterQueue.size();
         if (pending == 0) {

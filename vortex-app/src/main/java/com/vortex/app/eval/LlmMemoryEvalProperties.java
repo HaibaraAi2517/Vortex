@@ -19,6 +19,7 @@ public class LlmMemoryEvalProperties {
     private String datasetLocation = "classpath:llm-memory-eval-set.json";
     private List<LlmMemoryEvalMode> modes = new ArrayList<>(List.of(
             LlmMemoryEvalMode.BASELINE_NO_MEMORY,
+            LlmMemoryEvalMode.VORTEX_VECTOR_ONLY,
             LlmMemoryEvalMode.VORTEX_MEMORY,
             LlmMemoryEvalMode.VORTEX_RECOVERED_MEMORY));
     private boolean runOnStartup = false;
@@ -33,6 +34,9 @@ public class LlmMemoryEvalProperties {
     private MemoryScenario learningScenario = MemoryScenario.CHAT;
     private Duration recoveryPollTimeout = Duration.ofSeconds(10);
     private Duration recoveryPollInterval = Duration.ofMillis(250);
+    private int asyncPipelineBenchmarkFragments = 24;
+    private int asyncPipelineBenchmarkWarmupFragments = 3;
+    private int asyncPipelineBenchmarkAsyncParallelism = 4;
     private int evictionFillerFragments = 6;
     private int evictionFillerTokens = 0;
     private double evictionFillerImportance = 0.95d;

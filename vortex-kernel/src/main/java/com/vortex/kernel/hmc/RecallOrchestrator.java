@@ -4,6 +4,7 @@ import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.dto.RecallDiagnostics;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.dto.RetrievalMode;
 import com.vortex.common.exception.EmbeddingException;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.kernel.embedding.EmbeddingService;
@@ -36,6 +37,8 @@ public class RecallOrchestrator {
     private final L1HotStore l1;
     private final L2WarmStore l2;
     private final L3ColdStore l3;
+    private final KeywordRecallIndex keywordRecallIndex = new KeywordRecallIndex();
+    private final HybridRecallReranker hybridRecallReranker = new HybridRecallReranker();
     private final EmbeddingService l1EmbeddingService;
     private final EmbeddingService l2EmbeddingService;
     private final AdaptiveWeightLearner adaptiveWeightLearner;
@@ -90,17 +93,29 @@ public class RecallOrchestrator {
     public RecallResult recall(RecallQuery query) {
         long startedAt = System.nanoTime();
         List<String> requiredTags = normalizeTags(query.getTags());
+        RetrievalMode retrievalMode = query.getRetrievalMode() == null
+                ? RetrievalMode.HYBRID
+                : query.getRetrievalMode();
+        boolean vectorEnabled = retrievalMode != RetrievalMode.KEYWORD_ONLY;
+        boolean keywordEnabled = retrievalMode != RetrievalMode.VECTOR_ONLY;
+        boolean rerankEnabled = query.isRerankEnabled();
         RecallDiagnosticsAccumulator diagnostics = new RecallDiagnosticsAccumulator(requiredTags);
+        diagnostics.setRetrievalMode(retrievalMode.name());
+        diagnostics.setRerankEnabled(rerankEnabled);
         MemoryScenario scenario = query.getScenario() == null ? MemoryScenario.CHAT : query.getScenario();
         AdaptiveWeightLearner.ProfileSelection profileSelection = adaptiveWeightLearner.selectProfiles(scenario);
         AdaptiveWeightProfile baselineProfile = evictionPolicy.defaultProfile();
-        // L1 query embedding — BGE-Small (fast, local)
-        float[] l1QueryEmbedding = requireEmbedding(l1EmbeddingService, query.getQuery(), "L1 recall query");
-        // L2 query embedding — DeepSeek if available, else reuse BGE-Small
-        float[] l2QueryEmbedding = resolveL2QueryEmbedding(query.getQuery(), l1QueryEmbedding);
 
-        List<RecallResult.ScoredFragment> results = new ArrayList<>();
-        int tokensSoFar = 0;
+        float[] l1QueryEmbedding = requireEmbedding(l1EmbeddingService, query.getQuery(), "L1 recall query");
+        float[] l2QueryEmbedding = vectorEnabled
+                ? resolveL2QueryEmbedding(query.getQuery(), l1QueryEmbedding)
+                : null;
+
+        Map<String, MemoryFragment> candidatesById = new LinkedHashMap<>();
+        Map<String, String> tierById = new HashMap<>();
+        Map<String, Double> semanticScoresById = new HashMap<>();
+        Map<String, Double> keywordScoresById = new HashMap<>();
+        Set<String> attemptedL2Ids = new HashSet<>();
 
         List<MemoryFragment> l1Candidates = l1.getAll(query.getNamespace());
         diagnostics.setL1CandidateCount(l1Candidates.size());
@@ -108,87 +123,107 @@ public class RecallOrchestrator {
                 .filter(fragment -> matchesAllTags(fragment, requiredTags))
                 .toList();
         diagnostics.setL1TagMatchedCount(filteredL1Candidates.size());
-        List<RankedRecallCandidate> activeSelected = new ArrayList<>();
-        Set<String> selectedIds = new HashSet<>();
-        for (ScoredCandidate candidate : rankForRecall(filteredL1Candidates, l1QueryEmbedding, profileSelection.active())) {
-            if (activeSelected.size() >= query.getTopK()) {
-                break;
-            }
-            if (tokensSoFar + candidate.fragment().getTokenCount() > query.getTokenBudget()) {
-                diagnostics.incrementL1TokenBudgetRejectedCount();
-                continue;
-            }
-            activeSelected.add(new RankedRecallCandidate(candidate.fragment(), candidate.score(), "L1"));
-            selectedIds.add(candidate.fragment().getId());
-            tokensSoFar += candidate.fragment().getTokenCount();
-            diagnostics.incrementL1SelectedCount();
-        }
+        filteredL1Candidates.forEach(fragment -> addCandidate(candidatesById, tierById, fragment, "L1"));
 
-        List<MemoryFragment> evaluationPool = new ArrayList<>(filteredL1Candidates);
-        if (activeSelected.size() < query.getTopK()) {
-            int needed = query.getTopK() - activeSelected.size();
-            int l2SearchLimit = Math.max(
-                    needed * 4,
-                    query.getTopK() * 4);
-            RedundancyAnalyzer.IncrementalRedundancyState redundancyState = RedundancyAnalyzer.IncrementalRedundancyState.from(filteredL1Candidates);
-            Set<String> attemptedL2Ids = new HashSet<>();
-            tokensSoFar = appendL2Candidates(
+        if (vectorEnabled) {
+            int l2SearchLimit = Math.max(16, query.getTopK() * 4);
+            collectL2Candidates(
                     l2.search(l2QueryEmbedding, query.getNamespace(), l2SearchLimit),
                     RecallCandidateSource.L2_SEARCH,
                     query,
                     requiredTags,
-                    l1QueryEmbedding,
-                    profileSelection.active(),
-                    activeSelected,
-                    selectedIds,
-                    evaluationPool,
-                    redundancyState,
+                    candidatesById,
+                    tierById,
                     attemptedL2Ids,
-                    tokensSoFar,
                     diagnostics);
-            if (activeSelected.size() < query.getTopK()) {
+            if (retrievalMode == RetrievalMode.HYBRID && candidatesById.size() < query.getTopK()) {
                 int fallbackLimit = Math.max(l2SearchLimit, query.getTopK() * 8);
-                tokensSoFar = appendL2Candidates(
+                collectL2Candidates(
                         l2.listByNamespace(query.getNamespace(), fallbackLimit),
                         RecallCandidateSource.L2_NAMESPACE_FALLBACK,
                         query,
                         requiredTags,
-                        l1QueryEmbedding,
-                        profileSelection.active(),
-                        activeSelected,
-                        selectedIds,
-                        evaluationPool,
-                        redundancyState,
+                        candidatesById,
+                        tierById,
                         attemptedL2Ids,
-                        tokensSoFar,
                         diagnostics);
             }
         }
 
+        if (keywordEnabled) {
+            collectKeywordCandidates(
+                    query,
+                    requiredTags,
+                    filteredL1Candidates,
+                    candidatesById,
+                    tierById,
+                    keywordScoresById,
+                    diagnostics);
+        }
+
+        List<MemoryFragment> evaluationPool = new ArrayList<>(candidatesById.values());
         List<ScoredCandidate> activeRanked = rankForRecall(evaluationPool, l1QueryEmbedding, profileSelection.active());
         List<ScoredCandidate> shadowRanked = rankForRecall(evaluationPool, l1QueryEmbedding, profileSelection.shadow());
         List<ScoredCandidate> baselineRanked = rankForRecall(evaluationPool, l1QueryEmbedding, baselineProfile);
-        List<String> activeEvictionRanked = evictionCoordinator.rankEvictionForEvaluation(evaluationPool, l1QueryEmbedding, profileSelection.active());
-        List<String> shadowEvictionRanked = evictionCoordinator.rankEvictionForEvaluation(evaluationPool, l1QueryEmbedding, profileSelection.shadow());
-        List<String> baselineEvictionRanked = evictionCoordinator.rankEvictionForEvaluation(evaluationPool, l1QueryEmbedding, baselineProfile);
+        if (vectorEnabled) {
+            activeRanked.forEach(candidate -> semanticScoresById.put(candidate.fragment().getId(), candidate.score()));
+        }
+        diagnostics.setVectorCandidateCount(vectorEnabled ? semanticScoresById.size() : 0);
+        diagnostics.setVectorAcceptedCount(vectorEnabled
+                ? (int) semanticScoresById.values().stream().filter(score -> score != null && score > 0.0).count()
+                : 0);
 
-        for (RankedRecallCandidate selected : activeSelected) {
-            MemoryFragment recalled;
-            if ("L1".equals(selected.tier())) {
-                recalled = refreshL1Fragment(selected.fragment());
-            } else {
-                recalled = prepareL2RecallCandidate(selected.fragment());
+        List<HybridRecallReranker.HybridCandidate> reranked = rerankCandidates(
+                candidatesById,
+                semanticScoresById,
+                keywordScoresById,
+                keywordEnabled,
+                rerankEnabled);
+        diagnostics.setRerankCandidateCount(rerankEnabled ? reranked.size() : 0);
+
+        List<RecallResult.ScoredFragment> results = new ArrayList<>();
+        int tokensSoFar = 0;
+        Set<String> selectedIds = new HashSet<>();
+        for (HybridRecallReranker.HybridCandidate candidate : reranked) {
+            if (results.size() >= query.getTopK()) {
+                break;
+            }
+            MemoryFragment fragment = candidate.fragment();
+            if (!selectedIds.add(fragment.getId())) {
+                continue;
+            }
+            if (tokensSoFar + fragment.getTokenCount() > query.getTokenBudget()) {
+                diagnostics.incrementTokenBudgetRejectedForTier(tierById.get(fragment.getId()), keywordScoresById.containsKey(fragment.getId()));
+                continue;
+            }
+            String tier = tierById.getOrDefault(fragment.getId(), "L1");
+            MemoryFragment recalled = "L1".equals(tier)
+                    ? refreshL1Fragment(fragment)
+                    : prepareL2RecallCandidate(fragment);
+            if ("L1".equals(tier)) {
+                diagnostics.incrementL1SelectedCount();
+            } else if (pagingManager != null) {
+                pagingManager.handlePageFault(fragment.getId(), query.getNamespace());
             }
             results.add(RecallResult.ScoredFragment.builder()
                     .fragment(recalled)
-                    .score(selected.score())
-                    .tier(selected.tier())
+                    .score(candidate.score())
+                    .tier(tier)
                     .build());
+            tokensSoFar += recalled.getTokenCount();
         }
 
         List<String> trace = results.stream().map(RecallResult.ScoredFragment::getTier).toList();
         diagnostics.setFinalReturnedCount(results.size());
         diagnostics.resolveEmptyRecallReason();
+        List<String> returnedFragmentIds = results.stream()
+                .map(RecallResult.ScoredFragment::getFragment)
+                .map(MemoryFragment::getId)
+                .toList();
+        List<String> activeEvictionRanked = evictionCoordinator.rankEvictionForEvaluation(evaluationPool, l1QueryEmbedding, profileSelection.active());
+        List<String> shadowEvictionRanked = evictionCoordinator.rankEvictionForEvaluation(evaluationPool, l1QueryEmbedding, profileSelection.shadow());
+        List<String> baselineEvictionRanked = evictionCoordinator.rankEvictionForEvaluation(evaluationPool, l1QueryEmbedding, baselineProfile);
+
         String recallSessionId = adaptiveWeightLearner.recordRecallSession(RecallSessionRecord.builder()
                 .namespace(query.getNamespace())
                 .scenario(scenario)
@@ -201,7 +236,7 @@ public class RecallOrchestrator {
                 .rankedFragmentIds(activeRanked.stream().map(sc -> sc.fragment().getId()).toList())
                 .shadowRankedFragmentIds(shadowRanked.stream().map(sc -> sc.fragment().getId()).toList())
                 .baselineRankedFragmentIds(baselineRanked.stream().map(sc -> sc.fragment().getId()).toList())
-                .returnedFragmentIds(activeSelected.stream().map(selected -> selected.fragment().getId()).toList())
+                .returnedFragmentIds(returnedFragmentIds)
                 .activeEvictionRankedFragmentIds(activeEvictionRanked)
                 .shadowEvictionRankedFragmentIds(shadowEvictionRanked)
                 .baselineEvictionRankedFragmentIds(baselineEvictionRanked)
@@ -217,7 +252,6 @@ public class RecallOrchestrator {
                 learningSnapshot.baselineWinRate());
         sloTracker.recordRecallLatency(System.nanoTime() - startedAt);
 
-        // Trigger semantic neighborhood prefetch (async, best-effort)
         if (pagingManager != null) {
             pagingManager.onRecall(l1QueryEmbedding);
         }
@@ -231,6 +265,111 @@ public class RecallOrchestrator {
                 .shadowProfileName(profileSelection.shadow().getProfileName())
                 .diagnostics(diagnostics.toDiagnostics())
                 .build();
+    }
+
+    private void collectL2Candidates(
+            List<MemoryFragment> l2Hits,
+            RecallCandidateSource candidateSource,
+            RecallQuery query,
+            List<String> requiredTags,
+            Map<String, MemoryFragment> candidatesById,
+            Map<String, String> tierById,
+            Set<String> attemptedL2Ids,
+            RecallDiagnosticsAccumulator diagnostics) {
+        diagnostics.recordCandidateCount(candidateSource, l2Hits == null ? 0 : l2Hits.size());
+        for (MemoryFragment hit : l2Hits == null ? List.<MemoryFragment>of() : l2Hits) {
+            if (hit == null) {
+                continue;
+            }
+            if (!attemptedL2Ids.add(hit.getId()) || candidatesById.containsKey(hit.getId())) {
+                diagnostics.incrementDuplicateRejectedCount(candidateSource);
+                continue;
+            }
+            MemoryFragment candidate = enrichForRecall(hit, requiredTags, diagnostics);
+            if (candidate == null) {
+                diagnostics.incrementTagRejectedCount(candidateSource);
+                continue;
+            }
+            if (candidate.getEmbedding() == null) {
+                ensureL1Embedding(candidate);
+            }
+            addCandidate(candidatesById, tierById, candidate, "L2");
+            diagnostics.incrementAcceptedCount(candidateSource);
+        }
+    }
+
+    private void collectKeywordCandidates(
+            RecallQuery query,
+            List<String> requiredTags,
+            List<MemoryFragment> filteredL1Candidates,
+            Map<String, MemoryFragment> candidatesById,
+            Map<String, String> tierById,
+            Map<String, Double> keywordScoresById,
+            RecallDiagnosticsAccumulator diagnostics) {
+        Map<String, MemoryFragment> keywordPool = new LinkedHashMap<>();
+        filteredL1Candidates.forEach(fragment -> keywordPool.put(fragment.getId(), fragment));
+        candidatesById.values().forEach(fragment -> keywordPool.put(fragment.getId(), fragment));
+        int namespaceLimit = Math.max(32, query.getTopK() * 8);
+        for (MemoryFragment namespaceCandidate : l2.listByNamespace(query.getNamespace(), namespaceLimit)) {
+            if (namespaceCandidate != null && matchesAllTags(namespaceCandidate, requiredTags)) {
+                keywordPool.putIfAbsent(namespaceCandidate.getId(), namespaceCandidate);
+            }
+        }
+
+        List<KeywordRecallIndex.KeywordCandidate> keywordHits = keywordRecallIndex.search(
+                query.getQuery(),
+                new ArrayList<>(keywordPool.values()),
+                Math.max(16, query.getTopK() * 4));
+        diagnostics.setKeywordCandidateCount(keywordHits.size());
+        for (KeywordRecallIndex.KeywordCandidate hit : keywordHits) {
+            MemoryFragment fragment = hit.fragment();
+            if (!matchesAllTags(fragment, requiredTags)) {
+                diagnostics.incrementKeywordTagRejectedCount();
+                continue;
+            }
+            keywordScoresById.merge(fragment.getId(), hit.score(), Math::max);
+            if (candidatesById.containsKey(fragment.getId())) {
+                diagnostics.incrementKeywordDuplicateRejectedCount();
+                continue;
+            }
+            if (fragment.getEmbedding() == null) {
+                ensureL1Embedding(fragment);
+            }
+            String tier = l1.peek(fragment.getId()).isPresent() ? "L1" : "L2";
+            addCandidate(candidatesById, tierById, fragment, tier);
+            diagnostics.incrementKeywordAcceptedCount();
+        }
+    }
+
+    private void addCandidate(
+            Map<String, MemoryFragment> candidatesById,
+            Map<String, String> tierById,
+            MemoryFragment fragment,
+            String tier) {
+        candidatesById.putIfAbsent(fragment.getId(), fragment);
+        tierById.putIfAbsent(fragment.getId(), tier);
+    }
+
+    private List<HybridRecallReranker.HybridCandidate> rerankCandidates(
+            Map<String, MemoryFragment> candidatesById,
+            Map<String, Double> semanticScoresById,
+            Map<String, Double> keywordScoresById,
+            boolean keywordEnabled,
+            boolean rerankEnabled) {
+        if (rerankEnabled) {
+            return hybridRecallReranker.rerank(candidatesById, semanticScoresById, keywordScoresById, keywordEnabled);
+        }
+        return candidatesById.values().stream()
+                .map(fragment -> {
+                    double semanticScore = Math.max(0.0d, semanticScoresById.getOrDefault(fragment.getId(), 0.0d));
+                    double keywordScore = keywordEnabled
+                            ? Math.max(0.0d, keywordScoresById.getOrDefault(fragment.getId(), 0.0d))
+                            : 0.0d;
+                    double rawScore = semanticScore + keywordScore;
+                    return new HybridRecallReranker.HybridCandidate(fragment, rawScore, semanticScore, keywordScore);
+                })
+                .sorted(Comparator.comparingDouble(HybridRecallReranker.HybridCandidate::score).reversed())
+                .toList();
     }
 
     // ---- Ranking helpers ----
@@ -273,63 +412,6 @@ public class RecallOrchestrator {
                 .toList();
     }
 
-    private int appendL2Candidates(
-            List<MemoryFragment> l2Hits,
-            RecallCandidateSource candidateSource,
-            RecallQuery query,
-            List<String> requiredTags,
-            float[] l1QueryEmbedding,
-            AdaptiveWeightProfile profile,
-            List<RankedRecallCandidate> activeSelected,
-            Set<String> selectedIds,
-            List<MemoryFragment> evaluationPool,
-            RedundancyAnalyzer.IncrementalRedundancyState redundancyState,
-            Set<String> attemptedL2Ids,
-            int tokensSoFar,
-            RecallDiagnosticsAccumulator diagnostics) {
-        diagnostics.recordCandidateCount(candidateSource, l2Hits == null ? 0 : l2Hits.size());
-        for (MemoryFragment hit : l2Hits == null ? List.<MemoryFragment>of() : l2Hits) {
-            if (activeSelected.size() >= query.getTopK()) {
-                break;
-            }
-            if (hit == null) {
-                continue;
-            }
-            if (!attemptedL2Ids.add(hit.getId()) || selectedIds.contains(hit.getId())) {
-                diagnostics.incrementDuplicateRejectedCount(candidateSource);
-                continue;
-            }
-            MemoryFragment candidate = enrichForRecall(hit, requiredTags, diagnostics);
-            if (candidate == null) {
-                diagnostics.incrementTagRejectedCount(candidateSource);
-                continue;
-            }
-            if (candidate.getEmbedding() == null) {
-                ensureL1Embedding(candidate);
-            }
-            candidate.reinforceImportanceOnRecall();
-            if (tokensSoFar + candidate.getTokenCount() > query.getTokenBudget()) {
-                diagnostics.incrementTokenBudgetRejectedCount(candidateSource);
-                continue;
-            }
-            redundancyState.add(candidate);
-            activeSelected.add(new RankedRecallCandidate(
-                    candidate,
-                    scoreForRecall(candidate, l1QueryEmbedding, profile, redundancyState.snapshot()),
-                    "L2"));
-            diagnostics.incrementAcceptedCount(candidateSource);
-            selectedIds.add(candidate.getId());
-            tokensSoFar += candidate.getTokenCount();
-            evaluationPool.add(candidate);
-
-            // Trigger page fault for this L2 fragment (async, best-effort)
-            if (pagingManager != null) {
-                pagingManager.handlePageFault(candidate.getId(), query.getNamespace());
-            }
-        }
-        return tokensSoFar;
-    }
-
     private double scoreForRecall(
             MemoryFragment fragment,
             float[] queryEmbedding,
@@ -343,12 +425,6 @@ public class RecallOrchestrator {
                 profile.getGamma(),
                 stats.redundancyPenalty(),
                 stats.noveltyBonus()).totalScore();
-    }
-
-    private List<MemoryFragment> appendCandidate(List<MemoryFragment> candidates, MemoryFragment candidate) {
-        List<MemoryFragment> expanded = new ArrayList<>(candidates);
-        expanded.add(candidate);
-        return expanded;
     }
 
     public static double cosineSimilarity(float[] a, float[] b) {
@@ -510,10 +586,20 @@ public class RecallOrchestrator {
 
     private static final class RecallDiagnosticsAccumulator {
         private final List<String> requiredTags;
+        private String retrievalMode;
+        private boolean rerankEnabled;
         private int l1CandidateCount;
         private int l1TagMatchedCount;
         private int l1SelectedCount;
         private int l1TokenBudgetRejectedCount;
+        private int keywordCandidateCount;
+        private int keywordAcceptedCount;
+        private int keywordDuplicateRejectedCount;
+        private int keywordTagRejectedCount;
+        private int keywordTokenBudgetRejectedCount;
+        private int vectorCandidateCount;
+        private int vectorAcceptedCount;
+        private int rerankCandidateCount;
         private int l2SearchCandidateCount;
         private int l2SearchAcceptedCount;
         private int l2SearchDuplicateRejectedCount;
@@ -539,6 +625,14 @@ public class RecallOrchestrator {
             this.requiredTags = requiredTags == null ? List.of() : List.copyOf(requiredTags);
         }
 
+        private void setRetrievalMode(String retrievalMode) {
+            this.retrievalMode = retrievalMode;
+        }
+
+        private void setRerankEnabled(boolean rerankEnabled) {
+            this.rerankEnabled = rerankEnabled;
+        }
+
         private void setL1CandidateCount(int l1CandidateCount) {
             this.l1CandidateCount = l1CandidateCount;
         }
@@ -551,8 +645,32 @@ public class RecallOrchestrator {
             l1SelectedCount++;
         }
 
-        private void incrementL1TokenBudgetRejectedCount() {
-            l1TokenBudgetRejectedCount++;
+        private void setKeywordCandidateCount(int keywordCandidateCount) {
+            this.keywordCandidateCount = keywordCandidateCount;
+        }
+
+        private void incrementKeywordAcceptedCount() {
+            keywordAcceptedCount++;
+        }
+
+        private void incrementKeywordDuplicateRejectedCount() {
+            keywordDuplicateRejectedCount++;
+        }
+
+        private void incrementKeywordTagRejectedCount() {
+            keywordTagRejectedCount++;
+        }
+
+        private void setVectorCandidateCount(int vectorCandidateCount) {
+            this.vectorCandidateCount = vectorCandidateCount;
+        }
+
+        private void setVectorAcceptedCount(int vectorAcceptedCount) {
+            this.vectorAcceptedCount = vectorAcceptedCount;
+        }
+
+        private void setRerankCandidateCount(int rerankCandidateCount) {
+            this.rerankCandidateCount = rerankCandidateCount;
         }
 
         private void recordCandidateCount(RecallCandidateSource source, int count) {
@@ -593,6 +711,17 @@ public class RecallOrchestrator {
                 return;
             }
             l2NamespaceFallbackTokenBudgetRejectedCount++;
+        }
+
+        private void incrementTokenBudgetRejectedForTier(String tier, boolean keywordCandidate) {
+            if (keywordCandidate) {
+                keywordTokenBudgetRejectedCount++;
+            }
+            if ("L2".equals(tier)) {
+                l2SearchTokenBudgetRejectedCount++;
+                return;
+            }
+            l1TokenBudgetRejectedCount++;
         }
 
         private void incrementFindFragmentL1HitCount() {
@@ -636,7 +765,10 @@ public class RecallOrchestrator {
                 emptyRecallReason = null;
                 return;
             }
-            if (l1CandidateCount == 0 && l2SearchCandidateCount == 0 && l2NamespaceFallbackCandidateCount == 0) {
+            if (l1CandidateCount == 0
+                    && keywordCandidateCount == 0
+                    && l2SearchCandidateCount == 0
+                    && l2NamespaceFallbackCandidateCount == 0) {
                 emptyRecallReason = "NO_CANDIDATES_FOUND";
                 return;
             }
@@ -648,6 +780,10 @@ public class RecallOrchestrator {
             }
             if (totalTagRejectedCount() > 0 && totalAcceptedCount() == 0) {
                 emptyRecallReason = "TAG_FILTER_REJECTED";
+                return;
+            }
+            if (keywordCandidateCount > 0 && rerankCandidateCount == 0) {
+                emptyRecallReason = "KEYWORD_SELECTION_EMPTY";
                 return;
             }
             if (l2SearchCandidateCount > 0 || l2NamespaceFallbackCandidateCount > 0) {
@@ -662,15 +798,16 @@ public class RecallOrchestrator {
         }
 
         private int totalAcceptedCount() {
-            return l1SelectedCount + l2SearchAcceptedCount + l2NamespaceFallbackAcceptedCount;
+            return l1SelectedCount + keywordAcceptedCount + l2SearchAcceptedCount + l2NamespaceFallbackAcceptedCount;
         }
 
         private int totalTagRejectedCount() {
-            return l2SearchTagRejectedCount + l2NamespaceFallbackTagRejectedCount;
+            return keywordTagRejectedCount + l2SearchTagRejectedCount + l2NamespaceFallbackTagRejectedCount;
         }
 
         private int totalTokenBudgetRejectedCount() {
             return l1TokenBudgetRejectedCount
+                    + keywordTokenBudgetRejectedCount
                     + l2SearchTokenBudgetRejectedCount
                     + l2NamespaceFallbackTokenBudgetRejectedCount;
         }
@@ -682,6 +819,16 @@ public class RecallOrchestrator {
                     .l1TagMatchedCount(l1TagMatchedCount)
                     .l1SelectedCount(l1SelectedCount)
                     .l1TokenBudgetRejectedCount(l1TokenBudgetRejectedCount)
+                    .retrievalMode(retrievalMode)
+                    .rerankEnabled(rerankEnabled)
+                    .keywordCandidateCount(keywordCandidateCount)
+                    .keywordAcceptedCount(keywordAcceptedCount)
+                    .keywordDuplicateRejectedCount(keywordDuplicateRejectedCount)
+                    .keywordTagRejectedCount(keywordTagRejectedCount)
+                    .keywordTokenBudgetRejectedCount(keywordTokenBudgetRejectedCount)
+                    .vectorCandidateCount(vectorCandidateCount)
+                    .vectorAcceptedCount(vectorAcceptedCount)
+                    .rerankCandidateCount(rerankCandidateCount)
                     .l2SearchCandidateCount(l2SearchCandidateCount)
                     .l2SearchAcceptedCount(l2SearchAcceptedCount)
                     .l2SearchDuplicateRejectedCount(l2SearchDuplicateRejectedCount)

@@ -27,6 +27,7 @@ public class SnapshotService implements CheckpointCapable {
 
     private final TaskLifecycleManager taskLifecycleManager;
     private final DagMutationService dagMutationService;
+    private final RuntimeMutationService runtimeMutationService;
     private final RecoveryEngine recoveryEngine;
     private final BranchManager branchManager;
     private final DotGraphExporter dotExporter;
@@ -37,6 +38,7 @@ public class SnapshotService implements CheckpointCapable {
     public SnapshotService(
             TaskLifecycleManager taskLifecycleManager,
             DagMutationService dagMutationService,
+            RuntimeMutationService runtimeMutationService,
             RecoveryEngine recoveryEngine,
             BranchManager branchManager,
             DotGraphExporter dotExporter,
@@ -49,6 +51,7 @@ public class SnapshotService implements CheckpointCapable {
             MemorySloTracker memorySloTracker) {
         this.taskLifecycleManager = taskLifecycleManager;
         this.dagMutationService = dagMutationService;
+        this.runtimeMutationService = runtimeMutationService;
         this.recoveryEngine = recoveryEngine;
         this.branchManager = branchManager;
         this.dotExporter = dotExporter;
@@ -123,9 +126,50 @@ public class SnapshotService implements CheckpointCapable {
         dagMutationService.updateContext(taskId, key, value);
     }
 
+    public ConversationMessage appendConversationMessage(
+            String taskId,
+            String conversationId,
+            String role,
+            String content) {
+        return runtimeMutationService.appendConversationMessage(taskId, conversationId, role, content);
+    }
+
+    public ToolExecutionState startToolExecution(String taskId, String executionId, String toolName, String input) {
+        return runtimeMutationService.startToolExecution(taskId, executionId, toolName, input);
+    }
+
+    public ToolExecutionState completeToolExecution(String taskId, String executionId, String output) {
+        return runtimeMutationService.completeToolExecution(taskId, executionId, output);
+    }
+
+    public ToolExecutionState failToolExecution(String taskId, String executionId, String errorMessage) {
+        return runtimeMutationService.failToolExecution(taskId, executionId, errorMessage);
+    }
+
+    public LlmCallState startLlmCall(
+            String taskId,
+            String callId,
+            String provider,
+            String model,
+            String prompt,
+            long timeoutMillis) {
+        return runtimeMutationService.startLlmCall(taskId, callId, provider, model, prompt, timeoutMillis);
+    }
+
+    public LlmCallState completeLlmCall(String taskId, String callId, String response) {
+        return runtimeMutationService.completeLlmCall(taskId, callId, response);
+    }
+
+    public LlmCallState timeoutLlmCall(String taskId, String callId, String errorMessage) {
+        return runtimeMutationService.timeoutLlmCall(taskId, callId, errorMessage);
+    }
+
+    public LlmCallState markLlmCallRetry(String taskId, String callId) {
+        return runtimeMutationService.markLlmCallRetry(taskId, callId);
+    }
+
     // ========================================================================
-    // Checkpoint & Recovery
-    // ========================================================================
+    // Checkpoint & Recovery    // ========================================================================
 
     /**
      * Create a checkpoint for the task.

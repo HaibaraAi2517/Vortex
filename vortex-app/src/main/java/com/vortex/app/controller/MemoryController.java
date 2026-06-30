@@ -7,7 +7,10 @@ import com.vortex.common.dto.RecallResult;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.app.health.MemoryHealthSignalCatalog;
 import com.vortex.app.health.MemorySloHealthIndicator;
+import com.vortex.kernel.hmc.AsyncMemoryPipeline;
 import com.vortex.kernel.hmc.HierarchicalMemoryController;
+import com.vortex.kernel.hmc.MemoryPipelineRequest;
+import com.vortex.kernel.hmc.MemoryPipelineStatus;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
@@ -29,6 +32,7 @@ import java.util.Map;
 public class MemoryController {
 
     private final HierarchicalMemoryController hmc;
+    private final AsyncMemoryPipeline asyncMemoryPipeline;
     private final MemorySloHealthIndicator memorySloHealthIndicator;
 
     /**
@@ -48,6 +52,25 @@ public class MemoryController {
                 "fragmentIds", ids,
                 "count", ids.size()
         ));
+    }
+
+    @PostMapping("/store/async")
+    public ResponseEntity<MemoryPipelineStatus> storeAsync(@Valid @RequestBody StoreRequest req) {
+        MemoryPipelineStatus status = asyncMemoryPipeline.submit(MemoryPipelineRequest.builder()
+                .content(req.content())
+                .namespace(req.namespace())
+                .tags(req.tags())
+                .reasoningChainId(req.reasoningChainId())
+                .pinTtlMillis(req.pinTtlMillis())
+                .build());
+        return ResponseEntity.accepted().body(status);
+    }
+
+    @GetMapping("/pipeline/{pipelineId}")
+    public ResponseEntity<MemoryPipelineStatus> pipelineStatus(@PathVariable("pipelineId") String pipelineId) {
+        return asyncMemoryPipeline.snapshot(pipelineId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     /**

@@ -4,7 +4,9 @@ import com.vortex.common.model.ActionLogEntry;
 import com.vortex.common.model.CheckpointMetadata;
 import com.vortex.common.model.DagEdge;
 import com.vortex.common.model.DagNode;
+import com.vortex.common.model.LlmCallState;
 import com.vortex.common.model.TaskState;
+import com.vortex.common.model.ToolExecutionState;
 import com.vortex.common.serialization.WalPayloads;
 import com.vortex.kernel.hmc.MemorySloTracker;
 import lombok.extern.slf4j.Slf4j;
@@ -336,7 +338,55 @@ public class RecoveryEngine {
                 Map<String, String> p = parseReplayPayload(state, entry);
                 branchManager.switchBranch(state, p.get("branchId"));
             }
-        }
+            case APPEND_CONVERSATION_MESSAGE -> {
+                Map<String, String> p = parseReplayPayload(state, entry);
+                RuntimeMutationService.appendConversationMessage(
+                        state,
+                        p.get("conversationId"),
+                        RuntimeMutationService.buildConversationMessage(
+                                p.get("messageId"),
+                                p.get("role"),
+                                p.get("content"),
+                                entry.getTimestamp()));
+            }
+            case START_TOOL_EXECUTION -> {
+                Map<String, String> p = parseReplayPayload(state, entry);
+                state.getToolExecutions().put(p.get("executionId"), RuntimeMutationService.buildToolExecution(
+                        p.get("executionId"),
+                        p.get("toolName"),
+                        p.get("input"),
+                        entry.getTimestamp()));
+            }
+            case COMPLETE_TOOL_EXECUTION -> {
+                Map<String, String> p = parseReplayPayload(state, entry);
+                requireToolExecution(state, p.get("executionId"), entry).succeed(p.get("output"), entry.getTimestamp());
+            }
+            case FAIL_TOOL_EXECUTION -> {
+                Map<String, String> p = parseReplayPayload(state, entry);
+                requireToolExecution(state, p.get("executionId"), entry).fail(p.get("errorMessage"), entry.getTimestamp());
+            }
+            case START_LLM_CALL -> {
+                Map<String, String> p = parseReplayPayload(state, entry);
+                state.getLlmCalls().put(p.get("callId"), RuntimeMutationService.buildLlmCall(
+                        p.get("callId"),
+                        p.get("provider"),
+                        p.get("model"),
+                        p.get("prompt"),
+                        RuntimeMutationService.parseLong(p.get("timeoutMillis")),
+                        entry.getTimestamp()));
+            }
+            case COMPLETE_LLM_CALL -> {
+                Map<String, String> p = parseReplayPayload(state, entry);
+                requireLlmCall(state, p.get("callId"), entry).complete(p.get("response"), entry.getTimestamp());
+            }
+            case TIMEOUT_LLM_CALL -> {
+                Map<String, String> p = parseReplayPayload(state, entry);
+                requireLlmCall(state, p.get("callId"), entry).timeout(p.get("errorMessage"), entry.getTimestamp());
+            }
+            case MARK_LLM_CALL_RETRY -> {
+                Map<String, String> p = parseReplayPayload(state, entry);
+                requireLlmCall(state, p.get("callId"), entry).markRetryPending();
+            }        }
 
         state.setWalSequenceNumber(entry.getSequenceNumber());
     }
@@ -362,6 +412,31 @@ public class RecoveryEngine {
         return state.getGraph().containsEquivalentEdge(edge);
     }
 
+    private ToolExecutionState requireToolExecution(TaskState state, String executionId, ActionLogEntry entry) {
+        ToolExecutionState toolExecution = state.getToolExecutions().get(executionId);
+        if (toolExecution == null) {
+            throw new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                    state.getTaskId(),
+                    state.getLatestCheckpointId(),
+                    "Failed to replay tool execution state because execution does not exist taskId="
+                            + state.getTaskId() + " executionId=" + executionId + " entryId=" + entry.getEntryId());
+        }
+        return toolExecution;
+    }
+
+    private LlmCallState requireLlmCall(TaskState state, String callId, ActionLogEntry entry) {
+        LlmCallState llmCall = state.getLlmCalls().get(callId);
+        if (llmCall == null) {
+            throw new CheckpointRecoveryException(
+                    CheckpointRecoveryFailureReason.WAL_STATE_APPLY_FAILED,
+                    state.getTaskId(),
+                    state.getLatestCheckpointId(),
+                    "Failed to replay LLM call state because call does not exist taskId="
+                            + state.getTaskId() + " callId=" + callId + " entryId=" + entry.getEntryId());
+        }
+        return llmCall;
+    }
     private Map<String, String> parseJsonPayload(String json) {
         if (json == null || json.length() < 3) {
             return new HashMap<>();

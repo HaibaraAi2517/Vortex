@@ -22,6 +22,17 @@ public class RecallDiagnostics {
     private int l1SelectedCount;
     private int l1TokenBudgetRejectedCount;
 
+    private String retrievalMode;
+    private boolean rerankEnabled;
+    private int keywordCandidateCount;
+    private int keywordAcceptedCount;
+    private int keywordDuplicateRejectedCount;
+    private int keywordTagRejectedCount;
+    private int keywordTokenBudgetRejectedCount;
+    private int vectorCandidateCount;
+    private int vectorAcceptedCount;
+    private int rerankCandidateCount;
+
     private int l2SearchCandidateCount;
     private int l2SearchAcceptedCount;
     private int l2SearchDuplicateRejectedCount;

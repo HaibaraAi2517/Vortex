@@ -2,10 +2,13 @@ package com.vortex.kernel.snapshot;
 
 import com.vortex.common.model.ActionLogEntry;
 import com.vortex.common.model.CheckpointMetadata;
+import com.vortex.common.model.ConversationMessage;
 import com.vortex.common.model.DagEdge;
 import com.vortex.common.model.DagNode;
+import com.vortex.common.model.LlmCallStatus;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.model.TaskState;
+import com.vortex.common.model.ToolExecutionStatus;
 import com.vortex.common.serialization.KryoSerializer;
 import com.vortex.kernel.hmc.MemorySloTracker;
 import com.vortex.storage.api.L3ColdStore;
@@ -83,9 +86,11 @@ class RecoveryEngineTest {
 
         dagMutationService = new DagMutationService(
                 walWriter, dirtySetTracker, scheduler, event -> {}, branchManager, taskLifecycleManager);
+        RuntimeMutationService runtimeMutationSvc = new RuntimeMutationService(
+                walWriter, dirtySetTracker, scheduler, taskLifecycleManager);
 
         snapshotService = new SnapshotService(
-                taskLifecycleManager, dagMutationService, recoveryEngine,
+                taskLifecycleManager, dagMutationService, runtimeMutationSvc, recoveryEngine,
                 branchManager, new DotGraphExporter(), walWriter, walTruncator,
                 checkpointManager, lifecycleManager, scheduler, checkpointRecoveryMetrics, memorySloTracker);
         taskLifecycleManager.setRecoveryEngine(recoveryEngine);
@@ -416,6 +421,52 @@ class RecoveryEngineTest {
     // recover with completeNode referencing missing node
     // ========================================================================
 
+    @Test
+    void recoverReplaysRuntimeStateWalEntries() {
+        TaskState task = taskLifecycleManager.createTask("runtime replay test", "ns");
+        dagMutationService.appendNode(task.getTaskId(), "THOUGHT", "before checkpoint");
+
+        String checkpointId = createCheckpointViaManager(task);
+
+        walWriter.append(task.getTaskId(), ActionLogEntry.OperationType.APPEND_CONVERSATION_MESSAGE,
+                recoveryEngine.jsonPayload(
+                        "conversationId", "conversation-1",
+                        "messageId", "message-1",
+                        "role", "user",
+                        "content", "please recover this"));
+        walWriter.append(task.getTaskId(), ActionLogEntry.OperationType.START_TOOL_EXECUTION,
+                recoveryEngine.jsonPayload(
+                        "executionId", "tool-1",
+                        "toolName", "shell",
+                        "input", "run-tests"));
+        walWriter.append(task.getTaskId(), ActionLogEntry.OperationType.FAIL_TOOL_EXECUTION,
+                recoveryEngine.jsonPayload("executionId", "tool-1", "errorMessage", "tests failed"));
+        walWriter.append(task.getTaskId(), ActionLogEntry.OperationType.START_LLM_CALL,
+                recoveryEngine.jsonPayload(
+                        "callId", "llm-1",
+                        "provider", "openai",
+                        "model", "gpt-test",
+                        "prompt", "summarize",
+                        "timeoutMillis", "100"));
+        walWriter.append(task.getTaskId(), ActionLogEntry.OperationType.TIMEOUT_LLM_CALL,
+                recoveryEngine.jsonPayload("callId", "llm-1", "errorMessage", "timeout"));
+        walWriter.append(task.getTaskId(), ActionLogEntry.OperationType.MARK_LLM_CALL_RETRY,
+                recoveryEngine.jsonPayload("callId", "llm-1"));
+
+        checkpointManager.reloadTask(task.getTaskId());
+        TaskState recovered = recoveryEngine.recover(task.getTaskId(), checkpointId, taskLifecycleManager);
+
+        assertThat(recovered.getConversations().get("conversation-1").getMessages())
+                .extracting(ConversationMessage::getContent)
+                .containsExactly("please recover this");
+        assertThat(recovered.getToolExecutions().get("tool-1").getStatus())
+                .isEqualTo(ToolExecutionStatus.FAILED);
+        assertThat(recovered.getToolExecutions().get("tool-1").getErrorMessage())
+                .isEqualTo("tests failed");
+        assertThat(recovered.getLlmCalls().get("llm-1").getStatus())
+                .isEqualTo(LlmCallStatus.RETRY_PENDING);
+        assertThat(recovered.getLlmCalls().get("llm-1").getAttempt()).isEqualTo(2);
+    }
     @Test
     void recoverWithCompleteNodeReferencingMissingNodeThrowsTypedFailure() {
         TaskState task = taskLifecycleManager.createTask("missing complete target", "ns");

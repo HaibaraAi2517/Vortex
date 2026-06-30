@@ -75,12 +75,14 @@ class TaskLifecycleManagerTest {
 
         DagMutationService dagMutationSvc = new DagMutationService(
                 walWriter, dirtySetTracker, scheduler, eventPublisher, branchManager, tlm);
+        RuntimeMutationService runtimeMutationSvc = new RuntimeMutationService(
+                walWriter, dirtySetTracker, scheduler, tlm);
         RecoveryEngine recoveryEng = new RecoveryEngine(
                 walReader, walWriter, checkpointManager, checkpointRecoveryMetrics, memorySloTracker,
                 branchManager, scheduler);
 
         SnapshotService snapshotService = new SnapshotService(
-                tlm, dagMutationSvc, recoveryEng,
+                tlm, dagMutationSvc, runtimeMutationSvc, recoveryEng,
                 branchManager, dotExporter, walWriter, walTruncator,
                 checkpointManager, lifecycleManager, scheduler, checkpointRecoveryMetrics, memorySloTracker);
         tlm.setRecoveryEngine(recoveryEng);

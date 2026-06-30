@@ -140,13 +140,38 @@ public class IncrementalCheckpointManager {
             contextDiff.put(key, value); // null value means deleted
         }
 
+        Map<String, ConversationState> conversationDiff = new HashMap<>();
+        for (String conversationId : dirty.conversationIds()) {
+            ConversationState conversation = state.getConversations().get(conversationId);
+            if (conversation != null) {
+                conversationDiff.put(conversationId, conversation);
+            }
+        }
+
+        Map<String, ToolExecutionState> toolExecutionDiff = new HashMap<>();
+        for (String executionId : dirty.toolExecutionIds()) {
+            ToolExecutionState toolExecution = state.getToolExecutions().get(executionId);
+            if (toolExecution != null) {
+                toolExecutionDiff.put(executionId, toolExecution);
+            }
+        }
+
+        Map<String, LlmCallState> llmCallDiff = new HashMap<>();
+        for (String callId : dirty.llmCallIds()) {
+            LlmCallState llmCall = state.getLlmCalls().get(callId);
+            if (llmCall != null) {
+                llmCallDiff.put(callId, llmCall);
+            }
+        }
         CheckpointDelta delta = new CheckpointDelta(
                 baseCheckpointId, walSeq,
                 changedNodes,
                 newEdges,
                 contextDiff,
-                Set.copyOf(dirty.deletedNodeIds()),
-                state.getCurrentNodeId(),
+                conversationDiff,
+                toolExecutionDiff,
+                llmCallDiff,
+                Set.copyOf(dirty.deletedNodeIds()),                state.getCurrentNodeId(),
                 state.getCurrentBranchId(),
                 new ArrayList<>(state.getBranches()),
                 state.getStatus(),
@@ -209,12 +234,24 @@ public class IncrementalCheckpointManager {
         }
 
         // Apply context diff
-        for (Map.Entry<String, String> entry : delta.getContextDiff().entrySet()) {
-            if (entry.getValue() == null) {
-                state.getContext().remove(entry.getKey());
-            } else {
-                state.getContext().put(entry.getKey(), entry.getValue());
+        if (delta.getContextDiff() != null) {
+            for (Map.Entry<String, String> entry : delta.getContextDiff().entrySet()) {
+                if (entry.getValue() == null) {
+                    state.getContext().remove(entry.getKey());
+                } else {
+                    state.getContext().put(entry.getKey(), entry.getValue());
+                }
             }
+        }
+
+        if (delta.getConversationDiff() != null) {
+            state.getConversations().putAll(delta.getConversationDiff());
+        }
+        if (delta.getToolExecutionDiff() != null) {
+            state.getToolExecutions().putAll(delta.getToolExecutionDiff());
+        }
+        if (delta.getLlmCallDiff() != null) {
+            state.getLlmCalls().putAll(delta.getLlmCallDiff());
         }
 
         // Apply deletions

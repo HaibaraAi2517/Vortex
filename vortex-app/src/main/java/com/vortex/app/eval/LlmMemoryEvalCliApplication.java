@@ -15,6 +15,9 @@ public final class LlmMemoryEvalCliApplication {
 
     private static final String VERIFY_COMMAND = "verify";
     private static final String LEARNING_COMMAND = "learning";
+    private static final String RECALL_BENCHMARK_COMMAND = "recall-benchmark";
+    private static final String RUNTIME_RECOVERY_BENCHMARK_COMMAND = "runtime-recovery-benchmark";
+    private static final String ASYNC_PIPELINE_LATENCY_BENCHMARK_COMMAND = "async-pipeline-latency-benchmark";
     private static final String PROFILE_TYPE_STRICT_REPORT = "strict-report";
     private static final String PROFILE_TYPE_AUDIT_ONLY = "audit-only";
 
@@ -35,6 +38,15 @@ public final class LlmMemoryEvalCliApplication {
                 return executeLearningVerify(args);
             }
             return executeLearningRun(args);
+        }
+        if (isRecallBenchmarkCommand(args)) {
+            return executeRecallBenchmarkRun(args);
+        }
+        if (isRuntimeRecoveryBenchmarkCommand(args)) {
+            return executeRuntimeRecoveryBenchmarkRun(args);
+        }
+        if (isAsyncPipelineLatencyBenchmarkCommand(args)) {
+            return executeAsyncPipelineLatencyBenchmarkRun(args);
         }
         return executeEvalRun(args);
     }
@@ -89,6 +101,90 @@ public final class LlmMemoryEvalCliApplication {
                 }
             }
             log.error("Learning memory eval CLI run failed: {}", e.getMessage(), e);
+            exitCode = 1;
+        }
+        return exitCode;
+    }
+
+    private static int executeRecallBenchmarkRun(String[] args) {
+        ConfigurableApplicationContext context = null;
+        int exitCode = 1;
+        try {
+            context = new SpringApplicationBuilder(VortexApplication.class)
+                    .web(WebApplicationType.NONE)
+                    .properties(
+                            "vortex.eval.run-on-startup=false",
+                            "spring.main.banner-mode=off")
+                    .run(trimCommand(args));
+            RecallBenchmarkExecutionService executionService =
+                    context.getBean(RecallBenchmarkExecutionService.class);
+            executionService.executeConfiguredRun();
+            exitCode = SpringApplication.exit(context, () -> 0);
+        } catch (RuntimeException e) {
+            if (context != null) {
+                try {
+                    SpringApplication.exit(context, () -> 1);
+                } catch (RuntimeException closeError) {
+                    log.warn("Failed to close CLI application context cleanly: {}", closeError.getMessage());
+                }
+            }
+            log.error("Recall benchmark CLI run failed: {}", e.getMessage(), e);
+            exitCode = 1;
+        }
+        return exitCode;
+    }
+
+    private static int executeRuntimeRecoveryBenchmarkRun(String[] args) {
+        ConfigurableApplicationContext context = null;
+        int exitCode = 1;
+        try {
+            context = new SpringApplicationBuilder(VortexApplication.class)
+                    .web(WebApplicationType.NONE)
+                    .properties(
+                            "vortex.eval.run-on-startup=false",
+                            "spring.main.banner-mode=off")
+                    .run(trimCommand(args));
+            RuntimeRecoveryBenchmarkExecutionService executionService =
+                    context.getBean(RuntimeRecoveryBenchmarkExecutionService.class);
+            executionService.executeConfiguredRun();
+            exitCode = SpringApplication.exit(context, () -> 0);
+        } catch (RuntimeException e) {
+            if (context != null) {
+                try {
+                    SpringApplication.exit(context, () -> 1);
+                } catch (RuntimeException closeError) {
+                    log.warn("Failed to close CLI application context cleanly: {}", closeError.getMessage());
+                }
+            }
+            log.error("Runtime recovery benchmark CLI run failed: {}", e.getMessage(), e);
+            exitCode = 1;
+        }
+        return exitCode;
+    }
+
+    private static int executeAsyncPipelineLatencyBenchmarkRun(String[] args) {
+        ConfigurableApplicationContext context = null;
+        int exitCode = 1;
+        try {
+            context = new SpringApplicationBuilder(VortexApplication.class)
+                    .web(WebApplicationType.NONE)
+                    .properties(
+                            "vortex.eval.run-on-startup=false",
+                            "spring.main.banner-mode=off")
+                    .run(trimCommand(args));
+            AsyncPipelineLatencyBenchmarkExecutionService executionService =
+                    context.getBean(AsyncPipelineLatencyBenchmarkExecutionService.class);
+            executionService.executeConfiguredRun();
+            exitCode = SpringApplication.exit(context, () -> 0);
+        } catch (RuntimeException e) {
+            if (context != null) {
+                try {
+                    SpringApplication.exit(context, () -> 1);
+                } catch (RuntimeException closeError) {
+                    log.warn("Failed to close CLI application context cleanly: {}", closeError.getMessage());
+                }
+            }
+            log.error("Async pipeline latency benchmark CLI run failed: {}", e.getMessage(), e);
             exitCode = 1;
         }
         return exitCode;
@@ -156,6 +252,24 @@ public final class LlmMemoryEvalCliApplication {
         return args != null
                 && args.length > 0
                 && LEARNING_COMMAND.equalsIgnoreCase(args[0]);
+    }
+
+    private static boolean isRecallBenchmarkCommand(String[] args) {
+        return args != null
+                && args.length > 0
+                && RECALL_BENCHMARK_COMMAND.equalsIgnoreCase(args[0]);
+    }
+
+    private static boolean isRuntimeRecoveryBenchmarkCommand(String[] args) {
+        return args != null
+                && args.length > 0
+                && RUNTIME_RECOVERY_BENCHMARK_COMMAND.equalsIgnoreCase(args[0]);
+    }
+
+    private static boolean isAsyncPipelineLatencyBenchmarkCommand(String[] args) {
+        return args != null
+                && args.length > 0
+                && ASYNC_PIPELINE_LATENCY_BENCHMARK_COMMAND.equalsIgnoreCase(args[0]);
     }
 
     private static boolean isLearningVerifyCommand(String[] args) {
