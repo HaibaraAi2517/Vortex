@@ -743,7 +743,7 @@ public class TaskLifecycleManager implements CheckpointCapable, RecoveryEngine.R
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
-    private static class TaskListingEntry {
+    public static class TaskListingEntry {
         private String taskId;
         private String description;
         private String namespace;
@@ -753,7 +753,7 @@ public class TaskLifecycleManager implements CheckpointCapable, RecoveryEngine.R
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
-    private static class TaskListingSnapshot {
+    public static class TaskListingSnapshot {
         private List<TaskListingEntry> entries;
     }
 }
