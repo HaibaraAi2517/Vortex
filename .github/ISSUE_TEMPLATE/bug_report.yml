@@ -1,0 +1,44 @@
+name: Bug report
+description: Report reproducible Vortex behavior that looks incorrect
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include commands, API requests, config, and relevant logs.
+      placeholder: |
+        1. Start ...
+        2. Call ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, JDK, Maven, Docker, Vortex commit, and storage backends.
+      placeholder: |
+        OS:
+        JDK:
+        Maven:
+        Docker:
+        Vortex commit:
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Paste short logs or link to a minimal reproduction.
+      render: text
+    validations:
+      required: false

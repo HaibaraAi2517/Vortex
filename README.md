@@ -1,338 +1,162 @@
 # Vortex
 
-Vortex 是一个面向长时运行 AI Agent 的记忆与状态管理内核。它把 Agent 运行中产生的事实、偏好、工具结果、任务状态和 checkpoint 组织成可召回、可淘汰、可恢复、可观测的分级记忆系统。
+<p align="center">
+  English | <a href="README_zh.md">简体中文</a>
+</p>
 
-这个仓库当前更准确的定位是：
+[![CI](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml/badge.svg)](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](pom.xml)
+[![Spring Boot 3.3](https://img.shields.io/badge/Spring%20Boot-3.3-6DB33F.svg)](vortex-app/pom.xml)
+[![Milvus](https://img.shields.io/badge/Milvus-2.4-00A1EA.svg)](docker-compose.yml)
 
-```text
-已通过真实 LLM 长任务 Agent memory workload 验证的分级记忆与状态管理内核。
+**Memory and RAG runtime for long-running AI agents: remember across sessions,
+retrieve the right context, and resume after crashes. Built with Java 21,
+Spring Boot, Milvus, MinIO, Redis, and Caffeine.**
+
+Long-running agents fail in predictable ways. Vortex turns those failure modes
+into backend runtime primitives:
+
+| Agent pain | Vortex runtime primitive |
+| --- | --- |
+| Context disappears across sessions and token pressure. | Tiered long-term memory with L1 Caffeine, L2 Milvus, and L3 MinIO. |
+| Retrieval quality degrades when vector search misses exact operational facts. | Hybrid recall: keyword + vector candidates, rerank, namespaces, tags, and token budgets. |
+| Multi-step work dies on restart or tool/LLM failures. | Task DAG checkpoints, WAL replay, runtime snapshots, and Execution ID idempotency. |
+
+<p align="center">
+  <a href="#quick-start"><b>Quick Start</b></a> ·
+  <a href="examples/quickstart-agent"><b>Agent Demo</b></a> ·
+  <a href="docs/architecture.md"><b>Architecture</b></a> ·
+  <a href="docs/benchmark.md"><b>Benchmarks</b></a> ·
+  <a href="docs/comparison.md"><b>Comparison</b></a>
+</p>
+
+```mermaid
+flowchart LR
+    A[Long-running Agent] --> V[Vortex Runtime]
+    V --> M[Memory: L1 / L2 / L3]
+    V --> R[Hybrid Retrieval]
+    V --> S[Task Recovery]
+    M --> C[Caffeine]
+    M --> MV[Milvus]
+    M --> IO[MinIO]
+    S --> W[Checkpoint + WAL]
 ```
 
-它不是完整的多租户 SaaS，也不是通用 Agent 执行框架。项目重点是 memory kernel、task state kernel、eval/governance harness 三部分：把长期上下文写入分级存储，在 L1 token pressure 下从 L2 恢复，并用真实模型评测证明记忆是否真的被模型使用。
+Vortex is a benchmarked infrastructure kernel, not a hosted SaaS. The repository
+keeps runnable code, deterministic eval harnesses, evidence reports, runbooks,
+and CI governance checks together.
 
-## 当前结论
+## Benchmark Evidence
 
-当前最强的已验证结论来自 v3.1 real-agent workload official strict audit：
+The headline numbers below are deterministic benchmark results with linked
+evidence and reproduction commands. See [docs/benchmark.md](docs/benchmark.md)
+for scope, boundaries, and reproduction notes. They are not production
+guarantees.
 
-| 项 | 当前值 |
-| --- | --- |
-| Profile | `official-v3.1-real-agent-workload-strict` |
-| Dataset | `classpath:llm-memory-eval-set-v3-1-real-agent-workload.json` |
-| Dataset version | `v3.1-real-agent-workload` |
-| Case count | 20 |
-| Modes | `Baseline-NoMemory`, `Vortex-Memory`, `Vortex-RecoveredMemory` |
-| L1 audit capacity | `96` tokens |
-| Accepted evidence | `ops/eval-fixtures/baselines/20260603-v3-1-real-agent-workload-official-strict-audit-003` |
-| Result | 3/3 轮通过；`Baseline-NoMemory = 0/20`，`Vortex-Memory = 20/20`，`Vortex-RecoveredMemory = 20/20` |
-| Recovery signal | `RecoveredL2HitRate = 1.0` in all 3 rounds |
-
-这个结论说明：在受控的真实 LLM 长任务记忆评测中，接入 Vortex 后模型可以找回并使用长期上下文；在压低 L1 容量、强制触发 L2 recovery 的场景下也能保持正确。
-
-边界也要明确：这证明的是“受控 workload 下的真实模型记忆增强能力”，不是生产级多租户、安全、长期高并发平台已经完成。
-
-## 证据索引
-
-| 主张 | 代码 / 证据 |
-| --- | --- |
-| 三层记忆写入与 L1 admission | `HierarchicalMemoryController`, `TieredEvictionCoordinator` |
-| 异步 L2/L3 持久化、幂等与 DLQ | `FragmentPersistenceManager`, `FragmentPersistenceTask`, `FileBackedDeadLetterQueue`, `FileBackedProcessedTaskStore` |
-| L1 语义召回、L2 recovery、feedback session | `RecallOrchestrator`, `AdaptiveWeightLearner`, `RecallSessionRecord` |
-| semantic-LRU 淘汰、分组淘汰、pin 保护 | `SemanticEvictionPolicy`, `TieredEvictionCoordinator`, `FragmentPinManager` |
-| task DAG / WAL / checkpoint / branch / recover | `SnapshotService`, `DagMutationService`, `RecoveryEngine`, `BranchManager`, `IncrementalCheckpointManager` |
-| semantic paging / prefetch | `SemanticPagingManager`, `SemanticPageTable`, `PrefetchEngine` |
-| health / SLO / diagnostic signal | `MemorySloHealthIndicator`, `MemoryDiagnosticsCollector`, `MemoryHealthSignalCatalog` |
-| 真实 LLM memory eval 与 fixture replay | `LlmMemoryEvalRunner`, `LlmMemoryEvalBaselineVerifier`, `ops/eval-fixtures/baselines/...official-strict-audit-003` |
-| 测试覆盖面 | 当前仓库包含 55 个 `*Test.java` / `*IT.java` 文件 |
-
-## 核心能力
-
-### 1. 三层分级记忆
-
-| 层级 | 实现 | 作用 |
+| Area | Result | Evidence |
 | --- | --- | --- |
-| L1 Hot | Caffeine | 热记忆缓存、token capacity 管理、低延迟读写 |
-| L2 Warm | Milvus | 向量检索、namespace 过滤、L1 eviction 后的语义恢复 |
-| L3 Cold | MinIO | fragment 冷存档、checkpoint/WAL 相关持久化、page table 持久化 |
+| Hybrid recall | `Hybrid+Rerank` improved Recall@5 from `0.7917` to `0.9500` versus `Vector+Rerank`, a `+20.00%` relative lift, with `0/100` run errors across five retrieval modes. | [Recall ablation evidence](ops/runbooks/vortex-recall-ablation-benchmark-evidence-20260630.md) |
+| Main-path latency | Moving memory extraction, summary, embedding, L1 admission, L2 indexing, and L3 archive off the measured request path reduced P99 from `1172.50 ms` to `220.34 ms`; average latency fell from `829.40 ms` to `186.64 ms`. | [Main-path latency evidence](ops/runbooks/vortex-main-path-latency-benchmark-evidence-20260629.md) |
+| Runtime recovery | The deterministic fault-injection matrix passed `32/32` covered cases across service restart, tool failure, LLM exception, state integrity, and concurrency categories. | [Runtime recovery evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md) |
 
-写入路径由 `HierarchicalMemoryController` 驱动：原始文本经 `SemanticTextSplitter` 分片，先生成 L1 embedding 并进入 Caffeine；`FragmentPersistenceManager` 再通过 bounded executor 异步 upsert L2、archive L3。持久化任务带 idempotency key，失败会进入 file-backed DLQ，启动时可 replay。
+These results should not be restated as full production recovery coverage,
+end-to-end LLM quality improvement, online recall improvement, or full Agent
+latency reduction. The linked evidence files define the exact scope.
 
-Embedding 路径是显式分层的：L1 默认使用本地 BGE-Small-ZH 512 维；L2 可选使用 cloud embedding，未启用时 Milvus 使用 L1 embedding。`MilvusWarmStore` 会校验 collection vector dimension，维度迁移需要显式确认后重建 collection。
+## Architecture
 
-L3 默认 key layout：
+Detailed architecture notes live in [docs/architecture.md](docs/architecture.md).
 
-```text
-fragments/{fragmentId}.json
-checkpoints/{taskId}/{checkpointId}.kryo
-checkpoints/{taskId}/{checkpointId}.meta.json
-system/semantic-page-table.bin
+Hybrid retrieval:
+
+```mermaid
+flowchart LR
+    Q[Agent query] --> N[Namespace and tag filter]
+    N --> K[Keyword recall]
+    N --> V[Vector recall]
+    K --> M[Hybrid candidate merge]
+    V --> M
+    M --> R[Rerank and budget]
+    R --> C[Context assembly]
 ```
 
-### 2. 语义召回与反馈学习
+Three-tier memory:
 
-召回路径由 `RecallOrchestrator` 驱动：
-
-1. 用 BGE-Small 生成 query embedding，在 L1 候选集内按语义相关性、重要性、冗余/新颖度等特征排序。
-2. 支持 namespace、required tags、`topK`、`tokenBudget` 和 `scenario`。
-3. L1 不足时查 L2 Milvus；若向量召回不足，还有 namespace fallback。
-4. L2 命中后补全 fragment，重新 admit 回 L1，并触发持久化/访问记录。
-5. 每次召回生成 `recallSessionId`，后续 `/feedback` 会驱动 `AdaptiveWeightLearner`。
-
-`AdaptiveWeightLearner` 不是只改一个静态参数。它记录 active / shadow / baseline ranking，使用 feedback、regret、selection precision/coverage、nDCG-like ranking reward 等信号更新不同 `MemoryScenario` 的权重 profile。
-
-`MemoryScenario` 当前支持：
-
-```text
-CHAT
-CODING
-SEARCH
+```mermaid
+flowchart TB
+    W[Memory write] --> S[Split and embed]
+    S --> L1[L1 Hot: Caffeine]
+    S --> P[Async persistence pipeline]
+    P --> L2[L2 Warm: Milvus]
+    P --> L3[L3 Cold: MinIO]
+    L2 --> REC[L1 recovery after eviction]
 ```
 
-### 3. 语义淘汰
+Runtime recovery:
 
-L1 淘汰不是简单 LRU，而是 semantic-LRU 变体：
-
-```text
-score = alpha * recency + beta * similarity + gamma * importance
+```mermaid
+flowchart LR
+    F[Failure or restart] --> CP[Checkpoint load]
+    CP --> WAL[WAL replay]
+    WAL --> RS[Runtime state reconstruction]
+    RS --> ID[Execution ID idempotency check]
+    ID --> RES[Task resume]
 ```
 
-低分优先淘汰。实现上没有在每次淘汰时无条件全量重算所有 fragment，而是由 `TieredEvictionCoordinator` 维护 hot/cold tier index，并在 admission/capacity/quota 场景下选取 scoped candidate pool。具体包括：
-
-- `reasoningChainId` 分组淘汰，避免只淘汰推理链中的单个关键片段。
-- redundancy penalty / novelty bonus，降低重复片段保留优先级。
-- pinned fragment 保护，pin 过期会在 admission/eviction 前清理。
-- namespace quota，优先在本 namespace 内回收，必要时处理跨 namespace 借用。
-- regret-aware ordering，避免反复淘汰近期被证明有用的 fragment。
-- eviction decision log、regret rate、tiered selection 进入 SLO/diagnostics。
-
-### 4. 任务 DAG、checkpoint 与恢复
-
-`SnapshotService` 是任务状态门面，覆盖：
-
-- task lifecycle：create/list/get/complete/fail/delete
-- DAG node/edge mutation
-- task context upsert/delete
-- FULL/DELTA checkpoint
-- WAL replay
-- branch/create/switch/merge
-- Graphviz DOT export
-
-关键语义：
-
 ```text
-validate-before-WAL
-WAL-before-state
-FULL -> DELTA... -> WAL replay
+vortex-app      REST API, Actuator, OpenAPI, eval CLI, benchmark runners
+vortex-kernel   memory orchestration, recall, eviction, async pipeline, recovery
+vortex-storage  L1 Caffeine, L2 Milvus, L3 MinIO
+vortex-common   shared models, DTOs, serialization, exceptions, contracts
 ```
 
-恢复路径由 `RecoveryEngine` 处理：先解析目标 checkpoint 或最新 durable state，再 replay checkpoint 之后的 WAL。终态任务会尝试 final checkpoint；删除任务会先记录 durable delete intent，再清理 WAL/checkpoint artifacts。
+## Quick Start
 
-### 5. 语义分页与预取
+The container-first path is documented in [docs/quickstart.md](docs/quickstart.md). It starts Vortex with Milvus, MinIO, Redis, and etcd, and does not require any external LLM API key.
 
-语义分页默认启用：
+For local development, use the host Maven path:
 
-- page table 持久化到 `system/semantic-page-table.bin`。
-- 基于 embedding 的 K-Means / 增量分配组织 `SemanticPage`。
-- page fault 时整页加载回 L1。
-- 预取策略包括 DAG topology、semantic neighborhood、branch speculative。
-- 预取策略会记录命中率，并参与诊断。
-
-### 6. 观测、SLO 与治理
-
-运行时观测入口：
-
-- `/api/v1/memory/health`
-- `/api/v1/memory/health/catalog`
-- `/api/v1/memory/slo`
-- `/api/v1/memory/slo/report`
-- `/actuator/prometheus`
-
-`/api/v1/memory/health` 返回 `status`、`summary`、`statusReason`、`details`、L1 token 使用量等信息。`UP` 和 `DEGRADED` 返回 HTTP 200；`DOWN` 返回 HTTP 503。
-
-配套资产：
-
-- Prometheus rules：`ops/prometheus/vortex-memory-slo-alerts.yml`
-- Alertmanager route example：`ops/alertmanager/memory-health-routes.yml`
-- Grafana query reference：`ops/grafana/memory-health-queries.md`
-- Health signal runbook：`ops/runbooks/memory-health-signals.md`
-- Migration guide：`ops/runbooks/memory-health-migration.md`
-
-## Eval Workload
-
-v3.1 workload 不是只验证“答案里有没有关键词”的单点测试。数据集 `llm-memory-eval-set-v3-1-real-agent-workload.json` 包含 20 个长任务 Agent 记忆场景，每个 case 包含多条 memory fragments、`expectedFragments`、`mustContain`、`mustNotContain`、`failureCategories` 和 tags。
-
-覆盖的主要失败模式包括：
-
-- 多步 current-state overwrite，避免回答旧 owner / 旧计划。
-- namespace collision，同名实体在不同 namespace 下含义不同。
-- branch-specific final decision，避免拿未采纳分支作为最终方案。
-- checkpoint continuation，恢复后继续下一步而不是重复已完成动作。
-- tool policy / safety-sensitive recall，避免使用旧的高风险工具策略。
-- preference reversal，识别用户当前偏好而不是历史偏好。
-- long-context distractor，与当前事实相似但已经过期的干扰项。
-- multi-fragment synthesis，单个 fragment 不足以推出最终答案。
-
-`Vortex-RecoveredMemory` 模式会在 store 后等待目标 fragment 可恢复，然后强制制造 L1 pressure，让答案所需 fragment 离开 L1，再要求 recall 从 L2 找回。official audit 使用 `L1MaxTokens = 96`、3 轮真实 LLM 运行、每轮 20 cases，并用 strict verifier 检查 dataset、model、base URL、prompt SHA、modes、L1 容量和 mode summaries 是否漂移。
-
-评测仍有边界：答案正确性由 `RuleBasedAnswerJudge` 根据 `mustContain` / `mustNotContain` 等契约判断，不是人工主观评审；workload 是面向 memory recovery 能力的受控集合，不等价于开放世界 Agent benchmark。
-
-## 架构
-
-```text
-┌───────────────────────────────────────────────────────────┐
-│                     vortex-app                             │
-│  REST API, Actuator, OpenAPI, eval CLI, integration tests   │
-│  MemoryController, TaskController, health indicators        │
-└───────────────────────────┬───────────────────────────────┘
-                            │
-┌───────────────────────────▼───────────────────────────────┐
-│                    vortex-kernel                           │
-│  HMC, recall, eviction, learning, SLO, generation           │
-│  snapshot, WAL, checkpoint, branch, semantic paging         │
-└───────────────────────────┬───────────────────────────────┘
-                            │
-┌───────────────────────────▼───────────────────────────────┐
-│                    vortex-storage                          │
-│  L1 Caffeine, L2 Milvus, L3 MinIO                           │
-└───────────────────────────┬───────────────────────────────┘
-                            │
-┌───────────────────────────▼───────────────────────────────┐
-│                    vortex-common                           │
-│  model, DTO, serialization, exceptions, shared contracts    │
-└───────────────────────────────────────────────────────────┘
-```
-
-## 仓库结构
-
-```text
-.
-├── vortex-common/        # 公共模型、DTO、序列化、异常、健康信号
-├── vortex-storage/       # L1/L2/L3 存储 API 与实现
-├── vortex-kernel/        # 记忆、召回、淘汰、学习、快照、分页、generation
-├── vortex-app/           # Spring Boot REST API、health、eval CLI、集成测试
-├── ops/                  # compose、治理脚本、runbook、监控配置、eval fixtures
-├── demo/                 # 一键 demo 脚本
-├── models/bge-small-zh/  # 默认本地 BGE-Small-ZH 模型目录
-├── docker-compose.yml    # etcd + Milvus + MinIO
-└── pom.xml               # Maven multi-module parent
-```
-
-## 技术栈
-
-- Java 21
-- Maven 3.9+
-- Spring Boot 3.3.4
-- Caffeine 3.1.8
-- Milvus SDK 2.4.4
-- MinIO 8.5.11
-- Kryo 5.6.0
-- DJL 0.28.0
-- ONNX Runtime 1.18.0
-- Testcontainers 2.0.2
-
-根 POM 对编译和测试启用了 `--enable-preview`，测试阶段也包含必要的 `--add-opens`。
-
-## 快速启动
-
-前置条件：
+Prerequisites:
 
 - JDK 21
 - Maven 3.9+
 - Docker Desktop / Docker Compose
-- 本地 BGE 模型目录包含 `model.onnx` 和 `tokenizer.json`，默认路径是 `models/bge-small-zh`
 
-### Windows PowerShell
+The default local BGE model files are tracked under `models/bge-small-zh/`.
 
 ```powershell
-# 1. 启动并等待 etcd / Milvus / MinIO 健康
 docker compose up -d --wait
-
-# 2. 打包应用
 mvn -pl vortex-app -am -DskipTests package
-
-# 3. 启动应用
 java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-exec.jar
 ```
 
-### Bash
+Open:
 
-```bash
-# 1. 启动并等待依赖健康
-docker compose up -d --wait
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- Health: `http://localhost:8080/actuator/health`
+- Prometheus: `http://localhost:8080/actuator/prometheus`
+- MinIO console: `http://localhost:9001` with `minioadmin` / `minioadmin`
 
-# 2. 打包应用
-mvn -pl vortex-app -am -DskipTests package
-
-# 3. 启动应用
-java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-exec.jar
-```
-
-开发时也可以直接运行：
-
-```bash
-mvn spring-boot:run -pl vortex-app
-```
-
-启动后：
-
-- 应用：`http://localhost:8080`
-- Swagger UI：`http://localhost:8080/swagger-ui.html`
-- Actuator health：`http://localhost:8080/actuator/health`
-- Prometheus：`http://localhost:8080/actuator/prometheus`
-- MinIO Console：`http://localhost:9001`，默认账号密码 `minioadmin` / `minioadmin`
-
-### 停止服务
-
-停止 compose 服务但保留容器：
+Stop dependencies:
 
 ```powershell
-.\ops\compose-stop.ps1
-```
-
-```bash
-bash ops/compose-stop.sh
-```
-
-删除 compose 容器和网络：
-
-```bash
 docker compose down
 ```
 
-## Demo
+## Zero-Key Agent Demo
 
-PowerShell 一键 demo 会启动依赖、打包应用、启动应用 jar、执行 store/recall/task/checkpoint/recover/health 流程，最后停止本次启动的应用进程：
+With the quickstart stack running, try the focused demo in [examples/quickstart-agent](examples/quickstart-agent):
 
 ```powershell
-.\demo\run-demo.ps1
+.\examples\quickstart-agent\run.ps1
 ```
 
-如果应用已经启动，可以只跑 API walkthrough：
+It shows memory off/on behavior and kills a worker process before recovering the task from a Vortex checkpoint. No external LLM API key is required.
 
-```bash
-BASE_URL=http://localhost:8080 bash ops/demo.sh
-```
+## Try The Memory API
 
-## API 速览
-
-### Memory API
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `POST` | `/api/v1/memory/store` | 存储原始文本，自动分片、嵌入、写入三层记忆 |
-| `POST` | `/api/v1/memory/store/fragment` | 写入预构造 `MemoryFragment` |
-| `GET` | `/api/v1/memory/fragment/{fragmentId}` | 查询 fragment |
-| `DELETE` | `/api/v1/memory/fragment/{fragmentId}` | 删除 fragment |
-| `POST` | `/api/v1/memory/recall` | 语义召回 |
-| `POST` | `/api/v1/memory/feedback` | 提交答案反馈，驱动自适应学习 |
-| `POST` | `/api/v1/memory/pin` | 临时 pin fragment |
-| `POST` | `/api/v1/memory/unpin` | 取消 pin |
-| `GET` | `/api/v1/memory/learning?scenario=chat` | 查看学习状态 |
-| `GET` | `/api/v1/memory/slo` | SLO 快照 |
-| `GET` | `/api/v1/memory/slo/report` | 诊断报告 |
-| `GET` | `/api/v1/memory/health` | 记忆子系统健康 |
-| `GET` | `/api/v1/memory/health/catalog` | 健康信号字典 |
-
-存储文本：
+Store memory:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/memory/store \
@@ -341,12 +165,11 @@ curl -X POST http://localhost:8080/api/v1/memory/store \
     "content": "Java synchronized provides mutual exclusion and visibility guarantees.",
     "namespace": "session-1",
     "tags": ["java", "concurrency"],
-    "reasoningChainId": "chain-1",
-    "pinTtlMillis": 60000
+    "reasoningChainId": "chain-1"
   }'
 ```
 
-语义召回：
+Recall memory:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/memory/recall \
@@ -361,395 +184,156 @@ curl -X POST http://localhost:8080/api/v1/memory/recall \
   }'
 ```
 
-提交反馈：
+Async ingest is available through `POST /api/v1/memory/store/async`, with
+pipeline status at `GET /api/v1/memory/pipeline/{pipelineId}`.
 
-```bash
-curl -X POST http://localhost:8080/api/v1/memory/feedback \
-  -H "Content-Type: application/json" \
-  -d '{
-    "recallSessionId": "<recallSessionId>",
-    "usedFragmentIds": ["<fragmentId>"],
-    "answerAccepted": true
-  }'
+## Task State And Recovery API
+
+Vortex also exposes a task-state kernel for long-running agent workflows:
+
+| Capability | API |
+| --- | --- |
+| Create/list/fetch/complete/fail/delete tasks | `/api/v1/tasks` |
+| Mutate task DAG nodes and edges | `/api/v1/tasks/{taskId}/nodes` |
+| Update task context | `/api/v1/tasks/{taskId}/context` |
+| Create/list/recover checkpoints | `/api/v1/tasks/{taskId}/checkpoint`, `/recover` |
+| Branch, switch, and merge task state | `/branch`, `/branch/switch`, `/merge` |
+| Export Graphviz DOT | `/api/v1/tasks/{taskId}/dag` |
+
+Mutating task APIs accept the optional `X-Execution-Id` header for idempotent
+replay protection.
+
+## Build And Test
+
+CI runs unit tests, app integration verification, baseline governance, and
+learning governance:
+
+```powershell
+mvn -B test -pl vortex-common,vortex-kernel,vortex-storage -am
+mvn -B verify -pl vortex-app -am
+./ops/run-baseline-governance-check.ps1 -SkipMavenTest -SkipPackage
+./ops/run-learning-governance-check.ps1 -SkipMavenTest -SkipPackage -SkipLearningRun
 ```
 
-pin / unpin：
+`vortex-app` integration verification starts Docker Compose during
+`pre-integration-test` and stops it during `post-integration-test`.
 
-```bash
-curl -X POST http://localhost:8080/api/v1/memory/pin \
-  -H "Content-Type: application/json" \
-  -d '{"fragmentId":"<fragmentId>","pinTtlMillis":60000}'
+## Eval CLI
 
-curl -X POST http://localhost:8080/api/v1/memory/unpin \
-  -H "Content-Type: application/json" \
-  -d '{"fragmentId":"<fragmentId>"}'
+Package the eval CLI:
+
+```powershell
+mvn -pl vortex-app -am -DskipTests package
 ```
 
-### Task API
+Available benchmark commands:
 
-| 方法 | 路径 | 说明 |
+```text
+recall-benchmark
+runtime-recovery-benchmark
+async-pipeline-latency-benchmark
+```
+
+Use the evidence runbooks for isolated Milvus collections, MinIO prefixes, WAL
+directories, and exact environment variables:
+
+- [Recall ablation](ops/runbooks/vortex-recall-ablation-benchmark-evidence-20260630.md)
+- [Main-path latency](ops/runbooks/vortex-main-path-latency-benchmark-evidence-20260629.md)
+- [Runtime recovery](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md)
+- [Async pipeline latency](ops/runbooks/vortex-async-pipeline-latency-benchmark-evidence-20260628.md)
+
+## Configuration
+
+Default configuration lives in
+[`vortex-app/src/main/resources/application.yml`](vortex-app/src/main/resources/application.yml).
+
+Common environment variables:
+
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/v1/tasks` | 创建任务 |
-| `GET` | `/api/v1/tasks?page=0&size=50` | 分页列出 active tasks |
-| `GET` | `/api/v1/tasks/{taskId}` | 查询任务 |
-| `POST` | `/api/v1/tasks/{taskId}/complete` | 标记完成 |
-| `POST` | `/api/v1/tasks/{taskId}/fail` | 标记失败 |
-| `DELETE` | `/api/v1/tasks/{taskId}` | 删除任务及 durable artifacts |
-| `POST` | `/api/v1/tasks/{taskId}/nodes` | 追加 DAG 节点 |
-| `POST` | `/api/v1/tasks/{taskId}/nodes/complete` | 完成 DAG 节点 |
-| `DELETE` | `/api/v1/tasks/{taskId}/nodes/{nodeId}` | 删除 DAG 节点 |
-| `POST` | `/api/v1/tasks/{taskId}/nodes/edge` | 添加 DAG 边 |
-| `PUT` | `/api/v1/tasks/{taskId}/context` | upsert/delete task context |
-| `POST` | `/api/v1/tasks/{taskId}/checkpoint` | 创建 checkpoint |
-| `GET` | `/api/v1/tasks/{taskId}/checkpoints` | 列出 checkpoints |
-| `POST` | `/api/v1/tasks/{taskId}/recover` | 从 checkpoint 或最新 durable state 恢复 |
-| `GET` | `/api/v1/tasks/{taskId}/branches` | 列出 branches |
-| `POST` | `/api/v1/tasks/{taskId}/branch` | 创建 branch |
-| `POST` | `/api/v1/tasks/{taskId}/branch/switch` | 切换 active branch |
-| `POST` | `/api/v1/tasks/{taskId}/merge` | 合并 branch |
-| `GET` | `/api/v1/tasks/{taskId}/dag?branchId=...` | 导出 Graphviz DOT |
+| `VORTEX_STORAGE_L1_MAX_TOKENS` | `8192` | L1 token capacity |
+| `MILVUS_HOST` / `MILVUS_PORT` | `localhost` / `19530` | Milvus connection |
+| `VORTEX_STORAGE_L2_MILVUS_COLLECTION` | `vortex_memory` | Milvus collection |
+| `VORTEX_L2_EMBEDDING_DIM` | `512` | L2 vector dimension |
+| `MINIO_ENDPOINT` / `MINIO_BUCKET` | `http://localhost:9000` / `vortex` | L3 object storage |
+| `MINIO_KEY_PREFIX` | empty | Object key prefix for isolation |
+| `VORTEX_EXECUTION_ID_BACKEND` | `MEMORY` | Idempotency backend; Redis is optional |
+| `BGE_MODEL_PATH` | `models/bge-small-zh` | Local BGE model directory |
+| `VORTEX_GENERATION_ENABLED` | `false` | Enable external LLM generation integration |
+| `VORTEX_PAGING_ENABLED` | `true` | Enable semantic paging |
 
-创建任务、追加节点、checkpoint、恢复：
-
-```bash
-curl -X POST http://localhost:8080/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"description":"Analyze repository","namespace":"agent-1"}'
-
-curl -X POST http://localhost:8080/api/v1/tasks/{taskId}/nodes \
-  -H "Content-Type: application/json" \
-  -d '{"type":"THOUGHT","content":"Read module boundaries first."}'
-
-curl -X POST http://localhost:8080/api/v1/tasks/{taskId}/checkpoint
-
-curl -X POST http://localhost:8080/api/v1/tasks/{taskId}/recover \
-  -H "Content-Type: application/json" \
-  -d '{"checkpointId":"<checkpointId>"}'
-```
-
-branch 与 DOT：
-
-```bash
-curl -X POST http://localhost:8080/api/v1/tasks/{taskId}/branch \
-  -H "Content-Type: application/json" \
-  -d '{"branchName":"experiment-a","sourceNodeId":"<nodeId>"}'
-
-curl -X POST http://localhost:8080/api/v1/tasks/{taskId}/branch/switch \
-  -H "Content-Type: application/json" \
-  -d '{"branchId":"<branchId>"}'
-
-curl "http://localhost:8080/api/v1/tasks/{taskId}/dag?branchId=<branchId>"
-```
-
-## 关键配置
-
-默认配置位于 `vortex-app/src/main/resources/application.yml`。
-
-### 存储
-
-| 配置 / 环境变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `vortex.storage.l1.max-tokens` / `VORTEX_STORAGE_L1_MAX_TOKENS` | `8192` | L1 token capacity |
-| `vortex.storage.l2.milvus.host` / `MILVUS_HOST` | `localhost` | Milvus host |
-| `vortex.storage.l2.milvus.port` / `MILVUS_PORT` | `19530` | Milvus port |
-| `vortex.storage.l2.milvus.collection` / `VORTEX_STORAGE_L2_MILVUS_COLLECTION` | `vortex_memory` | Milvus collection |
-| `vortex.storage.l2.embedding-dim` / `VORTEX_L2_EMBEDDING_DIM` | `512` | L2 向量维度 |
-| `vortex.storage.l3.minio.endpoint` / `MINIO_ENDPOINT` | `http://localhost:9000` | MinIO endpoint |
-| `vortex.storage.l3.minio.bucket` / `MINIO_BUCKET` | `vortex` | MinIO bucket |
-| `vortex.storage.l3.minio.key-prefix` / `MINIO_KEY_PREFIX` | 空 | 对象 key 前缀，eval 常用于隔离 |
-
-Milvus collection 维度变更需要显式迁移。只有确认可以删除目标 collection 时才设置：
+Changing the Milvus vector dimension is destructive and must be explicit:
 
 ```powershell
 $env:MILVUS_DROP_COLLECTION = "true"
 $env:MILVUS_DROP_CONFIRM_TOKEN = "I-KNOW-WHAT-I-AM-DOING"
 ```
 
-启动一次完成迁移后，应恢复为 false / 空值。
+Reset those values after the one-time migration.
 
-### Embedding
+## Project Status
 
-默认使用本地 BGE-Small-ZH：
+For positioning against plain vector RAG and hand-rolled memory layers, see
+[docs/comparison.md](docs/comparison.md). The first alpha release draft lives in
+[docs/releases/v0.1.0-alpha.md](docs/releases/v0.1.0-alpha.md).
 
-```text
-vortex.kernel.embedding.bge.model-path = models/bge-small-zh
-```
+Implemented and covered by code/tests/runbooks:
 
-该目录必须包含：
+- Hierarchical memory store, recall, feedback, pin/unpin, and eviction.
+- Vector, keyword, hybrid, and rerank retrieval paths.
+- Async memory ingest pipeline with persistence status tracking.
+- Task DAG, checkpoint, WAL replay, branch/switch/merge, and recovery.
+- Health catalog, SLO snapshots, Prometheus metrics, and monitoring assets.
+- Deterministic benchmark and governance harnesses.
 
-```text
-model.onnx
-tokenizer.json
-```
+Not claimed yet:
 
-本地排障可以开启 safe-hash mode，但它不是正式语义基线：
+- Production-grade auth, RBAC, tenant isolation, rate limits, or audit logs.
+- Long-duration high-concurrency production capacity results.
+- Distributed consensus, multi-node scheduling, or cross-region replication.
+- Full external process-manager crash-loop orchestration.
+- Full Agent runtime integration with real LLM generation inside the latency benchmark.
 
-```powershell
-$env:VORTEX_KERNEL_EMBEDDING_BGE_SAFE_HASH_MODE = "true"
-```
-
-可选 DeepSeek cloud embedding：
-
-```powershell
-$env:CLOUD_EMBEDDING_ENABLED = "true"
-$env:DEEPSEEK_API_KEY = "<api-key>"
-$env:VORTEX_L2_EMBEDDING_DIM = "1024"
-```
-
-启用 1024 维 cloud embedding 前，Milvus collection 也必须迁移到 1024 维。
-
-### Snapshot / WAL
-
-| 配置 | 默认值 | 说明 |
-| --- | --- | --- |
-| `vortex.kernel.snapshot.wal.dir` | `${java.io.tmpdir}/vortex-wal` | WAL 目录 |
-| `vortex.kernel.snapshot.checkpoint.format` | `kryo` | checkpoint 格式 |
-| `vortex.kernel.snapshot.checkpoint.compression` | `gzip` | checkpoint 压缩 |
-| `vortex.kernel.snapshot.checkpoint.max-deltas-before-full` | `10` | delta 链超过该值后创建 FULL checkpoint |
-| `vortex.kernel.snapshot.scheduler.enabled` | `true` | 自动 checkpoint 调度 |
-| `vortex.kernel.snapshot.scheduler.max-actions-between` | `50` | action 数触发阈值 |
-| `vortex.kernel.snapshot.scheduler.max-millis-between` | `60000` | 时间触发阈值 |
-
-### Generation / Eval
-
-应用默认不启用 generation：
+## Repository Map
 
 ```text
-vortex.kernel.generation.enabled=false
+.
+|-- vortex-common/        shared contracts, DTOs, serialization, exceptions
+|-- vortex-storage/       L1/L2/L3 storage APIs and implementations
+|-- vortex-kernel/        memory, retrieval, recovery, snapshot, paging, learning
+|-- vortex-app/           Spring Boot API, eval CLI, benchmark runners, tests
+|-- ops/                  runbooks, evidence reports, CI/governance scripts
+|-- docs/                 architecture and benchmark summaries
+|-- demo/                 demo scripts
+|-- examples/             focused runnable examples
+|-- models/bge-small-zh/  default local BGE-Small model files
+|-- docker-compose.yml    etcd, Milvus, MinIO, Redis
+`-- pom.xml               Maven multi-module parent
 ```
 
-真实 LLM eval 需要显式配置：
-
-```powershell
-$env:VORTEX_GENERATION_ENABLED = "true"
-$env:VORTEX_GENERATION_BASE_URL = "https://api.openai.com/v1"
-$env:VORTEX_GENERATION_API_KEY = "<api-key>"
-$env:VORTEX_GENERATION_MODEL = "gpt-5.2"
-```
-
-Eval 相关默认项：
-
-```text
-vortex.eval.dataset-location=classpath:llm-memory-eval-set.json
-vortex.eval.modes=BASELINE_NO_MEMORY,VORTEX_MEMORY,VORTEX_RECOVERED_MEMORY
-vortex.eval.report-output-dir=ops/eval-reports
-```
-
-正式 baseline/governance 优先使用 `ops/*.ps1` 脚本，不建议手工拼大量环境变量。
-
-## 测试
-
-当前仓库包含 55 个 `*Test.java` / `*IT.java` 测试文件。
-
-单元测试：
-
-```bash
-mvn test -pl vortex-common,vortex-kernel,vortex-storage -am
-```
-
-应用集成测试：
-
-```bash
-mvn verify -pl vortex-app -am
-```
-
-`vortex-app` 的 `verify` 会在 `pre-integration-test` 自动执行：
-
-```text
-docker compose up -d --wait
-```
-
-并在 `post-integration-test` 默认执行：
-
-```text
-docker compose down --remove-orphans
-```
-
-如果希望 `verify` 后保留 compose 服务：
-
-```bash
-mvn verify -pl vortex-app -am -Dvortex.it.skipComposeDown=true
-```
-
-`FullLifecycleIT` 默认排除。显式启用：
-
-```bash
-mvn verify -pl vortex-app -am -Dvortex.it.fullLifecycleExclude= -Drun.full.lifecycle.it=true
-```
-
-CI 当前执行：
-
-```bash
-mvn -B test -pl vortex-common,vortex-kernel,vortex-storage -am
-mvn -B verify -pl vortex-app -am
-```
-
-随后运行 baseline governance 和 learning governance。
-
-## Eval CLI 与治理门禁
-
-`vortex-app` 打包后会生成两个 jar：
-
-```text
-vortex-app/target/vortex-app-0.1.0-SNAPSHOT-exec.jar
-vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar
-```
-
-Eval CLI 主类是 `LlmMemoryEvalCliApplication`。
-
-打包：
-
-```bash
-mvn -pl vortex-app -am -DskipTests package
-```
-
-列出 baseline profiles：
-
-```powershell
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify --list-profiles
-```
-
-查看 v3.1 profile：
-
-```powershell
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
-  --profile official-v3.1-real-agent-workload-strict `
-  --describe
-```
-
-注意：`eval-cli verify <report>` 的默认 profile 仍是 `official-v2-strict`，这是为了兼容历史报告。验证 v3.1 报告时必须显式传 `--profile official-v3.1-real-agent-workload-strict`，或使用治理脚本。
-
-### Baseline Governance
-
-本地/CI 默认 baseline 门禁：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1
-```
-
-它不调用真实模型，不需要 API key。默认检查：
-
-```text
-Profile       = official-v3.1-real-agent-workload-strict
-EvidenceStamp = 20260603-v3-1-real-agent-workload-official-strict-audit-003
-ReportRoot    = ops/eval-fixtures/baselines
-```
-
-快速复验既有 jar 和 fixture：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\ops\run-baseline-governance-check.ps1 `
-  -SkipMavenTest `
-  -SkipPackage
-```
-
-### Learning Governance
-
-learning-specific workload 用于证明 feedback 后 recall ranking 是否改善。默认 promoted fixture：
-
-```text
-Profile       = learning-v1-agent-feedback-audit
-EvidenceStamp = 20260609-learning-v1-agent-feedback-hard-governance-001
-EvidenceRoot  = ops/eval-fixtures/learning
-```
-
-CI 使用 fixture replay：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\ops\run-learning-governance-check.ps1 `
-  -SkipMavenTest `
-  -SkipPackage `
-  -SkipLearningRun
-```
-
-本地完整 deterministic learning workload：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\ops\run-learning-governance-check.ps1
-```
-
-完整 learning run 需要本地 BGE 模型和 Docker compose 依赖，但不调用真实 generation API。
-
-### 真实 LLM Eval / Audit
-
-真实 LLM 单轮 eval：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\ops\run-real-llm-memory-eval.ps1 `
-  -ApiKey "<api-key>" `
-  -BaseUrl "https://api.openai.com/v1" `
-  -Model "gpt-5.2" `
-  -Stamp "manual-v3-1-run" `
-  -DatasetLocation "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json" `
-  -EvalParallelism 24
-```
-
-真实多轮 baseline audit：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\ops\run-llm-memory-baseline-audit.ps1 `
-  -ApiKey "<api-key>" `
-  -BaseUrl "https://api.openai.com/v1" `
-  -Model "gpt-5.2" `
-  -Rounds 3 `
-  -DatasetLocation "classpath:llm-memory-eval-set-v3-1-real-agent-workload.json" `
-  -AuditStamp "manual-v3-1-audit" `
-  -EvalParallelism 24 `
-  -FailOnAuditGateFailure
-```
-
-脚本会为每次运行隔离 Milvus collection 和 MinIO prefix，并输出 JSON/Markdown 报告到 `ops/eval-reports/<stamp>/`。
-
-## 当前边界与路线
-
-已经实现并有测试/治理覆盖的能力：
-
-- 三层 memory store / recall / feedback 闭环。
-- L1 token pressure 下的 L2 recovery。
-- 语义淘汰、regret、pin/unpin、namespace quota。
-- task DAG、WAL、FULL/DELTA checkpoint、recovery、branch。
-- semantic paging / prefetch。
-- health catalog、SLO、Prometheus/Grafana/Alertmanager 资产。
-- baseline governance、learning governance、真实 LLM eval/audit harness。
-
-尚未完成或尚未充分证明的能力：
-
-- 生产级 auth / RBAC / tenant model。
-- namespace ownership、请求限流、审计日志、稳定错误码。
-- 长时间高并发、多 namespace、大规模 fragment 的容量压测。
-- 真实 Agent runtime 的完整执行器集成。
-- 分布式一致性、Raft、多节点调度、跨区域复制。
-- provider 成本、配额、模型漂移的完整运营治理。
-
-## 文档地图
-
-核心 runbook：
-
-- `ops/compose-verify.md`
-- `ops/runbooks/vortex-project-status.md`
-- `ops/runbooks/llm-memory-eval-baseline.md`
-- `ops/runbooks/llm-memory-eval-cli-runbook.md`
-- `ops/runbooks/llm-memory-eval-evidence-assets.md`
-- `ops/runbooks/llm-memory-eval-v3-1-workload-proposal.md`
-- `ops/runbooks/vortex-baseline-governance-phase-4-decision.md`
-- `ops/runbooks/llm-memory-eval-learning-workload-proposal.md`
-- `ops/runbooks/memory-health-signals.md`
-- `ops/runbooks/memory-health-migration.md`
-- `ops/runbooks/memory-test-plan.md`
-
-监控资产：
-
-- `ops/prometheus/vortex-memory-slo-alerts.yml`
-- `ops/grafana/memory-health-queries.md`
-- `ops/alertmanager/memory-health-routes.yml`
-
-证据资产：
-
-- `ops/eval-fixtures/baselines/20260603-v3-1-real-agent-workload-official-strict-audit-003`
-- `ops/eval-fixtures/learning/20260609-learning-v1-agent-feedback-hard-governance-001`
+## Tech Stack
+
+- Java 21 with preview enabled
+- Spring Boot 3.3.4
+- Maven multi-module build
+- Caffeine 3.1.8
+- Milvus SDK 2.4.4
+- MinIO 8.5.11
+- Redis 7.2 optional Execution ID backend
+- Kryo 5.6.0
+- DJL 0.28.0 and ONNX Runtime 1.18.0 for local BGE embeddings
+- Testcontainers 2.0.2
+
+## Community
+
+- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Roadmap: [ROADMAP.md](ROADMAP.md)
+- Code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- Suggested GitHub description/topics: [docs/repo-settings.md](docs/repo-settings.md)
 
 ## License
 
-Vortex 的代码与文档使用 Apache License 2.0，见 `LICENSE`。
+Vortex code and documentation are licensed under the [Apache License 2.0](LICENSE).
 
-仓库中的第三方模型文件、数据集或外部服务名称仍受其各自上游许可和服务条款约束；公开分发前应单独确认这些资产的再分发许可。
+Third-party model files, datasets, and external service names remain subject to
+their upstream licenses and terms.

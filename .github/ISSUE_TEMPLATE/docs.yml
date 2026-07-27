@@ -1,0 +1,26 @@
+name: Documentation issue
+description: Report missing, confusing, or unverifiable documentation
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: textarea
+    id: location
+    attributes:
+      label: Location
+      description: Link to the README, doc, runbook, or example.
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: Issue
+      description: What is confusing, missing, stale, or hard to verify?
+    validations:
+      required: true
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested fix
+      description: Optional wording, command, diagram, or evidence link.
+    validations:
+      required: false

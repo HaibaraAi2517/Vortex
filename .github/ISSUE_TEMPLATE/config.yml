@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Quickstart guide
+    url: https://github.com/HaibaraAi2517/Vortex/blob/main/docs/quickstart.md
+    about: Start here before filing setup issues.
+  - name: Benchmark evidence
+    url: https://github.com/HaibaraAi2517/Vortex/blob/main/docs/benchmark.md
+    about: Check supported benchmark wording and evidence boundaries.

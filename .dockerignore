@@ -1,0 +1,13 @@
+.git
+.github
+.idea
+.agents
+.claude
+.codex
+**/target
+target
+readme-history
+ops/eval-reports
+ops/eval-fixtures
+*.log
+*.tmp
