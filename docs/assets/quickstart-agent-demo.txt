@@ -1,0 +1,19 @@
+Vortex base URL: http://localhost:8080
+Demo namespace: quickstart-agent-20260727134729
+
+== 1. Memory off vs memory on ==
+Stored fragments: 1
+Question: What is the project codename and launch goal?
+NO MEMORY: I only see the current question, so I do not know the codename or launch goal.
+WITH VORTEX: recalled durable memory:
+- Demo session facts: project codename is Aurora Ledger; launch goal is a star-ready GitHub README; preferred stack is Java 21 with Milvus and MinIO.
+
+== 2. Local crash vs Vortex recovery ==
+Worker process reached checkpoint; killing PID 32736.
+NO VORTEX: a local-only worker lost its in-process task state and would restart at step 1.
+WITH VORTEX: recovered task 33d630e0-fd2d-478a-8863-db5eb101546a from checkpoint 96e411c0-62f2-490e-b981-0cb563cb3fc0; nodeCount=1.
+Resumed node: 8c1894df-b772-42f0-92f8-da69f7e574d7
+Next checkpoint: b90bbcfe-d6b0-4506-bae1-3dd628ebe10a
+
+== Demo complete ==
+No external LLM API key was used.

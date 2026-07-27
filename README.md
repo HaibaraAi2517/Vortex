@@ -148,6 +148,10 @@ docker compose down
 
 With the quickstart stack running, try the focused demo in [examples/quickstart-agent](examples/quickstart-agent):
 
+![Vortex zero-key agent demo](docs/assets/quickstart-agent-demo.gif)
+
+Transcript from the recorded local run: [docs/assets/quickstart-agent-demo.txt](docs/assets/quickstart-agent-demo.txt).
+
 ```powershell
 .\examples\quickstart-agent\run.ps1
 ```

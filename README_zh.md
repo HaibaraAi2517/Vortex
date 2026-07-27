@@ -138,6 +138,10 @@ docker compose down
 
 quickstart stack 运行后，可以试用 [examples/quickstart-agent](examples/quickstart-agent) 中的对比 demo：
 
+![Vortex zero-key agent demo](docs/assets/quickstart-agent-demo.gif)
+
+本地录制输出 transcript：[docs/assets/quickstart-agent-demo.txt](docs/assets/quickstart-agent-demo.txt)。
+
 ```powershell
 .\examples\quickstart-agent\run.ps1
 ```
