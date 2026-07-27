@@ -371,3 +371,52 @@ All local markdown links resolved.
 mvn -B test -pl vortex-common,vortex-kernel,vortex-storage -am
 mvn -B verify -pl vortex-app -am
 ```
+
+## Phase 4 续作记录（2026-07-27）
+
+本轮继续执行 Phase 4.1，并补齐 demo media：
+
+- 已推送 `docs: improve open source readiness` 到 GitHub main。
+- GitHub SSH push 需要显式使用 Windows OpenSSH：
+
+```powershell
+git -c core.sshCommand="C:/Windows/System32/OpenSSH/ssh.exe" push origin main
+```
+
+- 当前环境没有 `gh`、`GH_TOKEN` 或 `GITHUB_TOKEN`，所以 repo description/topics 仍需仓库主人在 GitHub 网页端手动设置。
+- 当前环境 HTTP 拉取 GitHub 网页会失败，README Mermaid/GIF 网页渲染仍需仓库主人浏览器目检。
+- 新增真实 demo media：
+  - `docs/assets/quickstart-agent-demo.gif`
+  - `docs/assets/quickstart-agent-demo.txt`
+- 录制素材来自本机真实执行：
+
+```powershell
+.\examples\quickstart-agent\run.ps1
+```
+
+关键输出包含：`Stored fragments: 1`、memory off/on 对比、checkpoint recovery、`No external LLM API key was used.`。
+
+- 生成 GIF 期间发现 quickstart restart bug：旧 `system/active-task-index.bin` 存在时，fat jar 反序列化 private nested `TaskListingSnapshot` 会触发 ReflectASM `IllegalAccessError`。
+- 已修复：`TaskLifecycleManager.TaskListingEntry` 和 `TaskLifecycleManager.TaskListingSnapshot` 改为 `public static`，逻辑不变。
+- 已新增 Spring AI integration example：`examples/spring-ai-integration/`。
+  - 使用 Spring AI `spring-ai-client-chat:2.0.0`。
+  - `VortexMemoryAdvisor` 实现 `BaseAdvisor`，在 `before` 中调用 Vortex recall 并注入 system prompt。
+  - demo 使用 fake advisor chain，不调用外部 LLM provider，不需要 API key。
+
+新增验证：
+
+```powershell
+mvn -B test -pl vortex-kernel -am -Dtest=TaskLifecycleManagerTest "-Dsurefire.failIfNoSpecifiedTests=false"
+mvn -q -f examples/spring-ai-integration/pom.xml package
+mvn -q -f examples/spring-ai-integration/pom.xml exec:java
+mvn -B test -pl vortex-common,vortex-kernel,vortex-storage -am
+mvn -B verify -pl vortex-app -am
+```
+
+结果：
+
+- `TaskLifecycleManagerTest` 通过 `36` 个测试。
+- Spring AI example 编译通过，demo 输出 `Advisor recall count: 1`，并注入包含 `Aurora Ledger` 和 `Spring AI ChatClient advisor` 的 Vortex memory。
+- common/storage/kernel 全量测试通过：`302` tests，`BUILD SUCCESS`。
+- `vortex-app verify` 通过：app integration verification `13` tests，`BUILD SUCCESS`。
+- `mvn verify` 按 lifecycle 停止了 Docker Compose 项目；当前 quickstart stack 不再运行。

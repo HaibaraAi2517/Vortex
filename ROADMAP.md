@@ -8,11 +8,14 @@ than a promise of fixed dates.
 Current problem: a new user can run the no-key demo, but the project still needs
 more short, inspectable examples for common integration paths.
 
+Done:
+
+- Add a Spring AI ChatClient advisor example under `examples/spring-ai-integration/`.
+- Record a short quickstart demo GIF and transcript under `docs/assets/`.
+
 Planned work:
 
-- Add a Spring AI integration example.
 - Add one MCP or LangChain4j integration example.
-- Record a short quickstart demo GIF or video.
 - Keep quickstart commands tested on Windows PowerShell and Bash.
 
 ## Make Retrieval Quality Easier To Evaluate
