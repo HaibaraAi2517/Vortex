@@ -158,7 +158,7 @@ Transcript from the recorded local run: [docs/assets/quickstart-agent-demo.txt](
 
 It shows memory off/on behavior and kills a worker process before recovering the task from a Vortex checkpoint. No external LLM API key is required.
 
-Java/Spring users can also try the [Spring AI ChatClient advisor example](examples/spring-ai-integration), which injects Vortex recall into a Spring AI system prompt without requiring an external LLM key.
+Java users can also try the [Spring AI ChatClient advisor example](examples/spring-ai-integration) and [LangChain4j AiServices transformer example](examples/langchain4j-integration). Both inject Vortex recall into model context without requiring an external LLM key.
 
 ## Try The Memory API
 

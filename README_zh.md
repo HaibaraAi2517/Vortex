@@ -148,7 +148,7 @@ quickstart stack 运行后，可以试用 [examples/quickstart-agent](examples/q
 
 它会展示 memory off/on 的差异，并强杀一个 worker 进程后从 Vortex checkpoint 恢复任务。不需要任何外部 LLM API key。
 
-Java/Spring 用户也可以试用 [Spring AI ChatClient advisor example](examples/spring-ai-integration)，它会把 Vortex recall 注入 Spring AI system prompt，同样不需要外部 LLM key。
+Java 用户也可以试用 [Spring AI ChatClient advisor example](examples/spring-ai-integration) 和 [LangChain4j AiServices transformer example](examples/langchain4j-integration)。两者都会把 Vortex recall 注入模型上下文，同样不需要外部 LLM key。
 
 ## 试用 Memory API
 
