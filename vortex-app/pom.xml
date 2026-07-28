@@ -151,7 +151,7 @@
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <version>3.3.1</version>
                 <configuration>
-                    <argLine>--enable-preview --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.time=ALL-UNNAMED -Djdk.net.URLClassPath.disableClassPathURLCheck=true</argLine>
+                    <argLine>@{argLine} --enable-preview --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.time=ALL-UNNAMED -Djdk.net.URLClassPath.disableClassPathURLCheck=true</argLine>
                     <includes>
                         <include>**/*IT.java</include>
                     </includes>
