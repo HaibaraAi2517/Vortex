@@ -25,6 +25,44 @@ Thumbs.db
 /项目构思评价.txt
 /deepapi.txt
 
+
+# Local private planning, resume, and handoff notes. Keep these out of public commits.
+/简历建议5.md
+/执行计划.md
+/readme-history/
+/ops/1111xin.md
+/ops/开发计划.md
+/ops/描述1.0.md
+/ops/描述2.0.md
+/ops/描述3.0.md
+/ops/runbooks/上一次对话.txt
+/ops/runbooks/对外目标.md
+/ops/runbooks/战线.md
+/ops/runbooks/目标.md
+/ops/runbooks/未完成内容.md
+/ops/runbooks/vortex-current-status-*.md
+/ops/runbooks/vortex-war-front-audit-report-*.md
+/ops/runbooks/vortex-next-dev-handoff-*.md
+/ops/runbooks/vortex-open-source-readiness-handoff-*.md
+/ops/runbooks/vortex-project-status-*.md
+
+# Local secret files.
+/.env
+/.env.*
+!/.env.example
+*.pem
+*.key
+*.p12
+*.jks
+/secrets/
+/ops/secrets/
+
+# Local LongMemEval E2E notes may contain local paths/provider endpoints; force-add only after public review.
+/ops/runbooks/vortex-public-longmemeval-e2e-*.md
+
+# Generated external/public dataset conversions
+/ops/datasets/generated/
+
 # Local/generated eval artifacts. Force-add intentionally promoted baselines.
 /ops/tmp/
 /ops/eval-fixtures/**/*.md
