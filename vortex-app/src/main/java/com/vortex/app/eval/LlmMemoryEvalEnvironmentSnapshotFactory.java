@@ -35,6 +35,9 @@ public class LlmMemoryEvalEnvironmentSnapshotFactory {
     @Value("${vortex.storage.l3.minio.key-prefix:}")
     private String minioKeyPrefix;
 
+    @Value("${vortex.kernel.recall.cross-encoder-candidate-pool-limit:40}")
+    private int crossEncoderCandidatePoolLimit;
+
     @Value("${user.dir}")
     private String userDir;
 
@@ -57,10 +60,20 @@ public class LlmMemoryEvalEnvironmentSnapshotFactory {
                 .evalSystemPromptChars(evalProperties.getSystemPrompt() == null ? 0 : evalProperties.getSystemPrompt().length())
                 .modes(configuredModes())
                 .evalParallelism(Math.max(1, evalProperties.getParallelism()))
+                .recallTokenBudget(evalProperties.getRecallTokenBudget())
+                .recallTopK(evalProperties.getRecallTopK())
+                .recallAblationModes(configuredRecallAblationModes())
+                .crossEncoderCandidatePoolLimit(crossEncoderCandidatePoolLimit)
+                .maxPromptTokens(evalProperties.getMaxPromptTokens())
                 .reportOutputDir(evalProperties.getReportOutputDir())
                 .javaVersion(System.getProperty("java.version"))
                 .osName(System.getProperty("os.name"))
                 .osVersion(System.getProperty("os.version"))
+                .osArchitecture(System.getProperty("os.arch"))
+                .availableProcessors(Runtime.getRuntime().availableProcessors())
+                .maxHeapBytes(Runtime.getRuntime().maxMemory())
+                .hardwareDescription(evalProperties.getHardwareDescription())
+                .gpuDescription(evalProperties.getGpuDescription())
                 .userDir(userDir)
                 .cliMainClass(CLI_MAIN_CLASS)
                 .build();
@@ -70,6 +83,14 @@ public class LlmMemoryEvalEnvironmentSnapshotFactory {
         return evalProperties.getModes() == null
                 ? List.of()
                 : evalProperties.getModes().stream().map(LlmMemoryEvalMode::reportName).toList();
+    }
+
+    private List<String> configuredRecallAblationModes() {
+        return evalProperties.getRecallAblationModes() == null
+                ? List.of()
+                : evalProperties.getRecallAblationModes().stream()
+                        .map(RecallAblationMode::name)
+                        .toList();
     }
 
     private Long durationToMillis(Duration duration) {

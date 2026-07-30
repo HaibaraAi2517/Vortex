@@ -14,6 +14,10 @@ param(
 
     [int]$L1MaxTokens = 96,
 
+    [int]$RecallTokenBudget = 1024,
+
+    [int]$MaxPromptTokens = 2048,
+
     [string]$Modes = "BASELINE_NO_MEMORY,VORTEX_MEMORY,VORTEX_RECOVERED_MEMORY",
 
     [ValidateRange(1, 128)]
@@ -153,6 +157,8 @@ $env:VORTEX_GENERATION_MODEL = $Model
 $env:VORTEX_EVAL_MODES = $Modes
 $env:VORTEX_EVAL_PARALLELISM = "$EvalParallelism"
 $env:VORTEX_STORAGE_L1_MAX_TOKENS = "$L1MaxTokens"
+$env:VORTEX_EVAL_RECALL_TOKEN_BUDGET = "$RecallTokenBudget"
+$env:VORTEX_EVAL_MAX_PROMPT_TOKENS = "$MaxPromptTokens"
 $env:VORTEX_EVAL_REPORT_OUTPUT_DIR = $reportDir
 $env:VORTEX_STORAGE_L2_MILVUS_COLLECTION = $milvusCollection
 $env:MINIO_KEY_PREFIX = $minioKeyPrefix
@@ -172,6 +178,8 @@ $resolvedDatasetLocation = if ([string]::IsNullOrWhiteSpace($DatasetLocation)) {
 }
 Write-Host "  Dataset     : $resolvedDatasetLocation"
 Write-Host "  Parallelism : $EvalParallelism"
+Write-Host "  Recall Budget: $RecallTokenBudget"
+Write-Host "  Prompt Budget: $MaxPromptTokens"
 Write-Host "  Report Dir  : $reportDir"
 Write-Host "  Collection  : $milvusCollection"
 Write-Host "  MinIO Prefix: $minioKeyPrefix"

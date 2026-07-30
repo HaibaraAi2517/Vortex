@@ -30,10 +30,20 @@ public class LlmMemoryEvalEnvironmentSnapshot {
     private Integer evalSystemPromptChars;
     private List<String> modes;
     private Integer evalParallelism;
+    private Integer recallTokenBudget;
+    private Integer recallTopK;
+    private List<String> recallAblationModes;
+    private Integer crossEncoderCandidatePoolLimit;
+    private Integer maxPromptTokens;
     private String reportOutputDir;
     private String javaVersion;
     private String osName;
     private String osVersion;
+    private String osArchitecture;
+    private Integer availableProcessors;
+    private Long maxHeapBytes;
+    private String hardwareDescription;
+    private String gpuDescription;
     private String userDir;
     private String cliMainClass;
 }

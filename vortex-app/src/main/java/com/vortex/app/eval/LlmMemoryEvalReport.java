@@ -35,6 +35,14 @@ public class LlmMemoryEvalReport {
         private double recallHitRateLiftVsVectorOnly;
         private double recallHitRateRelativeLiftVsVectorOnly;
         private double averageLatencyMs;
+        private double endToEndLatencyAverageMs;
+        private double endToEndLatencyP50Ms;
+        private double endToEndLatencyP95Ms;
+        private double endToEndLatencyP99Ms;
+        private double generationLatencyAverageMs;
+        private double generationLatencyP50Ms;
+        private double generationLatencyP95Ms;
+        private double generationLatencyP99Ms;
         private int recoveredRuns;
         private double recoveredAccuracy;
         private double recoveredL2HitRate;

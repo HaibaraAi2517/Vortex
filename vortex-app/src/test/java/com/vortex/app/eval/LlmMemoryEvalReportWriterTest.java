@@ -76,6 +76,14 @@ class LlmMemoryEvalReportWriterTest {
                                 .accuracy(1.0d)
                                 .recallHitRate(1.0d)
                                 .averageLatencyMs(123.0d)
+                                .endToEndLatencyAverageMs(123.0d)
+                                .endToEndLatencyP50Ms(123.0d)
+                                .endToEndLatencyP95Ms(123.0d)
+                                .endToEndLatencyP99Ms(123.0d)
+                                .generationLatencyAverageMs(100.0d)
+                                .generationLatencyP50Ms(100.0d)
+                                .generationLatencyP95Ms(100.0d)
+                                .generationLatencyP99Ms(100.0d)
                                 .build()))
                 .environment(LlmMemoryEvalEnvironmentSnapshot.builder()
                         .generationBaseUrl("https://sub2.congmingai.com/v1")
@@ -92,6 +100,8 @@ class LlmMemoryEvalReportWriterTest {
                         .evalSystemPromptChars(512)
                         .modes(List.of("Vortex-Memory"))
                         .evalParallelism(32)
+                        .recallTokenBudget(4096)
+                        .maxPromptTokens(8192)
                         .reportOutputDir(tempDir.toString())
                         .javaVersion("21.0.10")
                         .osName("Windows 11")
@@ -130,7 +140,11 @@ class LlmMemoryEvalReportWriterTest {
         assertThat(markdown).contains("Eval System Prompt SHA-256: 7f6d9c7d4f0cbe4f6c2c0e1b97c7b0f5b91f0d7d31ef9d0620d7f3c56f7f5a01");
         assertThat(markdown).contains("Eval System Prompt Chars: 512");
         assertThat(markdown).contains("Eval Parallelism: 32");
+        assertThat(markdown).contains("Recall Token Budget: 4096");
+        assertThat(markdown).contains("Max Prompt Tokens: 8192");
         assertThat(markdown).contains("## Runtime Telemetry");
+        assertThat(markdown).contains("E2E P99 (ms)");
+        assertThat(markdown).contains("Gen P99 (ms)");
         assertThat(markdown).contains("Configured Parallelism: 32");
         assertThat(markdown).contains("Actual Worker Count: 30");
         assertThat(markdown).contains("Mode Phased Parallel: true");
@@ -156,7 +170,11 @@ class LlmMemoryEvalReportWriterTest {
         assertThat(json).contains("\"generationBaseUrl\" : \"https://sub2.congmingai.com/v1\"");
         assertThat(json).contains("\"evalSystemPromptSha256\" : \"7f6d9c7d4f0cbe4f6c2c0e1b97c7b0f5b91f0d7d31ef9d0620d7f3c56f7f5a01\"");
         assertThat(json).contains("\"evalParallelism\" : 32");
+        assertThat(json).contains("\"recallTokenBudget\" : 4096");
+        assertThat(json).contains("\"maxPromptTokens\" : 8192");
         assertThat(json).contains("\"runtimeTelemetry\"");
+        assertThat(json).contains("\"endToEndLatencyP99Ms\" : 123.0");
+        assertThat(json).contains("\"generationLatencyP99Ms\" : 100.0");
         assertThat(json).contains("\"configuredParallelism\" : 32");
         assertThat(json).contains("\"actualWorkerCount\" : 30");
         assertThat(json).contains("\"modePhasedParallel\" : true");

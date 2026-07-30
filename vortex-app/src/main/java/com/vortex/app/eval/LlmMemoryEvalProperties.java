@@ -29,6 +29,9 @@ public class LlmMemoryEvalProperties {
     private int parallelism = 1;
     private int recallTopK = 5;
     private int recallTokenBudget = 1024;
+    private List<RecallAblationMode> recallAblationModes = new ArrayList<>();
+    private String hardwareDescription = "";
+    private String gpuDescription = "";
     private int maxPromptTokens = 2048;
     private boolean feedbackEnabled = true;
     private MemoryScenario learningScenario = MemoryScenario.CHAT;

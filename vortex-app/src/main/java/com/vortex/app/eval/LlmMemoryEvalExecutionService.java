@@ -45,7 +45,7 @@ public class LlmMemoryEvalExecutionService {
         for (Map.Entry<String, LlmMemoryEvalReport.ModeSummary> entry : report.getModeSummaries().entrySet()) {
             LlmMemoryEvalReport.ModeSummary summary = entry.getValue();
             log.info(
-                    "LLM memory eval mode={} accuracy={} recallHitRate={} recoveredAccuracy={} recoveredL2HitRate={} feedbackSubmitted={} learningUpdateDelta={} averageLatencyMs={} correct={}/{}",
+                    "LLM memory eval mode={} accuracy={} recallHitRate={} recoveredAccuracy={} recoveredL2HitRate={} feedbackSubmitted={} learningUpdateDelta={} averageLatencyMs={} endToEndP95Ms={} endToEndP99Ms={} generationP99Ms={} correct={}/{}",
                     entry.getKey(),
                     summary.getAccuracy(),
                     summary.getRecallHitRate(),
@@ -54,6 +54,9 @@ public class LlmMemoryEvalExecutionService {
                     summary.getFeedbackSubmitted(),
                     summary.getLearningUpdateCountDelta(),
                     summary.getAverageLatencyMs(),
+                    summary.getEndToEndLatencyP95Ms(),
+                    summary.getEndToEndLatencyP99Ms(),
+                    summary.getGenerationLatencyP99Ms(),
                     summary.getCorrect(),
                     summary.getTotal());
         }

@@ -490,10 +490,13 @@ public class LlmMemoryEvalRunner {
                             int total = grouped.size();
                             long correct = grouped.stream().filter(LlmMemoryEvalResult::isCorrect).count();
                             long recallHits = grouped.stream().filter(LlmMemoryEvalResult::isRecallHit).count();
-                            double averageLatency = grouped.stream()
-                                    .mapToLong(LlmMemoryEvalResult::getLatencyMs)
-                                    .average()
-                                    .orElse(0.0d);
+                            List<Long> endToEndLatencies = grouped.stream()
+                                    .map(LlmMemoryEvalResult::getLatencyMs)
+                                    .toList();
+                            List<Long> generationLatencies = grouped.stream()
+                                    .map(LlmMemoryEvalResult::getGenerationLatencyMs)
+                                    .toList();
+                            double averageLatency = average(endToEndLatencies);
                             List<LlmMemoryEvalResult> recovered = grouped.stream()
                                     .filter(result -> Boolean.TRUE.equals(result.getEvictedBeforeAnswer()))
                                     .toList();
@@ -517,6 +520,14 @@ public class LlmMemoryEvalRunner {
                                     .accuracy(total == 0 ? 0.0d : (double) correct / total)
                                     .recallHitRate(total == 0 ? 0.0d : (double) recallHits / total)
                                     .averageLatencyMs(averageLatency)
+                                    .endToEndLatencyAverageMs(averageLatency)
+                                    .endToEndLatencyP50Ms(percentile(endToEndLatencies, 0.50d))
+                                    .endToEndLatencyP95Ms(percentile(endToEndLatencies, 0.95d))
+                                    .endToEndLatencyP99Ms(percentile(endToEndLatencies, 0.99d))
+                                    .generationLatencyAverageMs(average(generationLatencies))
+                                    .generationLatencyP50Ms(percentile(generationLatencies, 0.50d))
+                                    .generationLatencyP95Ms(percentile(generationLatencies, 0.95d))
+                                    .generationLatencyP99Ms(percentile(generationLatencies, 0.99d))
                                     .recoveredRuns(recovered.size())
                                     .recoveredAccuracy(recovered.isEmpty() ? 0.0d : (double) recoveredCorrect / recovered.size())
                                     .recoveredL2HitRate(recovered.isEmpty() ? 0.0d : (double) recoveredL2 / recovered.size())
@@ -542,6 +553,34 @@ public class LlmMemoryEvalRunner {
             summary.setRecallHitRateRelativeLiftVsVectorOnly(baseline == 0.0d ? 0.0d : lift / baseline);
         }
     }
+
+    private double average(List<Long> values) {
+        if (values == null || values.isEmpty()) {
+            return 0.0d;
+        }
+        return values.stream()
+                .filter(value -> value != null && value >= 0L)
+                .mapToLong(Long::longValue)
+                .average()
+                .orElse(0.0d);
+    }
+
+    private double percentile(List<Long> values, double percentile) {
+        if (values == null || values.isEmpty()) {
+            return 0.0d;
+        }
+        List<Long> sorted = values.stream()
+                .filter(value -> value != null && value >= 0L)
+                .sorted()
+                .toList();
+        if (sorted.isEmpty()) {
+            return 0.0d;
+        }
+        int index = (int) Math.ceil(percentile * sorted.size()) - 1;
+        index = Math.max(0, Math.min(sorted.size() - 1, index));
+        return sorted.get(index);
+    }
+
     private FeedbackObservation maybeSubmitFeedback(
             LlmMemoryEvalMode mode,
             RecallResult recallResult,

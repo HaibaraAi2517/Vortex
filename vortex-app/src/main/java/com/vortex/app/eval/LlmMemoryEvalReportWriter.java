@@ -59,8 +59,8 @@ public class LlmMemoryEvalReportWriter {
         appendEnvironment(builder, report.getEnvironment());
         appendRuntimeTelemetry(builder, report.getRuntimeTelemetry());
         builder.append("## Mode Summary\n\n");
-        builder.append("| Mode | Accuracy | Recall Hit Rate | Recall Lift vs VectorOnly | Recall Rel Lift vs VectorOnly | Recovered Accuracy | L2 Recovery Hit Rate | Avg Latency (ms) | Feedback | Learning Sample Δ | Learning Update Δ | Correct | Total |\n");
-        builder.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+        builder.append("| Mode | Accuracy | Recall Hit Rate | Recall Lift vs VectorOnly | Recall Rel Lift vs VectorOnly | Recovered Accuracy | L2 Recovery Hit Rate | E2E Avg (ms) | E2E P50 (ms) | E2E P95 (ms) | E2E P99 (ms) | Gen Avg (ms) | Gen P95 (ms) | Gen P99 (ms) | Feedback | Learning Sample Δ | Learning Update Δ | Correct | Total |\n");
+        builder.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
         safeMap(report.getModeSummaries()).entrySet().stream()
                 .sorted(Map.Entry.comparingByKey(Comparator.naturalOrder()))
                 .forEach(entry -> {
@@ -73,7 +73,13 @@ public class LlmMemoryEvalReportWriter {
                             .append(formatDecimal(summary.getRecallHitRateRelativeLiftVsVectorOnly())).append(" | ")
                             .append(formatDecimal(summary.getRecoveredAccuracy())).append(" | ")
                             .append(formatDecimal(summary.getRecoveredL2HitRate())).append(" | ")
-                            .append(formatDecimal(summary.getAverageLatencyMs())).append(" | ")
+                            .append(formatDecimal(resolveEndToEndAverage(summary))).append(" | ")
+                            .append(formatDecimal(summary.getEndToEndLatencyP50Ms())).append(" | ")
+                            .append(formatDecimal(summary.getEndToEndLatencyP95Ms())).append(" | ")
+                            .append(formatDecimal(summary.getEndToEndLatencyP99Ms())).append(" | ")
+                            .append(formatDecimal(summary.getGenerationLatencyAverageMs())).append(" | ")
+                            .append(formatDecimal(summary.getGenerationLatencyP95Ms())).append(" | ")
+                            .append(formatDecimal(summary.getGenerationLatencyP99Ms())).append(" | ")
                             .append(summary.getFeedbackSubmitted()).append(" | ")
                             .append(summary.getLearningSampleCountDelta()).append(" | ")
                             .append(summary.getLearningUpdateCountDelta()).append(" | ")
@@ -211,6 +217,8 @@ public class LlmMemoryEvalReportWriter {
         builder.append("- Eval System Prompt Chars: ").append(formatNullable(environment.getEvalSystemPromptChars())).append('\n');
         builder.append("- Modes: ").append(sanitizeMarkdown(String.join(", ", safeList(environment.getModes())))).append('\n');
         builder.append("- Eval Parallelism: ").append(formatNullable(environment.getEvalParallelism())).append('\n');
+        builder.append("- Recall Token Budget: ").append(formatNullable(environment.getRecallTokenBudget())).append('\n');
+        builder.append("- Max Prompt Tokens: ").append(formatNullable(environment.getMaxPromptTokens())).append('\n');
         builder.append("- Report Output Dir: ").append(nullToEmpty(environment.getReportOutputDir())).append('\n');
         builder.append("- Java Version: ").append(nullToEmpty(environment.getJavaVersion())).append('\n');
         builder.append("- OS: ").append(nullToEmpty(environment.getOsName()))
@@ -246,6 +254,15 @@ public class LlmMemoryEvalReportWriter {
 
     private String formatDecimal(double value) {
         return String.format(java.util.Locale.ROOT, "%.4f", value);
+    }
+
+    private double resolveEndToEndAverage(LlmMemoryEvalReport.ModeSummary summary) {
+        if (summary == null) {
+            return 0.0d;
+        }
+        return summary.getEndToEndLatencyAverageMs() > 0.0d
+                ? summary.getEndToEndLatencyAverageMs()
+                : summary.getAverageLatencyMs();
     }
 
     private String sanitizeMarkdown(String value) {
