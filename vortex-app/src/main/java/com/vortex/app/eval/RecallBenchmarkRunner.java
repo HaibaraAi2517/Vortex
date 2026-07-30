@@ -48,6 +48,7 @@ public class RecallBenchmarkRunner {
 
     @Qualifier("bgeSmallEmbeddingService")
     private final TokenCounter tokenCounter;
+    private final LlmMemoryEvalEnvironmentSnapshotFactory environmentSnapshotFactory;
 
     public RecallBenchmarkReport runConfiguredBenchmark() {
         return runAblation(loadCaseSet(properties.getDatasetLocation()), configuredAblationModes());
@@ -119,12 +120,18 @@ public class RecallBenchmarkRunner {
                 .evaluationKs(evaluationKs)
                 .tokenBudget(properties.getRecallTokenBudget())
                 .modes(modeList.stream().map(RecallAblationMode::reportName).toList())
+                .environmentSnapshot(environmentSnapshotFactory.snapshot())
                 .results(List.copyOf(results))
                 .modeSummaries(buildModeSummaries(results, evaluationKs, primaryTopK))
                 .build();
     }
 
     private List<RecallAblationMode> configuredAblationModes() {
+        List<RecallAblationMode> explicitlyConfigured = normalizeAblationModes(
+                properties.getRecallAblationModes());
+        if (!explicitlyConfigured.isEmpty()) {
+            return explicitlyConfigured;
+        }
         return List.of(
                 RecallAblationMode.KEYWORD_ONLY,
                 RecallAblationMode.VECTOR_ONLY,
@@ -215,6 +222,7 @@ public class RecallBenchmarkRunner {
                     .scenario(properties.getLearningScenario())
                     .retrievalMode(mode.retrievalMode())
                     .rerankEnabled(mode.rerankEnabled())
+                    .rerankerType(mode.rerankerType())
                     .tags(recallTags(evalCase))
                     .build());
             List<String> returnedFragmentIds = mapReturnedFragmentIds(recallResult, actualToLogicalIds);
@@ -229,6 +237,7 @@ public class RecallBenchmarkRunner {
                     .mode(mode.reportName())
                     .retrievalMode(mode.retrievalMode().name())
                     .rerankEnabled(mode.rerankEnabled())
+                    .rerankerType(mode.rerankerType())
                     .namespace(namespace)
                     .question(evalCase.getQuestion())
                     .expectedFragmentIds(expectedFragments)
@@ -252,6 +261,7 @@ public class RecallBenchmarkRunner {
                     .mode(mode.reportName())
                     .retrievalMode(mode.retrievalMode().name())
                     .rerankEnabled(mode.rerankEnabled())
+                    .rerankerType(mode.rerankerType())
                     .namespace(namespace)
                     .question(evalCase.getQuestion())
                     .expectedFragmentIds(expectedFragments)
@@ -292,6 +302,9 @@ public class RecallBenchmarkRunner {
                                             .mapToLong(RecallBenchmarkReport.CaseResult::getLatencyMs)
                                             .average()
                                             .orElse(0.0d))
+                                    .latencyP50Ms(percentileLatency(grouped, 0.50d))
+                                    .latencyP95Ms(percentileLatency(grouped, 0.95d))
+                                    .latencyP99Ms(percentileLatency(grouped, 0.99d))
                                     .metricsByK(metricsByK)
                                     .build();
                         })));
@@ -328,6 +341,20 @@ public class RecallBenchmarkRunner {
             List<RecallBenchmarkReport.CaseResult> results,
             java.util.function.Predicate<RecallBenchmarkReport.CaseResult> predicate) {
         return results.isEmpty() ? 0.0d : (double) results.stream().filter(predicate).count() / results.size();
+    }
+
+    private double percentileLatency(
+            List<RecallBenchmarkReport.CaseResult> results,
+            double percentile) {
+        if (results == null || results.isEmpty()) {
+            return 0.0d;
+        }
+        List<Long> sorted = results.stream()
+                .map(RecallBenchmarkReport.CaseResult::getLatencyMs)
+                .sorted()
+                .toList();
+        int index = (int) Math.ceil(percentile * sorted.size()) - 1;
+        return sorted.get(Math.max(0, Math.min(index, sorted.size() - 1)));
     }
 
     private double averageMetric(

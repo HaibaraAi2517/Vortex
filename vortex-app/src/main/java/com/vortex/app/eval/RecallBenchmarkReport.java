@@ -1,6 +1,7 @@
 package com.vortex.app.eval;
 
 import com.vortex.common.dto.RecallDiagnostics;
+import com.vortex.common.dto.RerankerType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -25,6 +26,7 @@ public class RecallBenchmarkReport {
     private List<Integer> evaluationKs;
     private int tokenBudget;
     private List<String> modes;
+    private LlmMemoryEvalEnvironmentSnapshot environmentSnapshot;
     private List<CaseResult> results;
     private Map<String, ModeSummary> modeSummaries;
 
@@ -42,6 +44,9 @@ public class RecallBenchmarkReport {
         private double mrr;
         private double ndcg;
         private double averageLatencyMs;
+        private double latencyP50Ms;
+        private double latencyP95Ms;
+        private double latencyP99Ms;
         private Map<Integer, MetricAtK> metricsByK;
         private double recallAtKLiftVsVectorOnly;
         private double recallAtKRelativeLiftVsVectorOnly;
@@ -71,6 +76,7 @@ public class RecallBenchmarkReport {
         private String mode;
         private String retrievalMode;
         private boolean rerankEnabled;
+        private RerankerType rerankerType;
         private String namespace;
         private String question;
         private List<String> expectedFragmentIds;

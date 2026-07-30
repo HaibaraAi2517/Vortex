@@ -64,18 +64,42 @@ public class RecallBenchmarkReportWriter {
                 .collect(Collectors.joining(", ")))).append('\n');
         builder.append("- TokenBudget: ").append(report.getTokenBudget()).append('\n');
         builder.append("- Modes: ").append(sanitize(String.join(", ", safeList(report.getModes())))).append("\n\n");
+        appendEnvironmentSnapshot(builder, report.getEnvironmentSnapshot());
         appendModeSummary(builder, report.getModeSummaries());
         appendResults(builder, report.getResults());
         appendDiagnostics(builder, report.getResults());
         return builder.toString();
     }
 
+    private void appendEnvironmentSnapshot(
+            StringBuilder builder,
+            LlmMemoryEvalEnvironmentSnapshot environment) {
+        if (environment == null) {
+            return;
+        }
+        builder.append("## Environment Snapshot\n\n");
+        builder.append("- Hardware: ").append(sanitize(environment.getHardwareDescription())).append('\n');
+        builder.append("- GPU: ").append(sanitize(environment.getGpuDescription())).append('\n');
+        builder.append("- Java: ").append(sanitize(environment.getJavaVersion())).append('\n');
+        builder.append("- OS: ").append(sanitize(environment.getOsName()))
+                .append(' ').append(sanitize(environment.getOsVersion()))
+                .append(" (").append(sanitize(environment.getOsArchitecture())).append(")\n");
+        builder.append("- AvailableProcessors: ").append(environment.getAvailableProcessors()).append('\n');
+        builder.append("- MaxHeapBytes: ").append(environment.getMaxHeapBytes()).append('\n');
+        builder.append("- RecallTopK: ").append(environment.getRecallTopK()).append('\n');
+        builder.append("- RecallAblationModes: ")
+                .append(sanitize(String.join(", ", safeList(environment.getRecallAblationModes()))))
+                .append('\n');
+        builder.append("- CrossEncoderCandidatePoolLimit: ")
+                .append(environment.getCrossEncoderCandidatePoolLimit()).append("\n\n");
+    }
+
     private void appendModeSummary(
             StringBuilder builder,
             Map<String, RecallBenchmarkReport.ModeSummary> summaries) {
         builder.append("## Mode Summary\n\n");
-        builder.append("| Mode | Recall@K | Recall@K Lift vs Vector+Rerank | Recall@K Rel Lift vs Vector+Rerank | Case Hit Rate | All Expected Rate | Precision@K | MRR | NDCG | Avg Latency (ms) | Errors | Total |\n");
-        builder.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+        builder.append("| Mode | Recall@K | Recall@K Lift vs Vector+Rerank | Recall@K Rel Lift vs Vector+Rerank | Case Hit Rate | All Expected Rate | Precision@K | MRR | NDCG | Avg Latency (ms) | P50 (ms) | P95 (ms) | P99 (ms) | Errors | Total |\n");
+        builder.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
         safeMap(summaries).entrySet().stream()
                 .sorted(Map.Entry.comparingByKey(Comparator.naturalOrder()))
                 .forEach(entry -> {
@@ -91,6 +115,9 @@ public class RecallBenchmarkReportWriter {
                             .append(format(summary.getMrr())).append(" | ")
                             .append(format(summary.getNdcg())).append(" | ")
                             .append(format(summary.getAverageLatencyMs())).append(" | ")
+                            .append(format(summary.getLatencyP50Ms())).append(" | ")
+                            .append(format(summary.getLatencyP95Ms())).append(" | ")
+                            .append(format(summary.getLatencyP99Ms())).append(" | ")
                             .append(summary.getErrors()).append(" | ")
                             .append(summary.getTotal()).append(" |\n");
                 });
@@ -123,13 +150,14 @@ public class RecallBenchmarkReportWriter {
 
     private void appendResults(StringBuilder builder, List<RecallBenchmarkReport.CaseResult> results) {
         builder.append("## Results\n\n");
-        builder.append("| CaseId | Mode | Retrieval | Rerank | Hit | All Expected | Recall@K | Precision@K | MRR | NDCG | Returned | Expected | Tiers | Latency (ms) | Error |\n");
-        builder.append("| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | --- |\n");
+        builder.append("| CaseId | Mode | Retrieval | Rerank | Reranker Type | Hit | All Expected | Recall@K | Precision@K | MRR | NDCG | Returned | Expected | Tiers | Latency (ms) | Error |\n");
+        builder.append("| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | --- |\n");
         safeList(results).forEach(result -> builder.append("| ")
                 .append(sanitize(result.getCaseId())).append(" | ")
                 .append(sanitize(result.getMode())).append(" | ")
                 .append(sanitize(result.getRetrievalMode())).append(" | ")
                 .append(result.isRerankEnabled()).append(" | ")
+                .append(result.getRerankerType() == null ? "" : result.getRerankerType().name()).append(" | ")
                 .append(result.isRecallHit()).append(" | ")
                 .append(result.isAllExpectedReturned()).append(" | ")
                 .append(format(result.getRecallAtK())).append(" | ")
@@ -147,23 +175,39 @@ public class RecallBenchmarkReportWriter {
 
     private void appendDiagnostics(StringBuilder builder, List<RecallBenchmarkReport.CaseResult> results) {
         builder.append("## Recall Diagnostics\n\n");
-        builder.append("| CaseId | Mode | Rerank | Empty Reason | Final Returned | Keyword Cand | Keyword Accepted | Vector Cand | Vector Accepted | Rerank Cand | L2 Search Accepted | L2 Fallback Accepted |\n");
-        builder.append("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+        builder.append("| CaseId | Mode | Rerank | Reranker Type | Model | Model Version | Model SHA-256 | Effect | Pool Strategy | Pool Limit | Preselection | Input | Output | Score Distinct | Rerank Latency (ms) | Changed Positions | TopK Membership Changed | Semantic Distinct | Keyword Distinct | Importance Distinct | Final Returned | L2 Search Accepted | L2 Fallback Accepted | Empty Reason |\n");
+        builder.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
         safeList(results).forEach(result -> {
             RecallDiagnostics diagnostics = result.getRecallDiagnostics();
             builder.append("| ")
                     .append(sanitize(result.getCaseId())).append(" | ")
                     .append(sanitize(result.getMode())).append(" | ")
                     .append(diagnostics == null ? "" : diagnostics.isRerankEnabled()).append(" | ")
-                    .append(diagnostics == null ? "" : sanitize(diagnostics.getEmptyRecallReason())).append(" | ")
+                    .append(diagnostics == null || diagnostics.getRerankerType() == null
+                            ? ""
+                            : diagnostics.getRerankerType().name()).append(" | ")
+                    .append(diagnostics == null ? "" : sanitize(diagnostics.getRerankModel())).append(" | ")
+                    .append(diagnostics == null ? "" : sanitize(diagnostics.getRerankModelVersion())).append(" | ")
+                    .append(diagnostics == null ? "" : sanitize(diagnostics.getRerankModelSha256())).append(" | ")
+                    .append(diagnostics == null || diagnostics.getRerankEffectStatus() == null
+                            ? ""
+                            : diagnostics.getRerankEffectStatus().name()).append(" | ")
+                    .append(diagnostics == null ? "" : sanitize(diagnostics.getRerankCandidatePoolStrategy())).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getRerankCandidatePoolLimit()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getRerankPreselectionCandidateCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getRerankInputCandidateCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getRerankOutputCandidateCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getRerankScoreDistinctCount()).append(" | ")
+                    .append(diagnostics == null ? "" : formatNanosAsMillis(diagnostics.getRerankLatencyNanos())).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getRerankChangedPositionCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getRerankTopKMembershipChangedCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getSemanticScoreDistinctCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getKeywordScoreDistinctCount()).append(" | ")
+                    .append(diagnostics == null ? "" : diagnostics.getImportanceDistinctCount()).append(" | ")
                     .append(diagnostics == null ? "" : diagnostics.getFinalReturnedCount()).append(" | ")
-                    .append(diagnostics == null ? "" : diagnostics.getKeywordCandidateCount()).append(" | ")
-                    .append(diagnostics == null ? "" : diagnostics.getKeywordAcceptedCount()).append(" | ")
-                    .append(diagnostics == null ? "" : diagnostics.getVectorCandidateCount()).append(" | ")
-                    .append(diagnostics == null ? "" : diagnostics.getVectorAcceptedCount()).append(" | ")
-                    .append(diagnostics == null ? "" : diagnostics.getRerankCandidateCount()).append(" | ")
                     .append(diagnostics == null ? "" : diagnostics.getL2SearchAcceptedCount()).append(" | ")
-                    .append(diagnostics == null ? "" : diagnostics.getL2NamespaceFallbackAcceptedCount())
+                    .append(diagnostics == null ? "" : diagnostics.getL2NamespaceFallbackAcceptedCount()).append(" | ")
+                    .append(diagnostics == null ? "" : sanitize(diagnostics.getEmptyRecallReason()))
                     .append(" |\n");
         });
         builder.append('\n');
@@ -171,6 +215,10 @@ public class RecallBenchmarkReportWriter {
 
     private String format(double value) {
         return String.format(Locale.ROOT, "%.4f", value);
+    }
+
+    private String formatNanosAsMillis(long nanos) {
+        return format(nanos / 1_000_000.0d);
     }
 
     private String sanitize(String value) {

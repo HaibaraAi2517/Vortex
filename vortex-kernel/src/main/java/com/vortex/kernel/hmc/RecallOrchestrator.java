@@ -4,6 +4,8 @@ import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.dto.RecallDiagnostics;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.dto.RerankEffectStatus;
+import com.vortex.common.dto.RerankerType;
 import com.vortex.common.dto.RetrievalMode;
 import com.vortex.common.exception.EmbeddingException;
 import com.vortex.common.model.MemoryFragment;
@@ -16,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -39,6 +42,7 @@ public class RecallOrchestrator {
     private final L3ColdStore l3;
     private final KeywordRecallIndex keywordRecallIndex = new KeywordRecallIndex();
     private final HybridRecallReranker hybridRecallReranker = new HybridRecallReranker();
+    private final CrossEncoderReranker crossEncoderReranker;
     private final EmbeddingService l1EmbeddingService;
     private final EmbeddingService l2EmbeddingService;
     private final AdaptiveWeightLearner adaptiveWeightLearner;
@@ -50,6 +54,12 @@ public class RecallOrchestrator {
     private final RedundancyAnalyzer redundancyAnalyzer;
     private final FragmentPinManager pinManager;
     private final TieredEvictionCoordinator evictionCoordinator;
+
+    @Value("${vortex.kernel.recall.keyword-candidate-pool-limit:256}")
+    private int keywordCandidatePoolLimit = 256;
+
+    @Value("${vortex.kernel.recall.cross-encoder-candidate-pool-limit:40}")
+    private int crossEncoderCandidatePoolLimit = CrossEncoderReranker.DEFAULT_CANDIDATE_POOL_LIMIT;
 
     @Autowired
     public RecallOrchestrator(
@@ -66,7 +76,8 @@ public class RecallOrchestrator {
             ObjectProvider<SemanticPagingManager> pagingManagerProvider,
             RedundancyAnalyzer redundancyAnalyzer,
             FragmentPinManager pinManager,
-            TieredEvictionCoordinator evictionCoordinator) {
+            TieredEvictionCoordinator evictionCoordinator,
+            ObjectProvider<CrossEncoderScoringService> crossEncoderScoringProvider) {
         this.l1 = l1;
         this.l2 = l2;
         this.l3 = l3;
@@ -81,6 +92,45 @@ public class RecallOrchestrator {
         this.redundancyAnalyzer = redundancyAnalyzer;
         this.pinManager = pinManager;
         this.evictionCoordinator = evictionCoordinator;
+        CrossEncoderScoringService crossEncoderScoringService = crossEncoderScoringProvider == null
+                ? null
+                : crossEncoderScoringProvider.getIfAvailable();
+        this.crossEncoderReranker = new CrossEncoderReranker(
+                crossEncoderScoringService,
+                hybridRecallReranker);
+    }
+
+    public RecallOrchestrator(
+            L1HotStore l1,
+            L2WarmStore l2,
+            L3ColdStore l3,
+            EmbeddingService l1EmbeddingService,
+            ObjectProvider<EmbeddingService> cloudEmbeddingProvider,
+            AdaptiveWeightLearner adaptiveWeightLearner,
+            SemanticEvictionPolicy evictionPolicy,
+            EvictionRegretTracker regretTracker,
+            MemorySloTracker sloTracker,
+            FragmentPersistenceManager persistenceManager,
+            ObjectProvider<SemanticPagingManager> pagingManagerProvider,
+            RedundancyAnalyzer redundancyAnalyzer,
+            FragmentPinManager pinManager,
+            TieredEvictionCoordinator evictionCoordinator) {
+        this(
+                l1,
+                l2,
+                l3,
+                l1EmbeddingService,
+                cloudEmbeddingProvider,
+                adaptiveWeightLearner,
+                evictionPolicy,
+                regretTracker,
+                sloTracker,
+                persistenceManager,
+                pagingManagerProvider,
+                redundancyAnalyzer,
+                pinManager,
+                evictionCoordinator,
+                null);
     }
 
     /**
@@ -99,9 +149,10 @@ public class RecallOrchestrator {
         boolean vectorEnabled = retrievalMode != RetrievalMode.KEYWORD_ONLY;
         boolean keywordEnabled = retrievalMode != RetrievalMode.VECTOR_ONLY;
         boolean rerankEnabled = query.isRerankEnabled();
+        RerankerType rerankerType = resolveRerankerType(query);
         RecallDiagnosticsAccumulator diagnostics = new RecallDiagnosticsAccumulator(requiredTags);
         diagnostics.setRetrievalMode(retrievalMode.name());
-        diagnostics.setRerankEnabled(rerankEnabled);
+        diagnostics.setRerankConfiguration(rerankEnabled, rerankerType);
         MemoryScenario scenario = query.getScenario() == null ? MemoryScenario.CHAT : query.getScenario();
         AdaptiveWeightLearner.ProfileSelection profileSelection = adaptiveWeightLearner.selectProfiles(scenario);
         AdaptiveWeightProfile baselineProfile = evictionPolicy.defaultProfile();
@@ -173,13 +224,17 @@ public class RecallOrchestrator {
                 ? (int) semanticScoresById.values().stream().filter(score -> score != null && score > 0.0).count()
                 : 0);
 
-        List<HybridRecallReranker.HybridCandidate> reranked = rerankCandidates(
+        RerankExecution rerankExecution = rerankCandidates(
+                query.getQuery(),
                 candidatesById,
                 semanticScoresById,
                 keywordScoresById,
                 keywordEnabled,
-                rerankEnabled);
-        diagnostics.setRerankCandidateCount(rerankEnabled ? reranked.size() : 0);
+                rerankerType,
+                requiredTags,
+                query.getTopK());
+        List<HybridRecallReranker.HybridCandidate> reranked = rerankExecution.candidates();
+        diagnostics.recordRerankExecution(rerankExecution);
 
         List<RecallResult.ScoredFragment> results = new ArrayList<>();
         int tokensSoFar = 0;
@@ -309,7 +364,9 @@ public class RecallOrchestrator {
         Map<String, MemoryFragment> keywordPool = new LinkedHashMap<>();
         filteredL1Candidates.forEach(fragment -> keywordPool.put(fragment.getId(), fragment));
         candidatesById.values().forEach(fragment -> keywordPool.put(fragment.getId(), fragment));
-        int namespaceLimit = Math.max(32, query.getTopK() * 8);
+        int namespaceLimit = Math.max(
+                Math.max(32, query.getTopK() * 8),
+                Math.max(1, keywordCandidatePoolLimit));
         for (MemoryFragment namespaceCandidate : l2.listByNamespace(query.getNamespace(), namespaceLimit)) {
             if (namespaceCandidate != null && matchesAllTags(namespaceCandidate, requiredTags)) {
                 keywordPool.putIfAbsent(namespaceCandidate.getId(), namespaceCandidate);
@@ -350,26 +407,59 @@ public class RecallOrchestrator {
         tierById.putIfAbsent(fragment.getId(), tier);
     }
 
-    private List<HybridRecallReranker.HybridCandidate> rerankCandidates(
+    private RerankExecution rerankCandidates(
+            String query,
             Map<String, MemoryFragment> candidatesById,
             Map<String, Double> semanticScoresById,
             Map<String, Double> keywordScoresById,
             boolean keywordEnabled,
-            boolean rerankEnabled) {
-        if (rerankEnabled) {
-            return hybridRecallReranker.rerank(candidatesById, semanticScoresById, keywordScoresById, keywordEnabled);
+            RerankerType rerankerType,
+            List<String> requiredTags,
+            int topK) {
+        if (rerankerType == RerankerType.LINEAR_SCORE_FUSION) {
+            HybridRecallReranker.RerankResult result = hybridRecallReranker.rerankWithDiagnostics(
+                    candidatesById,
+                    semanticScoresById,
+                    keywordScoresById,
+                    keywordEnabled,
+                    requiredTags,
+                    topK);
+            return new RerankExecution(result.candidates(), result.analysis(), null);
         }
-        return candidatesById.values().stream()
-                .map(fragment -> {
-                    double semanticScore = Math.max(0.0d, semanticScoresById.getOrDefault(fragment.getId(), 0.0d));
-                    double keywordScore = keywordEnabled
-                            ? Math.max(0.0d, keywordScoresById.getOrDefault(fragment.getId(), 0.0d))
-                            : 0.0d;
-                    double rawScore = semanticScore + keywordScore;
-                    return new HybridRecallReranker.HybridCandidate(fragment, rawScore, semanticScore, keywordScore);
-                })
-                .sorted(Comparator.comparingDouble(HybridRecallReranker.HybridCandidate::score).reversed())
-                .toList();
+        if (rerankerType == RerankerType.CROSS_ENCODER) {
+            CrossEncoderReranker.Result result = crossEncoderReranker.rerank(
+                    query,
+                    candidatesById,
+                    semanticScoresById,
+                    keywordScoresById,
+                    keywordEnabled,
+                    crossEncoderCandidatePoolLimit,
+                    topK);
+            return new RerankExecution(result.candidates(), null, result.analysis());
+        }
+        return new RerankExecution(
+                hybridRecallReranker.rankWithoutRerank(
+                        candidatesById,
+                        semanticScoresById,
+                        keywordScoresById,
+                        keywordEnabled),
+                HybridRecallReranker.RerankAnalysis.notExecuted(),
+                null);
+    }
+
+    private RerankerType resolveRerankerType(RecallQuery query) {
+        if (!query.isRerankEnabled()) {
+            return RerankerType.NONE;
+        }
+        RerankerType requested = query.getRerankerType();
+        if (requested == null) {
+            return RerankerType.LINEAR_SCORE_FUSION;
+        }
+        if (requested == RerankerType.NONE) {
+            throw new IllegalArgumentException(
+                    "rerankEnabled=true cannot be combined with rerankerType=NONE");
+        }
+        return requested;
     }
 
     // ---- Ranking helpers ----
@@ -584,6 +674,12 @@ public class RecallOrchestrator {
         L2_NAMESPACE_FALLBACK
     }
 
+    private record RerankExecution(
+            List<HybridRecallReranker.HybridCandidate> candidates,
+            HybridRecallReranker.RerankAnalysis linearAnalysis,
+            CrossEncoderReranker.Analysis crossEncoderAnalysis) {
+    }
+
     private static final class RecallDiagnosticsAccumulator {
         private final List<String> requiredTags;
         private String retrievalMode;
@@ -600,6 +696,23 @@ public class RecallOrchestrator {
         private int vectorCandidateCount;
         private int vectorAcceptedCount;
         private int rerankCandidateCount;
+        private int rerankInputCandidateCount;
+        private int rerankOutputCandidateCount;
+        private int rerankChangedPositionCount;
+        private int rerankTopKMembershipChangedCount;
+        private int rerankPreselectionCandidateCount;
+        private int rerankCandidatePoolLimit;
+        private String rerankCandidatePoolStrategy;
+        private int rerankScoreDistinctCount;
+        private long rerankLatencyNanos;
+        private String rerankModel;
+        private String rerankModelVersion;
+        private String rerankModelSha256;
+        private int semanticScoreDistinctCount;
+        private int keywordScoreDistinctCount;
+        private int importanceDistinctCount;
+        private RerankerType rerankerType = RerankerType.NONE;
+        private RerankEffectStatus rerankEffectStatus = RerankEffectStatus.NOT_EXECUTED;
         private int l2SearchCandidateCount;
         private int l2SearchAcceptedCount;
         private int l2SearchDuplicateRejectedCount;
@@ -629,8 +742,11 @@ public class RecallOrchestrator {
             this.retrievalMode = retrievalMode;
         }
 
-        private void setRerankEnabled(boolean rerankEnabled) {
+        private void setRerankConfiguration(
+                boolean rerankEnabled,
+                RerankerType rerankerType) {
             this.rerankEnabled = rerankEnabled;
+            this.rerankerType = rerankerType;
         }
 
         private void setL1CandidateCount(int l1CandidateCount) {
@@ -669,8 +785,51 @@ public class RecallOrchestrator {
             this.vectorAcceptedCount = vectorAcceptedCount;
         }
 
-        private void setRerankCandidateCount(int rerankCandidateCount) {
-            this.rerankCandidateCount = rerankCandidateCount;
+        private void recordRerankAnalysis(HybridRecallReranker.RerankAnalysis analysis) {
+            if (analysis == null) {
+                return;
+            }
+            rerankCandidateCount = analysis.outputCandidateCount();
+            rerankInputCandidateCount = analysis.inputCandidateCount();
+            rerankOutputCandidateCount = analysis.outputCandidateCount();
+            rerankChangedPositionCount = analysis.changedPositionCount();
+            rerankTopKMembershipChangedCount = analysis.topKMembershipChangedCount();
+            semanticScoreDistinctCount = analysis.semanticScoreDistinctCount();
+            keywordScoreDistinctCount = analysis.keywordScoreDistinctCount();
+            importanceDistinctCount = analysis.importanceDistinctCount();
+            rerankEffectStatus = analysis.effectStatus();
+        }
+
+        private void recordRerankExecution(RerankExecution execution) {
+            if (execution == null) {
+                return;
+            }
+            if (execution.linearAnalysis() != null) {
+                recordRerankAnalysis(execution.linearAnalysis());
+            }
+            if (execution.crossEncoderAnalysis() != null) {
+                recordCrossEncoderAnalysis(execution.crossEncoderAnalysis());
+            }
+        }
+
+        private void recordCrossEncoderAnalysis(CrossEncoderReranker.Analysis analysis) {
+            rerankCandidateCount = analysis.outputCandidateCount();
+            rerankPreselectionCandidateCount = analysis.preselectionCandidateCount();
+            rerankInputCandidateCount = analysis.inputCandidateCount();
+            rerankOutputCandidateCount = analysis.outputCandidateCount();
+            rerankCandidatePoolLimit = analysis.candidatePoolLimit();
+            rerankCandidatePoolStrategy = analysis.candidatePoolStrategy();
+            rerankChangedPositionCount = analysis.changedPositionCount();
+            rerankTopKMembershipChangedCount = analysis.topKMembershipChangedCount();
+            rerankScoreDistinctCount = analysis.scoreDistinctCount();
+            rerankLatencyNanos = analysis.latencyNanos();
+            rerankEffectStatus = analysis.effectStatus();
+            CrossEncoderScoringService.ModelMetadata metadata = analysis.modelMetadata();
+            if (metadata != null) {
+                rerankModel = metadata.model();
+                rerankModelVersion = metadata.version();
+                rerankModelSha256 = metadata.sha256();
+            }
         }
 
         private void recordCandidateCount(RecallCandidateSource source, int count) {
@@ -829,6 +988,23 @@ public class RecallOrchestrator {
                     .vectorCandidateCount(vectorCandidateCount)
                     .vectorAcceptedCount(vectorAcceptedCount)
                     .rerankCandidateCount(rerankCandidateCount)
+                    .rerankInputCandidateCount(rerankInputCandidateCount)
+                    .rerankOutputCandidateCount(rerankOutputCandidateCount)
+                    .rerankChangedPositionCount(rerankChangedPositionCount)
+                    .rerankTopKMembershipChangedCount(rerankTopKMembershipChangedCount)
+                    .rerankPreselectionCandidateCount(rerankPreselectionCandidateCount)
+                    .rerankCandidatePoolLimit(rerankCandidatePoolLimit)
+                    .rerankCandidatePoolStrategy(rerankCandidatePoolStrategy)
+                    .rerankScoreDistinctCount(rerankScoreDistinctCount)
+                    .rerankLatencyNanos(rerankLatencyNanos)
+                    .rerankModel(rerankModel)
+                    .rerankModelVersion(rerankModelVersion)
+                    .rerankModelSha256(rerankModelSha256)
+                    .semanticScoreDistinctCount(semanticScoreDistinctCount)
+                    .keywordScoreDistinctCount(keywordScoreDistinctCount)
+                    .importanceDistinctCount(importanceDistinctCount)
+                    .rerankerType(rerankerType)
+                    .rerankEffectStatus(rerankEffectStatus)
                     .l2SearchCandidateCount(l2SearchCandidateCount)
                     .l2SearchAcceptedCount(l2SearchAcceptedCount)
                     .l2SearchDuplicateRejectedCount(l2SearchDuplicateRejectedCount)

@@ -91,6 +91,20 @@ vortex:
       summary-max-chars: ${VORTEX_MEMORY_PIPELINE_SUMMARY_MAX_CHARS:1200}
     pin:
       cleanup-interval-ms: ${VORTEX_PIN_CLEANUP_INTERVAL_MS:30000}
+    recall:
+      keyword-candidate-pool-limit: ${VORTEX_RECALL_KEYWORD_CANDIDATE_POOL_LIMIT:256}
+      cross-encoder-candidate-pool-limit: ${VORTEX_RECALL_CROSS_ENCODER_CANDIDATE_POOL_LIMIT:40}
+      cross-encoder:
+        enabled: ${VORTEX_RECALL_CROSS_ENCODER_ENABLED:false}
+        model-path: ${VORTEX_RECALL_CROSS_ENCODER_MODEL_PATH:models/ms-marco-MiniLM-L6-v2-c5ee24cb}
+        model: ${VORTEX_RECALL_CROSS_ENCODER_MODEL:cross-encoder/ms-marco-MiniLM-L6-v2}
+        version: ${VORTEX_RECALL_CROSS_ENCODER_VERSION:c5ee24cb16019beea0893ab7796b1df96625c6b8}
+        expected-model-sha256: ${VORTEX_RECALL_CROSS_ENCODER_MODEL_SHA256:c80a8b34256ea453093d612e3ac48d3d965a0c0a48c7906709af8b8e28461bf9}
+        expected-tokenizer-sha256: ${VORTEX_RECALL_CROSS_ENCODER_TOKENIZER_SHA256:d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66}
+        batch-size: ${VORTEX_RECALL_CROSS_ENCODER_BATCH_SIZE:16}
+        max-sequence-length: ${VORTEX_RECALL_CROSS_ENCODER_MAX_SEQUENCE_LENGTH:512}
+        intra-op-threads: ${VORTEX_RECALL_CROSS_ENCODER_INTRA_OP_THREADS:8}
+        timeout-ms: ${VORTEX_RECALL_CROSS_ENCODER_TIMEOUT_MS:5000}
     splitter:
       max-tokens-per-chunk: 512
     snapshot:
@@ -163,6 +177,8 @@ vortex:
     report-output-dir: ${VORTEX_EVAL_REPORT_OUTPUT_DIR:ops/eval-reports}
     recall-top-k: ${VORTEX_EVAL_RECALL_TOP_K:5}
     recall-token-budget: ${VORTEX_EVAL_RECALL_TOKEN_BUDGET:1024}
+    hardware-description: ${VORTEX_EVAL_HARDWARE_DESCRIPTION:}
+    gpu-description: ${VORTEX_EVAL_GPU_DESCRIPTION:}
     max-prompt-tokens: ${VORTEX_EVAL_MAX_PROMPT_TOKENS:2048}
     feedback-enabled: ${VORTEX_EVAL_FEEDBACK_ENABLED:true}
     learning-scenario: ${VORTEX_EVAL_LEARNING_SCENARIO:CHAT}

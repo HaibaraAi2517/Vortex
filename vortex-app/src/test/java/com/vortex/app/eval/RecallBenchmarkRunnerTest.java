@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vortex.common.dto.RecallDiagnostics;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.dto.RerankEffectStatus;
+import com.vortex.common.dto.RerankerType;
 import com.vortex.common.dto.RetrievalMode;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.serialization.JsonMapperFactory;
@@ -48,16 +50,27 @@ class RecallBenchmarkRunnerTest {
         properties.setDatasetLocation("classpath:llm-memory-eval-set.json");
         properties.setRecallTopK(2);
         properties.setRecallTokenBudget(512);
+        properties.setRecallAblationModes(List.of());
         properties.setRecoveryPollTimeout(Duration.ofMillis(50));
         properties.setRecoveryPollInterval(Duration.ofMillis(1));
         properties.setModes(List.of(LlmMemoryEvalMode.VORTEX_VECTOR_ONLY, LlmMemoryEvalMode.VORTEX_MEMORY));
+        LlmMemoryEvalEnvironmentSnapshotFactory environmentSnapshotFactory =
+                mock(LlmMemoryEvalEnvironmentSnapshotFactory.class);
+        when(environmentSnapshotFactory.snapshot()).thenReturn(
+                LlmMemoryEvalEnvironmentSnapshot.builder()
+                        .hardwareDescription("test-hardware")
+                        .gpuDescription("test-gpu")
+                        .javaVersion("21")
+                        .osName("test-os")
+                        .build());
         runner = new RecallBenchmarkRunner(
                 hmc,
                 l2,
                 resourceLoader,
                 objectMapper,
                 properties,
-                tokenCounter);
+                tokenCounter,
+                environmentSnapshotFactory);
 
         when(hmc.getL1()).thenReturn(l1);
         doAnswer(invocation -> {
@@ -121,6 +134,62 @@ class RecallBenchmarkRunnerTest {
         assertThat(report.getResults())
                 .extracting(RecallBenchmarkReport.CaseResult::isRerankEnabled)
                 .containsExactly(false, false, true, false, true);
+        assertThat(report.getResults())
+                .extracting(result -> result.getRecallDiagnostics().getRerankEffectStatus())
+                .containsExactly(
+                        RerankEffectStatus.NOT_EXECUTED,
+                        RerankEffectStatus.NOT_EXECUTED,
+                        RerankEffectStatus.NON_IDENTIFIABLE,
+                        RerankEffectStatus.NOT_EXECUTED,
+                        RerankEffectStatus.NON_IDENTIFIABLE);
+        assertThat(report.getResults())
+                .extracting(result -> result.getRecallDiagnostics().getRerankerType())
+                .containsExactly(
+                        RerankerType.NONE,
+                        RerankerType.NONE,
+                        RerankerType.LINEAR_SCORE_FUSION,
+                        RerankerType.NONE,
+                        RerankerType.LINEAR_SCORE_FUSION);
+    }
+
+    @Test
+    void runAblationShouldPropagateExplicitCrossEncoderModes() {
+        RecallBenchmarkReport report = runner.runAblation(List.of(keywordLiftCase()), List.of(
+                RecallAblationMode.VECTOR_ONLY,
+                RecallAblationMode.VECTOR_RERANK,
+                RecallAblationMode.VECTOR_CROSS_ENCODER));
+
+        assertThat(report.getModes()).containsExactly(
+                "VectorOnly",
+                "Vector+Rerank",
+                "Vector+CrossEncoderReranker");
+        assertThat(report.getResults())
+                .extracting(RecallBenchmarkReport.CaseResult::getRerankerType)
+                .containsExactly(
+                        RerankerType.NONE,
+                        RerankerType.LINEAR_SCORE_FUSION,
+                        RerankerType.CROSS_ENCODER);
+        assertThat(report.getResults())
+                .extracting(result -> result.getRecallDiagnostics().getRerankerType())
+                .containsExactly(
+                        RerankerType.NONE,
+                        RerankerType.LINEAR_SCORE_FUSION,
+                        RerankerType.CROSS_ENCODER);
+    }
+
+    @Test
+    void configuredBenchmarkShouldUseExplicitRecallAblationModes() {
+        properties.setRecallAblationModes(List.of(
+                RecallAblationMode.VECTOR_ONLY,
+                RecallAblationMode.VECTOR_CROSS_ENCODER));
+
+        RecallBenchmarkReport report = runner.runConfiguredBenchmark();
+
+        assertThat(report.getModes()).containsExactly(
+                "VectorOnly",
+                "Vector+CrossEncoderReranker");
+        assertThat(report.getTotalRuns()).isEqualTo(report.getTotalCases() * 2);
+        assertThat(report.getEnvironmentSnapshot()).isNotNull();
     }
 
     @Test
@@ -268,6 +337,17 @@ class RecallBenchmarkRunnerTest {
                         .vectorCandidateCount(query.getRetrievalMode() == RetrievalMode.KEYWORD_ONLY ? 0 : namespaceFragments.size())
                         .vectorAcceptedCount(query.getRetrievalMode() == RetrievalMode.KEYWORD_ONLY ? 0 : returned.size())
                         .rerankCandidateCount(query.isRerankEnabled() ? returned.size() : 0)
+                        .rerankInputCandidateCount(query.isRerankEnabled() ? returned.size() : 0)
+                        .rerankOutputCandidateCount(query.isRerankEnabled() ? returned.size() : 0)
+                        .semanticScoreDistinctCount(query.isRerankEnabled() && !returned.isEmpty() ? 1 : 0)
+                        .keywordScoreDistinctCount(query.isRerankEnabled() && !returned.isEmpty() ? 1 : 0)
+                        .importanceDistinctCount(query.isRerankEnabled() && !returned.isEmpty() ? 1 : 0)
+                        .rerankerType(query.isRerankEnabled()
+                                ? query.getRerankerType()
+                                : RerankerType.NONE)
+                        .rerankEffectStatus(query.isRerankEnabled() && !returned.isEmpty()
+                                ? RerankEffectStatus.NON_IDENTIFIABLE
+                                : RerankEffectStatus.NOT_EXECUTED)
                         .l2SearchCandidateCount(namespaceFragments.size())
                         .l2SearchAcceptedCount(returned.size())
                         .finalReturnedCount(returned.size())

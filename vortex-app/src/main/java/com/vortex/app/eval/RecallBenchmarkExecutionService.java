@@ -36,12 +36,14 @@ public class RecallBenchmarkExecutionService {
         for (Map.Entry<String, RecallBenchmarkReport.ModeSummary> entry : report.getModeSummaries().entrySet()) {
             RecallBenchmarkReport.ModeSummary summary = entry.getValue();
             log.info(
-                    "Recall benchmark mode={} recallAtK={} caseHitRate={} ndcg={} liftVsVectorOnly={} errors={} total={}",
+                    "Recall benchmark mode={} recallAtK={} caseHitRate={} ndcg={} liftVsVectorOnly={} latencyP95Ms={} latencyP99Ms={} errors={} total={}",
                     entry.getKey(),
                     summary.getRecallAtK(),
                     summary.getCaseHitRate(),
                     summary.getNdcg(),
                     summary.getRecallAtKLiftVsVectorOnly(),
+                    summary.getLatencyP95Ms(),
+                    summary.getLatencyP99Ms(),
                     summary.getErrors(),
                     summary.getTotal());
         }

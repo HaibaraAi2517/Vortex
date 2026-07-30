@@ -46,4 +46,8 @@ public class RecallQuery {
     /** Whether to apply the recall reranker after candidate generation. */
     @Builder.Default
     private boolean rerankEnabled = true;
+
+    /** Reranker implementation to use when reranking is enabled. */
+    @Builder.Default
+    private RerankerType rerankerType = RerankerType.LINEAR_SCORE_FUSION;
 }

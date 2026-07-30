@@ -32,6 +32,27 @@ public class RecallDiagnostics {
     private int vectorCandidateCount;
     private int vectorAcceptedCount;
     private int rerankCandidateCount;
+    private int rerankInputCandidateCount;
+    private int rerankOutputCandidateCount;
+    private int rerankChangedPositionCount;
+    private int rerankTopKMembershipChangedCount;
+    private int rerankPreselectionCandidateCount;
+    private int rerankCandidatePoolLimit;
+    private String rerankCandidatePoolStrategy;
+    private int rerankScoreDistinctCount;
+    private long rerankLatencyNanos;
+    private String rerankModel;
+    private String rerankModelVersion;
+    private String rerankModelSha256;
+    private int semanticScoreDistinctCount;
+    private int keywordScoreDistinctCount;
+    private int importanceDistinctCount;
+
+    @Builder.Default
+    private RerankerType rerankerType = RerankerType.NONE;
+
+    @Builder.Default
+    private RerankEffectStatus rerankEffectStatus = RerankEffectStatus.NOT_EXECUTED;
 
     private int l2SearchCandidateCount;
     private int l2SearchAcceptedCount;

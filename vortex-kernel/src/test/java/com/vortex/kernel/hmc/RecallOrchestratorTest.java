@@ -3,6 +3,8 @@ package com.vortex.kernel.hmc;
 import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.dto.RerankEffectStatus;
+import com.vortex.common.dto.RerankerType;
 import com.vortex.common.dto.RetrievalMode;
 import com.vortex.common.exception.EmbeddingException;
 import com.vortex.common.model.MemoryFragment;
@@ -302,6 +304,40 @@ class RecallOrchestratorTest {
     }
 
     @Test
+    void keywordRecallScansPastLegacyCandidateWindow() {
+        List<MemoryFragment> namespaceFragments = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            namespaceFragments.add(fragment(
+                    "kw-distractor-" + i,
+                    "ns",
+                    "unrelated memory item " + i,
+                    List.of("role:user"),
+                    4));
+        }
+        namespaceFragments.add(fragment(
+                "kw-beyond-legacy-window",
+                "ns",
+                "Pegasus credential is z9x8-exact-marker",
+                List.of("role:user"),
+                4));
+        l2.seedNamespaceResults(namespaceFragments);
+
+        RecallResult result = orchestrator.recall(RecallQuery.builder()
+                .query("What is the z9x8-exact-marker credential?")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .tags(List.of("role:user"))
+                .retrievalMode(RetrievalMode.KEYWORD_ONLY)
+                .build());
+
+        assertThat(l2.lastNamespaceLimit).isEqualTo(256);
+        assertThat(result.getFragments()).hasSize(1);
+        assertThat(result.getFragments().getFirst().getFragment().getId())
+                .isEqualTo("kw-beyond-legacy-window");
+    }
+
+    @Test
     void vectorOnlyRecallSkipsKeywordCandidateCollection() {
         MemoryFragment exact = fragment("kw-vector-only", "ns", "Pegasus owner is avery-deploy@example.com", List.of("role:user"), 4);
         l2.seedSearchResults(List.of());
@@ -320,6 +356,141 @@ class RecallOrchestratorTest {
         assertThat(result.getDiagnostics().getRetrievalMode()).isEqualTo(RetrievalMode.VECTOR_ONLY.name());
         assertThat(result.getDiagnostics().getKeywordCandidateCount()).isZero();
     }
+
+    @Test
+    void disabledRerankIsReportedAsNotExecutedEvenWithCandidates() {
+        l2.seedSearchResults(List.of(fragment(
+                "rerank-disabled",
+                "ns",
+                "candidate",
+                List.of(),
+                4)));
+
+        RecallResult result = orchestrator.recall(RecallQuery.builder()
+                .query("query")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .retrievalMode(RetrievalMode.VECTOR_ONLY)
+                .rerankEnabled(false)
+                .build());
+
+        assertThat(result.getFragments()).hasSize(1);
+        assertThat(result.getDiagnostics().getRerankInputCandidateCount()).isZero();
+        assertThat(result.getDiagnostics().getRerankOutputCandidateCount()).isZero();
+        assertThat(result.getDiagnostics().getRerankerType()).isEqualTo(RerankerType.NONE);
+        assertThat(result.getDiagnostics().getRerankEffectStatus())
+                .isEqualTo(RerankEffectStatus.NOT_EXECUTED);
+    }
+
+    @Test
+    void vectorRerankWithConstantImportanceIsReportedAsNonIdentifiable() {
+        l2.seedSearchResults(List.of(
+                fragment("rerank-first", "ns", "first candidate", List.of(), 4),
+                fragment("rerank-second", "ns", "second candidate", List.of(), 4)));
+
+        RecallResult result = orchestrator.recall(RecallQuery.builder()
+                .query("query")
+                .namespace("ns")
+                .topK(2)
+                .tokenBudget(100)
+                .retrievalMode(RetrievalMode.VECTOR_ONLY)
+                .rerankEnabled(true)
+                .build());
+
+        assertThat(result.getDiagnostics().getRerankInputCandidateCount()).isEqualTo(2);
+        assertThat(result.getDiagnostics().getRerankOutputCandidateCount()).isEqualTo(2);
+        assertThat(result.getDiagnostics().getRerankChangedPositionCount()).isZero();
+        assertThat(result.getDiagnostics().getRerankTopKMembershipChangedCount()).isZero();
+        assertThat(result.getDiagnostics().getImportanceDistinctCount()).isEqualTo(1);
+        assertThat(result.getDiagnostics().getRerankerType())
+                .isEqualTo(RerankerType.LINEAR_SCORE_FUSION);
+        assertThat(result.getDiagnostics().getRerankEffectStatus())
+                .isEqualTo(RerankEffectStatus.NON_IDENTIFIABLE);
+    }
+
+    @Test
+    void crossEncoderRerankUsesIndependentScoresAndRecordsModelMetadata() {
+        l2.seedSearchResults(List.of(
+                fragment("cross-distractor", "ns", "ordinary candidate", List.of(), 4),
+                fragment("cross-preferred", "ns", "preferred candidate", List.of(), 4)));
+        long baselineTimestamp = System.currentTimeMillis();
+        MemoryFragment distractor = l2.searchResults.get(0);
+        distractor.setLastAccessTime(baselineTimestamp);
+        distractor.setImportance(1.0d);
+        MemoryFragment preferred = l2.searchResults.get(1);
+        preferred.setLastAccessTime(baselineTimestamp);
+        preferred.setImportance(0.0d);
+        preferred.setEmbedding(new float[]{0.0f, 1.0f, 0.0f, 0.0f});
+        CrossEncoderScoringService scorer = new CrossEncoderScoringService() {
+            @Override
+            public ModelMetadata metadata() {
+                return new ModelMetadata("test-cross-encoder", "1.0.0", "b".repeat(64));
+            }
+
+            @Override
+            public List<Double> score(String query, List<String> documents) {
+                return documents.stream()
+                        .map(document -> document.contains("preferred") ? 1.0d : 0.0d)
+                        .toList();
+            }
+        };
+        RecallOrchestrator crossEncoderOrchestrator = new RecallOrchestrator(
+                l1, l2, l3, embedding, emptyProvider(),
+                WEIGHT_LEARNER, evictionPolicy, regretTracker, SLO_TRACKER,
+                persistenceManager, emptyPagingProvider(),
+                redundancyAnalyzer, pinManager, evictionCoordinator,
+                crossEncoderProvider(scorer));
+
+        RecallResult result = crossEncoderOrchestrator.recall(RecallQuery.builder()
+                .query("query")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .retrievalMode(RetrievalMode.VECTOR_ONLY)
+                .rerankEnabled(true)
+                .rerankerType(RerankerType.CROSS_ENCODER)
+                .build());
+
+        assertThat(result.getFragments()).hasSize(1);
+        assertThat(result.getFragments().getFirst().getFragment().getId()).isEqualTo("cross-preferred");
+        assertThat(result.getDiagnostics().getRerankerType()).isEqualTo(RerankerType.CROSS_ENCODER);
+        assertThat(result.getDiagnostics().getRerankPreselectionCandidateCount()).isEqualTo(2);
+        assertThat(result.getDiagnostics().getRerankInputCandidateCount()).isEqualTo(2);
+        assertThat(result.getDiagnostics().getRerankCandidatePoolLimit()).isEqualTo(40);
+        assertThat(result.getDiagnostics().getRerankCandidatePoolStrategy())
+                .isEqualTo("VECTOR_BASELINE_TOP_40");
+        assertThat(result.getDiagnostics().getRerankScoreDistinctCount()).isEqualTo(2);
+        assertThat(result.getDiagnostics().getRerankModel()).isEqualTo("test-cross-encoder");
+        assertThat(result.getDiagnostics().getRerankModelVersion()).isEqualTo("1.0.0");
+        assertThat(result.getDiagnostics().getRerankModelSha256()).isEqualTo("b".repeat(64));
+        assertThat(result.getDiagnostics().getRerankLatencyNanos()).isNotNegative();
+        assertThat(result.getDiagnostics().getRerankEffectStatus())
+                .isEqualTo(RerankEffectStatus.ORDER_CHANGED);
+    }
+
+    @Test
+    void crossEncoderRequestWithoutScoringServiceFailsInsteadOfFallingBack() {
+        l2.seedSearchResults(List.of(fragment(
+                "cross-unavailable",
+                "ns",
+                "candidate",
+                List.of(),
+                4)));
+
+        assertThatThrownBy(() -> orchestrator.recall(RecallQuery.builder()
+                .query("query")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .retrievalMode(RetrievalMode.VECTOR_ONLY)
+                .rerankEnabled(true)
+                .rerankerType(RerankerType.CROSS_ENCODER)
+                .build()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no CrossEncoderScoringService");
+    }
+
     @Test
     void recallTriggersPageFaultForSelectedL2Fragment() {
         MemoryFragment l2Hit = fragment("l2-page-fault", "ns", "L2 page fault candidate", List.of(), 4);
@@ -645,6 +816,36 @@ class RecallOrchestratorTest {
         };
     }
 
+    private static ObjectProvider<CrossEncoderScoringService> crossEncoderProvider(
+            CrossEncoderScoringService scoringService) {
+        return new ObjectProvider<>() {
+            @Override
+            public CrossEncoderScoringService getObject(Object... args) {
+                return scoringService;
+            }
+
+            @Override
+            public CrossEncoderScoringService getIfAvailable() {
+                return scoringService;
+            }
+
+            @Override
+            public CrossEncoderScoringService getIfUnique() {
+                return scoringService;
+            }
+
+            @Override
+            public CrossEncoderScoringService getObject() {
+                return scoringService;
+            }
+
+            @Override
+            public Iterator<CrossEncoderScoringService> iterator() {
+                return List.of(scoringService).iterator();
+            }
+        };
+    }
+
     private static ObjectProvider<SemanticPagingManager> pagingProvider(SemanticPagingManager pagingManager) {
         return new ObjectProvider<>() {
             @Override
@@ -752,6 +953,7 @@ class RecallOrchestratorTest {
         private final List<MemoryFragment> searchResults = new ArrayList<>();
         private final List<MemoryFragment> namespaceResults = new ArrayList<>();
         private final Map<String, MemoryFragment> fragmentsById = new LinkedHashMap<>();
+        private int lastNamespaceLimit;
 
         private FakeL2WarmStore(int dimension) {
             this.dimension = dimension;
@@ -789,6 +991,7 @@ class RecallOrchestratorTest {
 
         @Override
         public List<MemoryFragment> listByNamespace(String namespace, int limit) {
+            lastNamespaceLimit = limit;
             return namespaceResults.stream()
                     .filter(f -> namespace.equals(f.getNamespace()))
                     .limit(limit)
