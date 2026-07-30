@@ -2,7 +2,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ManifestPath,
 
-    [string]$SourcePath = ""
+    [string]$SourcePath = "",
+
+    [string]$ReconciliationPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -129,6 +131,173 @@ function Assert-Hash {
     }
 }
 
+function Get-CanonicalTextSha256 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $fullPath = (Resolve-Path -LiteralPath $Path).Path
+    $text = [System.IO.File]::ReadAllText($fullPath)
+    if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) {
+        $text = $text.Substring(1)
+    }
+    $canonicalText = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+    return Get-LongMemEvalStringSha256 $canonicalText
+}
+
+function Assert-BooleanProperty {
+    param(
+        [Parameter(Mandatory = $true)][object]$Object,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][bool]$Expected,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+
+    if ($null -eq $Object.PSObject.Properties[$Name] -or
+        $Object.$Name -isnot [bool] -or
+        [bool]$Object.$Name -ne $Expected) {
+        throw "$Label must declare '$Name=$($Expected.ToString().ToLowerInvariant())'."
+    }
+}
+
+function Assert-ConverterReconciliation {
+    param(
+        [Parameter(Mandatory = $true)][object]$Manifest,
+        [Parameter(Mandatory = $true)][string]$ManifestSha256,
+        [Parameter(Mandatory = $true)][hashtable]$Partitions,
+        [Parameter(Mandatory = $true)][string[]]$SplitNames,
+        [Parameter(Mandatory = $true)][string]$EffectiveSourcePath,
+        [Parameter(Mandatory = $true)][string]$RecordPath
+    )
+
+    $recordFullPath = (Resolve-Path -LiteralPath $RecordPath).Path
+    $records = @(Read-LongMemEvalJsonRecords -Path $recordFullPath)
+    if ($records.Count -ne 1) {
+        throw "Reconciliation record '$recordFullPath' must contain one JSON object."
+    }
+    $record = $records[0]
+    if ([int]$record.schemaVersion -ne 1 -or
+        [string]$record.recordType -ne "LONGMEMEVAL_CONVERTER_PROVENANCE_RECONCILIATION" -or
+        [string]$record.status -ne "ACCEPTED") {
+        throw "Reconciliation record '$recordFullPath' has an unsupported schema, type, or status."
+    }
+    if (-not ([string]$record.historicalManifest.sha256).Equals(
+            $ManifestSha256,
+            [System.StringComparison]::OrdinalIgnoreCase) -or
+        [int]$record.historicalManifest.schemaVersion -ne [int]$Manifest.schemaVersion -or
+        -not ([string]$record.historicalManifest.converterRawSha256).Equals(
+            [string]$Manifest.generationParameters.converterSha256,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Reconciliation record does not match the historical manifest and converter identity."
+    }
+    if (-not ([string]$record.sourceSha256).Equals(
+            [string]$Manifest.source.sha256,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Reconciliation record source SHA-256 does not match the manifest."
+    }
+
+    $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    $historicalConverterPath = [string]$Manifest.generationParameters.converterPath
+    $expectedConverterPath = if (Test-Path -LiteralPath $historicalConverterPath -PathType Leaf) {
+        [System.IO.Path]::GetFullPath($historicalConverterPath)
+    } else {
+        [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "convert-longmemeval.ps1"))
+    }
+    $declaredConverterPath = [string]$record.replacementConverter.repositoryPath
+    $converterPath = if ([System.IO.Path]::IsPathRooted($declaredConverterPath)) {
+        [System.IO.Path]::GetFullPath($declaredConverterPath)
+    } else {
+        [System.IO.Path]::GetFullPath((Join-Path $repositoryRoot $declaredConverterPath))
+    }
+    if (-not (Test-LongMemEvalPathWithin -CandidatePath $converterPath -RootPath $repositoryRoot) -or
+        -not $converterPath.Equals($expectedConverterPath, [System.StringComparison]::OrdinalIgnoreCase) -or
+        -not (Test-Path -LiteralPath $converterPath -PathType Leaf)) {
+        throw "Reconciliation replacement converter must resolve to the repository converter."
+    }
+    if ([string]$record.replacementConverter.canonicalization -ne
+        "UTF-8 text; optional BOM removed; CRLF and CR normalized to LF; content otherwise unchanged") {
+        throw "Reconciliation record declares an unsupported converter canonicalization."
+    }
+    $canonicalSha256 = Get-CanonicalTextSha256 $converterPath
+    if (-not $canonicalSha256.Equals(
+            [string]$record.replacementConverter.canonicalTextSha256,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("Reconciliation replacement converter canonical SHA-256 mismatch: " +
+            "expected $($record.replacementConverter.canonicalTextSha256), actual $canonicalSha256.")
+    }
+
+    Assert-BooleanProperty -Object $record.verification -Name "requiresAllPartitions" `
+        -Expected $true -Label "Reconciliation boundary"
+    Assert-BooleanProperty -Object $record.verification -Name "permitsManifestRewrite" `
+        -Expected $false -Label "Reconciliation boundary"
+    Assert-BooleanProperty -Object $record.verification -Name "permitsPartitionMutation" `
+        -Expected $false -Label "Reconciliation boundary"
+    Assert-BooleanProperty -Object $record.verification -Name "permitsValidationModelRun" `
+        -Expected $false -Label "Reconciliation boundary"
+    Assert-BooleanProperty -Object $record.verification -Name "permitsReserveModelRun" `
+        -Expected $false -Label "Reconciliation boundary"
+
+    $reconciledPartitions = @($record.partitions)
+    if ($reconciledPartitions.Count -ne $SplitNames.Count) {
+        throw "Reconciliation record must contain exactly $($SplitNames.Count) partitions."
+    }
+    $reconciliationByName = @{}
+    foreach ($entry in $reconciledPartitions) {
+        $name = [string]$entry.name
+        if ($SplitNames -notcontains $name -or $reconciliationByName.ContainsKey($name)) {
+            throw "Reconciliation record contains an unknown or duplicate partition '$name'."
+        }
+        $reconciliationByName[$name] = $entry
+    }
+    foreach ($splitName in $SplitNames) {
+        $entry = $reconciliationByName[$splitName]
+        $partition = $Partitions[$splitName]
+        if (-not ([string]$entry.caseIdsSha256).Equals(
+                [string]$partition.Manifest.caseIdsSha256,
+                [System.StringComparison]::OrdinalIgnoreCase) -or
+            -not ([string]$entry.datasetSha256).Equals(
+                [string]$partition.Manifest.datasetSha256,
+                [System.StringComparison]::OrdinalIgnoreCase) -or
+            [string]$entry.namespaceBase -ne [string]$partition.Manifest.namespaceBase) {
+            throw "Reconciliation partition '$splitName' does not exactly match the historical manifest."
+        }
+    }
+
+    $tempParent = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+    $tempRoot = Join-Path $tempParent (
+        "vortex-longmemeval-reconciliation-" + [System.Guid]::NewGuid().ToString("N"))
+    if (-not (Test-LongMemEvalPathWithin -CandidatePath $tempRoot -RootPath $tempParent)) {
+        throw "Refusing to use reconciliation path outside '$tempParent'."
+    }
+    try {
+        New-Item -ItemType Directory -Path $tempRoot | Out-Null
+        foreach ($splitName in $SplitNames) {
+            $partition = $Partitions[$splitName]
+            $outputPath = Join-Path $tempRoot "$splitName.json"
+            & $converterPath `
+                -InputPath $EffectiveSourcePath `
+                -OutputPath $outputPath `
+                -IncludeCaseIdsFrom $partition.IdPath `
+                -Namespace ([string]$partition.Manifest.namespaceBase) `
+                -NamespacePerCase | Out-Null
+            Assert-Hash `
+                -Path $outputPath `
+                -Expected ([string]$partition.Manifest.datasetSha256) `
+                -Label "reconciled $splitName dataset"
+        }
+    } finally {
+        if ((Test-Path -LiteralPath $tempRoot) -and
+            (Test-LongMemEvalPathWithin -CandidatePath $tempRoot -RootPath $tempParent)) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force
+        }
+    }
+
+    return [pscustomobject][ordered]@{
+        Mode = "RECONCILED_CANONICAL_HASH_AND_OUTPUT_EQUIVALENCE"
+        ConverterCanonicalSha256 = $canonicalSha256
+        ReconciliationPath = ConvertTo-LongMemEvalNormalizedPath $recordFullPath
+        ReconciliationSha256 = Get-LongMemEvalFileSha256 $recordFullPath
+    }
+}
+
 $manifestFullPath = (Resolve-Path -LiteralPath $ManifestPath).Path
 $manifestDirectory = Split-Path -Parent $manifestFullPath
 $manifestRecords = @(Read-LongMemEvalJsonRecords -Path $manifestFullPath)
@@ -152,7 +321,8 @@ if (-not $Matches[2].Equals(
         [System.StringComparison]::Ordinal)) {
     throw "Manifest checksum names '$($Matches[2])' instead of '$([System.IO.Path]::GetFileName($manifestFullPath))'."
 }
-Assert-Hash -Path $manifestFullPath -Expected $Matches[1] -Label "manifest"
+$manifestSha256 = [string]$Matches[1]
+Assert-Hash -Path $manifestFullPath -Expected $manifestSha256 -Label "manifest"
 
 $effectiveSourcePath = if ([string]::IsNullOrWhiteSpace($SourcePath)) {
     [string]$manifest.source.path
@@ -417,10 +587,36 @@ foreach ($splitName in $splitNames) {
         -Expected ([string]$partition.Manifest.datasetSha256) `
         -Label "$splitName dataset"
 }
-Assert-Hash `
-    -Path ([string]$manifest.generationParameters.converterPath) `
-    -Expected ([string]$manifest.generationParameters.converterSha256) `
-    -Label "converter script"
+$manifestConverterPath = [string]$manifest.generationParameters.converterPath
+$expectedConverterRawSha256 = [string]$manifest.generationParameters.converterSha256
+$actualConverterRawSha256 = if (Test-Path -LiteralPath $manifestConverterPath -PathType Leaf) {
+    Get-LongMemEvalFileSha256 $manifestConverterPath
+} else {
+    "MISSING"
+}
+$converterProvenance = if ($actualConverterRawSha256.Equals(
+        $expectedConverterRawSha256,
+        [System.StringComparison]::OrdinalIgnoreCase)) {
+    [pscustomobject][ordered]@{
+        Mode = "EXACT_RAW_SHA256"
+        ConverterCanonicalSha256 = Get-CanonicalTextSha256 $manifestConverterPath
+        ReconciliationPath = ""
+        ReconciliationSha256 = ""
+    }
+} else {
+    if ([string]::IsNullOrWhiteSpace($ReconciliationPath)) {
+        throw ("SHA-256 drift for converter script '$manifestConverterPath': expected " +
+            "$expectedConverterRawSha256, actual $actualConverterRawSha256. " +
+            "An explicit -ReconciliationPath is required; raw hash drift is never accepted implicitly.")
+    }
+    Assert-ConverterReconciliation `
+        -Manifest $manifest `
+        -ManifestSha256 $manifestSha256 `
+        -Partitions $partitions `
+        -SplitNames $splitNames `
+        -EffectiveSourcePath $sourceIndex.Path `
+        -RecordPath $ReconciliationPath
+}
 Assert-Hash `
     -Path (Join-Path $PSScriptRoot "prepare-longmemeval-reranker-splits.ps1") `
     -Expected ([string]$manifest.generationParameters.generatorSha256) `
@@ -444,5 +640,9 @@ Assert-Hash `
     HistoricalAudit = "PASS"
     AuthorizedDevAuditSources = $authorizedDevAuditSourceCount
     HashDrift = "PASS"
-    ManifestSha256 = Get-LongMemEvalFileSha256 $manifestFullPath
+    ConverterProvenance = $converterProvenance.Mode
+    ConverterCanonicalSha256 = $converterProvenance.ConverterCanonicalSha256
+    ReconciliationPath = $converterProvenance.ReconciliationPath
+    ReconciliationSha256 = $converterProvenance.ReconciliationSha256
+    ManifestSha256 = $manifestSha256
 }

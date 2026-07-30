@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "recordType": "LONGMEMEVAL_CONVERTER_PROVENANCE_RECONCILIATION",
+  "status": "ACCEPTED",
+  "historicalManifest": {
+    "sha256": "379ca45a6437ae2f06b13448651adf4e0f259b375067bdda8aeb11ccc7abba98",
+    "schemaVersion": 2,
+    "converterRawSha256": "a27e285242f5371726aea3446680322afe8a1882cee21a270117b3d85825deac"
+  },
+  "replacementConverter": {
+    "repositoryPath": "ops/datasets/convert-longmemeval.ps1",
+    "observedRawSha256AtReconciliation": "8a3a350549d01efe76ee4b04a5dd92db44a6a101bce27930e3b25f57f341ca83",
+    "canonicalization": "UTF-8 text; optional BOM removed; CRLF and CR normalized to LF; content otherwise unchanged",
+    "canonicalTextSha256": "2881b4ca9f082d9f81b63d68ab9a18b4a4a201689f6459b1e0d6d9d00daa66ff"
+  },
+  "sourceSha256": "821a2034d219ab45846873dd14c14f12cfe7776e73527a483f9dac095d38620c",
+  "partitions": [
+    {
+      "name": "dev",
+      "caseIdsSha256": "0fc0f94636453b3d49176f7f78988850925f1a4a8058ddefb51533235865deba",
+      "datasetSha256": "df6f58a141b6b4b54e478c04f87d38bb4b56d9601d913f5dd7f6114fa7a6a5f6",
+      "namespaceBase": "longmemeval-reranker-v1-dev"
+    },
+    {
+      "name": "validation",
+      "caseIdsSha256": "33ca41d2cb7f1af110578a0d3bff2db3ec2106569bf2ae9b35276449bc727c43",
+      "datasetSha256": "9c3a328cb023677c355acae073592eeb41ea0a2571cbfb3b74ee8634c2ea3834",
+      "namespaceBase": "longmemeval-reranker-v1-validation"
+    },
+    {
+      "name": "reserve",
+      "caseIdsSha256": "f18b3a2dfe443598209eac0f56e8f13047933d965d1e89da3705f888de648cfa",
+      "datasetSha256": "8363b6af2c59e7514f4c4dd6ce7ebb012eb752bd843b9bb394c58e101f8d88bc",
+      "namespaceBase": "longmemeval-reranker-v1-reserve"
+    }
+  ],
+  "verification": {
+    "protocol": "Re-run the replacement converter against the historical source and exact case-ID manifests; require byte-identical dataset SHA-256 for dev, validation, and reserve.",
+    "requiresAllPartitions": true,
+    "permitsManifestRewrite": false,
+    "permitsPartitionMutation": false,
+    "permitsValidationModelRun": false,
+    "permitsReserveModelRun": false
+  }
+}

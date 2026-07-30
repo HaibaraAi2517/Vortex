@@ -20,8 +20,20 @@ function Assert-ThrowsMatch {
     throw "$Label did not reject the invalid artifact."
 }
 
+function Get-TestCanonicalTextSha256 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $text = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $Path).Path)
+    if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) {
+        $text = $text.Substring(1)
+    }
+    return Get-LongMemEvalStringSha256 (
+        $text.Replace("`r`n", "`n").Replace("`r", "`n"))
+}
+
 $prepareScript = Join-Path $PSScriptRoot "prepare-longmemeval-reranker-splits.ps1"
 $validateScript = Join-Path $PSScriptRoot "validate-longmemeval-splits.ps1"
+$converterScript = Join-Path $PSScriptRoot "convert-longmemeval.ps1"
 $tempParent = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../tmp"))
 $testRoot = Join-Path $tempParent ("longmemeval-split-test-" + [System.Guid]::NewGuid().ToString("N"))
 if (-not (Test-LongMemEvalPathWithin -CandidatePath $testRoot -RootPath $tempParent)) {
@@ -31,7 +43,9 @@ if (-not (Test-LongMemEvalPathWithin -CandidatePath $testRoot -RootPath $tempPar
 try {
     $historyRoot = Join-Path $testRoot "history"
     $outputRoot = Join-Path $testRoot "output"
+    $syntheticConverterPath = Join-Path $testRoot "convert-longmemeval.ps1"
     New-Item -ItemType Directory -Force -Path $historyRoot | Out-Null
+    Copy-Item -LiteralPath $converterScript -Destination $syntheticConverterPath
 
     $categories = @("knowledge-update", "multi-session", "temporal-reasoning")
     $sourceRecords = [System.Collections.Generic.List[object]]::new()
@@ -93,6 +107,7 @@ try {
         Seed = "synthetic-regression-seed"
         SplitSize = 3
         NamespacePrefix = "synthetic-reranker"
+        ConverterPath = $syntheticConverterPath
     }
     $firstGeneration = & $prepareScript @prepareParameters
     $manifestPath = $firstGeneration.ManifestPath
@@ -120,6 +135,99 @@ try {
         [int]$manifest.partitions.reserve.caseCount -ne 3) {
         throw "Synthetic retrieval/abstention allocation does not match the expected 3/3/3/2 layout."
     }
+
+    $originalConverterBytes = [System.IO.File]::ReadAllBytes($syntheticConverterPath)
+    [System.IO.File]::AppendAllText(
+        $syntheticConverterPath,
+        "# Non-semantic provenance reconciliation test.`n",
+        [System.Text.UTF8Encoding]::new($false))
+    Assert-ThrowsMatch `
+        -Action { & $validateScript -ManifestPath $manifestPath -SourcePath $sourcePath } `
+        -Pattern "explicit -ReconciliationPath" `
+        -Label "Missing reconciliation gate"
+
+    $reconciliationPath = Join-Path $testRoot "converter-reconciliation.json"
+    $reconciledPartitions = foreach ($splitName in @($manifest.generationParameters.splitOrder)) {
+        $partition = $manifest.partitions.$splitName
+        [pscustomobject][ordered]@{
+            name = [string]$splitName
+            caseIdsSha256 = [string]$partition.caseIdsSha256
+            datasetSha256 = [string]$partition.datasetSha256
+            namespaceBase = [string]$partition.namespaceBase
+        }
+    }
+    $reconciliation = [pscustomobject][ordered]@{
+        schemaVersion = 1
+        recordType = "LONGMEMEVAL_CONVERTER_PROVENANCE_RECONCILIATION"
+        status = "ACCEPTED"
+        historicalManifest = [pscustomobject][ordered]@{
+            sha256 = Get-LongMemEvalFileSha256 $manifestPath
+            schemaVersion = [int]$manifest.schemaVersion
+            converterRawSha256 = [string]$manifest.generationParameters.converterSha256
+        }
+        replacementConverter = [pscustomobject][ordered]@{
+            repositoryPath = ConvertTo-LongMemEvalNormalizedPath $syntheticConverterPath
+            observedRawSha256AtReconciliation = Get-LongMemEvalFileSha256 $syntheticConverterPath
+            canonicalization = "UTF-8 text; optional BOM removed; CRLF and CR normalized to LF; content otherwise unchanged"
+            canonicalTextSha256 = Get-TestCanonicalTextSha256 $syntheticConverterPath
+        }
+        sourceSha256 = [string]$manifest.source.sha256
+        partitions = @($reconciledPartitions)
+        verification = [pscustomobject][ordered]@{
+            protocol = "Synthetic exact-output reconciliation."
+            requiresAllPartitions = $true
+            permitsManifestRewrite = $false
+            permitsPartitionMutation = $false
+            permitsValidationModelRun = $false
+            permitsReserveModelRun = $false
+        }
+    }
+    Write-LongMemEvalJson -Value $reconciliation -Path $reconciliationPath
+    $reconciledResult = & $validateScript `
+        -ManifestPath $manifestPath `
+        -SourcePath $sourcePath `
+        -ReconciliationPath $reconciliationPath
+    if (-not $reconciledResult.Valid -or
+        $reconciledResult.ConverterProvenance -ne
+            "RECONCILED_CANONICAL_HASH_AND_OUTPUT_EQUIVALENCE") {
+        throw "Exact-output converter reconciliation did not pass."
+    }
+
+    $validCanonicalSha256 = $reconciliation.replacementConverter.canonicalTextSha256
+    $reconciliation.replacementConverter.canonicalTextSha256 = "0" * 64
+    Write-LongMemEvalJson -Value $reconciliation -Path $reconciliationPath
+    Assert-ThrowsMatch `
+        -Action {
+            & $validateScript -ManifestPath $manifestPath -SourcePath $sourcePath `
+                -ReconciliationPath $reconciliationPath
+        } `
+        -Pattern "canonical SHA-256 mismatch" `
+        -Label "Reconciliation converter identity gate"
+    $reconciliation.replacementConverter.canonicalTextSha256 = $validCanonicalSha256
+
+    $reconciliation.partitions[0].datasetSha256 = "0" * 64
+    Write-LongMemEvalJson -Value $reconciliation -Path $reconciliationPath
+    Assert-ThrowsMatch `
+        -Action {
+            & $validateScript -ManifestPath $manifestPath -SourcePath $sourcePath `
+                -ReconciliationPath $reconciliationPath
+        } `
+        -Pattern "partition 'dev'" `
+        -Label "Reconciliation partition identity gate"
+    $reconciliation.partitions[0].datasetSha256 = [string]$manifest.partitions.dev.datasetSha256
+
+    $reconciliation.verification.permitsValidationModelRun = $true
+    Write-LongMemEvalJson -Value $reconciliation -Path $reconciliationPath
+    Assert-ThrowsMatch `
+        -Action {
+            & $validateScript -ManifestPath $manifestPath -SourcePath $sourcePath `
+                -ReconciliationPath $reconciliationPath
+        } `
+        -Pattern "Reconciliation boundary" `
+        -Label "Reconciliation authorization boundary gate"
+    $reconciliation.verification.permitsValidationModelRun = $false
+    [System.IO.File]::WriteAllBytes($syntheticConverterPath, $originalConverterBytes)
+
     $usedPath = Join-Path $outputRoot $manifest.audit.usedCaseIdsFile
     $devIdsPath = Join-Path $outputRoot $manifest.partitions.dev.caseIdsFile
     $devDatasetPath = Join-Path $outputRoot $manifest.partitions.dev.datasetFile
@@ -196,6 +304,11 @@ try {
         SealedPartitionUsageGate = "PASS"
         NamespaceIsolationGate = "PASS"
         HashDriftGate = "PASS"
+        MissingReconciliationGate = "PASS"
+        ExactOutputReconciliation = "PASS"
+        ReconciliationIdentityGate = "PASS"
+        ReconciliationPartitionGate = "PASS"
+        ReconciliationBoundaryGate = "PASS"
     }
 } finally {
     if ((Test-Path -LiteralPath $testRoot) -and

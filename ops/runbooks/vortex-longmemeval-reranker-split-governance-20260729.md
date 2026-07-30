@@ -5,6 +5,11 @@
 P3 data governance is complete. This work did not run a model benchmark and did not use
 validation cases for model selection or threshold tuning.
 
+On 2026-07-30, the repository converter was found not to match the raw-file SHA-256 embedded in
+the historical manifest. The manifest and DEV evidence were preserved, and an explicit
+canonical-hash plus byte-identical-output reconciliation was accepted. See
+`vortex-longmemeval-converter-provenance-reconciliation-20260730.md`.
+
 The LongMemEval oracle source has 500 unique cases. A structured audit of historical datasets,
 reports, fixtures, and application/test resources found 140 previously used case IDs across 15
 JSON sources. Of the remaining 360 cases, 339 contain at least one positive evidence fragment and
@@ -117,6 +122,11 @@ Synthetic regression result:
 | Validation/reserve/quarantine usage rejection | PASS |
 | Namespace isolation rejection | PASS |
 | Output SHA-256 drift rejection | PASS |
+| Missing reconciliation rejection | PASS |
+| Exact-output reconciliation | PASS |
+| Reconciliation converter identity rejection | PASS |
+| Reconciliation partition identity rejection | PASS |
+| Reconciliation authorization boundary rejection | PASS |
 
 Formal validation result:
 
@@ -130,6 +140,7 @@ Formal validation result:
 | Historical audit replay | PASS |
 | Post-dev historical audit, 2 authorized dev sources | PASS |
 | Source, manifest, ID-list, dataset, and generator hash checks | PASS |
+| Converter canonical identity and three-partition byte-equivalence reconciliation | PASS |
 
 Reproduce:
 
@@ -137,7 +148,7 @@ Reproduce:
 
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./ops/datasets/prepare-longmemeval-reranker-splits.ps1 -SourcePath E:/tmp/longmemeval/longmemeval_oracle.json
 
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./ops/datasets/validate-longmemeval-splits.ps1 -ManifestPath ./ops/datasets/generated/longmemeval-reranker-splits-v1/longmemeval-reranker-splits-manifest.json -SourcePath E:/tmp/longmemeval/longmemeval_oracle.json
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./ops/datasets/validate-longmemeval-splits.ps1 -ManifestPath ./ops/datasets/generated/longmemeval-reranker-splits-v1/longmemeval-reranker-splits-manifest.json -SourcePath E:/tmp/longmemeval/longmemeval_oracle.json -ReconciliationPath ./ops/datasets/governance/longmemeval-reranker-splits-v1-converter-reconciliation.json
 
 ## 6. Operational Boundary
 
@@ -145,3 +156,7 @@ Do not run the validation partition until the Cross-Encoder model, candidate-poo
 decision thresholds, latency budget, and bootstrap-CI acceptance criteria are frozen in writing.
 The immediate next development input is the dev partition only. The old formal 120-case recall
 benchmark remains frozen and must not be rerun for tuning.
+
+The reconciliation record preserves historical provenance only. It does not rewrite the manifest,
+change any partition, authorize a model run, or permit validation/reserve access. New manifests
+must lock canonical script identities before any benchmark consumes them.
