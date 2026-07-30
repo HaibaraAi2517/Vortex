@@ -41,6 +41,7 @@ public class AsyncPipelineLatencyBenchmarkReport {
         private int total;
         private int successes;
         private int mainPathSuccesses;
+        private int writeThroughVisibleCount;
         private int recallSuccesses;
         private int promptAssemblySuccesses;
         private int errors;
@@ -53,6 +54,7 @@ public class AsyncPipelineLatencyBenchmarkReport {
         private int l2IndexCompletedCount;
         private int l3ArchiveCompletedCount;
         private double mainPathSuccessRate;
+        private double writeThroughVisibilityRate;
         private double persistenceSuccessRate;
         private double mainPathLatencyP50Ms;
         private double mainPathLatencyP95Ms;
@@ -151,6 +153,7 @@ public class AsyncPipelineLatencyBenchmarkReport {
         private boolean recallSucceeded;
         private boolean promptAssemblySucceeded;
         private boolean mainPathSucceeded;
+        private boolean writeThroughVisibleAtReturn;
         private boolean l2Ready;
         private boolean l3Ready;
         private boolean persistenceSucceeded;

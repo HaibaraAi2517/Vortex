@@ -84,6 +84,7 @@ class AsyncPipelineLatencyBenchmarkReportWriterTest {
                         .mainPathSucceeded(true)
                         .recallSucceeded(true)
                         .promptAssemblySucceeded(true)
+                        .writeThroughVisibleAtReturn(true)
                         .l2Ready(true)
                         .l3Ready(true)
                         .persistenceSucceeded(true)
@@ -108,6 +109,7 @@ class AsyncPipelineLatencyBenchmarkReportWriterTest {
         assertThat(markdown).contains("Main P50 (ms) | Main P95 (ms) | Main P99 (ms)");
         assertThat(markdown).contains("Recall P95 (ms)");
         assertThat(markdown).contains("Pipeline TPS");
+        assertThat(markdown).contains("L1 Visible At Return Rate");
         assertThat(markdown).contains("async-pipeline-001 | ASYNC_PIPELINE | COMPLETED");
         assertThat(json).contains("\"runId\" : \"run12345\"");
         assertThat(json).contains("\"relativeMainPathLatencyReduction\" : 0.75");
@@ -123,6 +125,7 @@ class AsyncPipelineLatencyBenchmarkReportWriterTest {
                 .total(1)
                 .successes(1)
                 .mainPathSuccesses(1)
+                .writeThroughVisibleCount(1)
                 .recallSuccesses(1)
                 .promptAssemblySuccesses(1)
                 .l2ReadyCount(1)
@@ -134,6 +137,7 @@ class AsyncPipelineLatencyBenchmarkReportWriterTest {
                 .l2IndexCompletedCount(1)
                 .l3ArchiveCompletedCount(1)
                 .mainPathSuccessRate(1.0d)
+                .writeThroughVisibilityRate(1.0d)
                 .persistenceSuccessRate(persistenceSuccessRate)
                 .mainPathLatencyP50Ms(mainAverage)
                 .mainPathLatencyP95Ms(mainAverage)

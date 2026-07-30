@@ -108,8 +108,8 @@ public class AsyncPipelineLatencyBenchmarkReportWriter {
             StringBuilder builder,
             Map<String, AsyncPipelineLatencyBenchmarkReport.ModeSummary> summaries) {
         builder.append("## Mode Summary\n\n");
-        builder.append("| Mode | Main P50 (ms) | Main P95 (ms) | Main P99 (ms) | Main Avg (ms) | Recall P95 (ms) | Prompt P95 (ms) | Write Submit P95 (ms) | Pipeline P95 (ms) | Pipeline Avg (ms) | Pipeline TPS | Readiness P95 (ms) | Readiness Lag Avg (ms) | Main Success Rate | Persistence Success Rate | Rerank Avg | Returned Avg | Errors | Total |\n");
-        builder.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+        builder.append("| Mode | Main P50 (ms) | Main P95 (ms) | Main P99 (ms) | Main Avg (ms) | Recall P95 (ms) | Prompt P95 (ms) | Write Submit P95 (ms) | Pipeline P95 (ms) | Pipeline Avg (ms) | Pipeline TPS | Readiness P95 (ms) | Readiness Lag Avg (ms) | Main Success Rate | L1 Visible At Return Rate | Persistence Success Rate | Rerank Avg | Returned Avg | Errors | Total |\n");
+        builder.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
         safeMap(summaries).entrySet().stream()
                 .sorted(Map.Entry.comparingByKey(Comparator.naturalOrder()))
                 .forEach(entry -> {
@@ -129,6 +129,7 @@ public class AsyncPipelineLatencyBenchmarkReportWriter {
                             .append(format(summary.getReadinessLatencyP95Ms())).append(" | ")
                             .append(format(summary.getReadinessLagAverageMs())).append(" | ")
                             .append(format(summary.getMainPathSuccessRate())).append(" | ")
+                            .append(format(summary.getWriteThroughVisibilityRate())).append(" | ")
                             .append(format(summary.getPersistenceSuccessRate())).append(" | ")
                             .append(format(summary.getRerankCandidateAverage())).append(" | ")
                             .append(format(summary.getReturnedFragmentAverage())).append(" | ")
@@ -142,8 +143,8 @@ public class AsyncPipelineLatencyBenchmarkReportWriter {
             StringBuilder builder,
             List<AsyncPipelineLatencyBenchmarkReport.CaseResult> results) {
         builder.append("## Results\n\n");
-        builder.append("| CaseId | Mode | Pipeline Status | Main Path (ms) | Recall (ms) | Prompt (ms) | Write Submit (ms) | Pipeline (ms) | Readiness (ms) | Returned | Rerank Candidates | L1 Candidates | L2 Search Candidates | Keyword Candidates | Main OK | Recall OK | Prompt OK | L2 Ready | L3 Ready | Persistence OK | Queue Before | Queue After | Backpressure | Error |\n");
-        builder.append("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- |\n");
+        builder.append("| CaseId | Mode | Pipeline Status | Main Path (ms) | Recall (ms) | Prompt (ms) | Write Submit (ms) | Pipeline (ms) | Readiness (ms) | Returned | Rerank Candidates | L1 Candidates | L2 Search Candidates | Keyword Candidates | Main OK | Recall OK | Prompt OK | L1 Visible At Return | L2 Ready | L3 Ready | Persistence OK | Queue Before | Queue After | Backpressure | Error |\n");
+        builder.append("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- |\n");
         safeList(results).forEach(result -> builder.append("| ")
                 .append(sanitize(result.getCaseId())).append(" | ")
                 .append(sanitize(result.getMode())).append(" | ")
@@ -162,6 +163,7 @@ public class AsyncPipelineLatencyBenchmarkReportWriter {
                 .append(result.isMainPathSucceeded()).append(" | ")
                 .append(result.isRecallSucceeded()).append(" | ")
                 .append(result.isPromptAssemblySucceeded()).append(" | ")
+                .append(result.isWriteThroughVisibleAtReturn()).append(" | ")
                 .append(result.isL2Ready()).append(" | ")
                 .append(result.isL3Ready()).append(" | ")
                 .append(result.isPersistenceSucceeded()).append(" | ")

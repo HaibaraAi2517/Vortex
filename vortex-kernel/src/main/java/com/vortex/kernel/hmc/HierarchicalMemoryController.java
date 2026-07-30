@@ -157,6 +157,63 @@ public class HierarchicalMemoryController {
         return ids;
     }
 
+    L1WriteThrough stageL1WriteThrough(
+            String content,
+            String namespace,
+            List<String> tags,
+            String reasoningChainId,
+            Long pinTtlMillis) {
+        List<MemoryFragment> chunks = splitter.split(content, namespace, tags, reasoningChainId, pinTtlMillis);
+        List<String> admittedIds = new ArrayList<>();
+        Map<String, Long> originalPinnedUntil = new LinkedHashMap<>();
+        try {
+            for (MemoryFragment chunk : chunks) {
+                originalPinnedUntil.put(chunk.getId(), chunk.getPinnedUntil());
+                chunk.setPinnedUntil(Long.MAX_VALUE);
+                ensureL1Embedding(chunk);
+                if (!evictionCoordinator.admitToL1(chunk, "async-write-through")) {
+                    throw new IllegalStateException("Insufficient L1 capacity for async write-through fragment " + chunk.getId());
+                }
+                admittedIds.add(chunk.getId());
+            }
+            return new L1WriteThrough(admittedIds, originalPinnedUntil);
+        } catch (RuntimeException failure) {
+            discardL1WriteThrough(new L1WriteThrough(admittedIds, originalPinnedUntil));
+            throw failure;
+        }
+    }
+
+    void discardL1WriteThrough(L1WriteThrough writeThrough) {
+        if (writeThrough == null) {
+            return;
+        }
+        writeThrough.fragmentIds().forEach(evictionCoordinator::removeTransientFromL1);
+    }
+
+    void restoreL1WriteThroughPins(L1WriteThrough writeThrough) {
+        if (writeThrough == null) {
+            return;
+        }
+        writeThrough.fragmentIds().forEach(fragmentId -> evictionCoordinator.refreshTransientPin(
+                fragmentId,
+                writeThrough.originalPinnedUntil().get(fragmentId)));
+    }
+
+    record L1WriteThrough(List<String> fragmentIds, Map<String, Long> originalPinnedUntil) {
+        private static final L1WriteThrough EMPTY = new L1WriteThrough(List.of(), Map.of());
+
+        L1WriteThrough {
+            fragmentIds = fragmentIds == null ? List.of() : List.copyOf(fragmentIds);
+            originalPinnedUntil = originalPinnedUntil == null
+                    ? Map.of()
+                    : Collections.unmodifiableMap(new LinkedHashMap<>(originalPinnedUntil));
+        }
+
+        static L1WriteThrough empty() {
+            return EMPTY;
+        }
+    }
+
     /**
      * Store a pre-built fragment.
      * Generates L1 embedding (BGE-Small) synchronously so eviction scoring works immediately.

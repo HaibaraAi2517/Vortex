@@ -2,6 +2,8 @@ package com.vortex.kernel.hmc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vortex.common.dto.RecallQuery;
+import com.vortex.common.dto.RecallResult;
+import com.vortex.common.dto.RetrievalMode;
 import com.vortex.common.model.CheckpointMetadata;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.model.TaskState;
@@ -32,6 +34,102 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AsyncMemoryPipelineTest {
+
+    @Test
+    void submitShouldMakeWriteRecallableBeforeBackgroundProcessingCompletes() throws Exception {
+        String content = "User preference: deploy service-orchid only after the canary check passes.";
+        CaffeineHotStore l1 = new CaffeineHotStore(1024);
+        TestL2WarmStore l2 = new TestL2WarmStore(4);
+        TestL3ColdStore l3 = new TestL3ColdStore();
+        CountDownLatch extractionStarted = new CountDownLatch(1);
+        CountDownLatch releaseExtraction = new CountDownLatch(1);
+        HierarchicalMemoryController hmc = createHmc(l1, l2, l3, new FixedEmbeddingService(4));
+        AsyncMemoryPipeline pipeline = new AsyncMemoryPipeline(
+                hmc,
+                new BlockingExtractionService(extractionStarted, releaseExtraction, content),
+                new MemorySummaryService(text -> text == null || text.isBlank() ? 0 : text.trim().split("\\s+").length, 1200),
+                1,
+                128,
+                8);
+
+        try {
+            MemoryPipelineStatus accepted = pipeline.submit(MemoryPipelineRequest.builder()
+                    .pipelineId("write-through-pipeline")
+                    .namespace("write-through-ns")
+                    .content(content)
+                    .tags(List.of("write-through"))
+                    .build());
+
+            assertThat(extractionStarted.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(accepted.getCompletedStages()).contains(MemoryPipelineStage.L1_WRITE_THROUGH);
+            assertThat(accepted.getFragmentIds()).isNotEmpty();
+            assertThat(accepted.getFragmentIds())
+                    .allMatch(id -> l1.peek(id).orElseThrow().isPinned());
+            assertThat(accepted.getFragmentIds())
+                    .allMatch(id -> Long.valueOf(Long.MAX_VALUE)
+                            .equals(l1.peek(id).orElseThrow().getPinnedUntil()));
+
+            RecallResult recalled = hmc.recall(RecallQuery.builder()
+                    .namespace("write-through-ns")
+                    .query("What deployment guardrail applies to service-orchid?")
+                    .tags(List.of("write-through"))
+                    .retrievalMode(RetrievalMode.HYBRID)
+                    .rerankEnabled(true)
+                    .topK(3)
+                    .tokenBudget(256)
+                    .build());
+
+            assertThat(recalled.getFragments())
+                    .extracting(result -> result.getFragment().getContent())
+                    .anyMatch(recalledContent -> recalledContent.contains("service-orchid")
+                            && recalledContent.contains("canary check"));
+
+            List<String> transientIds = List.copyOf(accepted.getFragmentIds());
+            releaseExtraction.countDown();
+            MemoryPipelineStatus completed = waitForCompletion(pipeline, accepted.getPipelineId());
+            assertThat(completed.getStatus()).isEqualTo(MemoryPipelineStatusCode.COMPLETED);
+            assertThat(transientIds).allMatch(id -> l1.peek(id).isEmpty());
+        } finally {
+            releaseExtraction.countDown();
+            pipeline.shutdown();
+        }
+    }
+
+    @Test
+    void asyncFailureShouldRestoreOriginalPinStateAndRetainWriteThroughContent() {
+        String content = "Remember that service-lilac uses the blue rollback queue.";
+        CaffeineHotStore l1 = new CaffeineHotStore(1024);
+        TestL2WarmStore l2 = new FailingL2WarmStore(4);
+        TestL3ColdStore l3 = new TestL3ColdStore();
+        AsyncMemoryPipeline pipeline = new AsyncMemoryPipeline(
+                createHmc(l1, l2, l3, new FixedEmbeddingService(4)),
+                new MemoryExtractionService(12),
+                new MemorySummaryService(text -> text == null || text.isBlank() ? 0 : text.trim().split("\\s+").length, 1200),
+                1,
+                128,
+                8);
+
+        try {
+            MemoryPipelineStatus accepted = pipeline.submit(MemoryPipelineRequest.builder()
+                    .pipelineId("write-through-failure")
+                    .namespace("write-through-failure-ns")
+                    .content(content)
+                    .build());
+            List<String> transientIds = List.copyOf(accepted.getFragmentIds());
+
+            MemoryPipelineStatus failed = waitForCompletion(pipeline, accepted.getPipelineId());
+
+            assertThat(failed.getStatus()).isEqualTo(MemoryPipelineStatusCode.FAILED);
+            assertThat(transientIds).isNotEmpty();
+            assertThat(transientIds).allMatch(id -> l1.peek(id).isPresent());
+            assertThat(transientIds)
+                    .allMatch(id -> l1.peek(id).orElseThrow().getPinnedUntil() == null);
+            assertThat(transientIds)
+                    .allMatch(id -> content.equals(l1.peek(id).orElseThrow().getContent()));
+        } finally {
+            pipeline.shutdown();
+        }
+    }
 
     @Test
     void submitShouldCompleteExtractionSummaryEmbeddingIndexAndArchive() {
@@ -299,16 +397,25 @@ class AsyncMemoryPipelineTest {
     private static final class BlockingExtractionService extends MemoryExtractionService {
         private final CountDownLatch started;
         private final CountDownLatch release;
+        private final String blockedContent;
 
         private BlockingExtractionService(CountDownLatch started, CountDownLatch release) {
+            this(started, release, "running content");
+        }
+
+        private BlockingExtractionService(
+                CountDownLatch started,
+                CountDownLatch release,
+                String blockedContent) {
             super(12);
             this.started = started;
             this.release = release;
+            this.blockedContent = blockedContent;
         }
 
         @Override
         public ExtractionResult extract(String content) {
-            if (!"running content".equals(content)) {
+            if (!blockedContent.equals(content)) {
                 return super.extract(content);
             }
             started.countDown();

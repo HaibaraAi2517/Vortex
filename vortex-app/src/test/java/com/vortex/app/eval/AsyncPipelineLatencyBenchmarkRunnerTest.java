@@ -76,13 +76,14 @@ class AsyncPipelineLatencyBenchmarkRunnerTest {
         });
         when(pipeline.submit(any(MemoryPipelineRequest.class))).thenAnswer(invocation -> {
             MemoryPipelineRequest request = invocation.getArgument(0);
+            String writeThroughFragmentId = request.getPipelineId() + "::fragment-1";
             MemoryPipelineStatus accepted = MemoryPipelineStatus.builder()
                     .pipelineId(request.getPipelineId())
                     .namespace(request.getNamespace())
                     .status(MemoryPipelineStatusCode.ACCEPTED)
                     .acceptedAt(Instant.now())
-                    .completedStages(List.of(MemoryPipelineStage.ADMISSION))
-                    .fragmentIds(List.of())
+                    .completedStages(List.of(MemoryPipelineStage.ADMISSION, MemoryPipelineStage.L1_WRITE_THROUGH))
+                    .fragmentIds(List.of(writeThroughFragmentId))
                     .build();
             MemoryPipelineStatus completed = complete(request);
             when(pipeline.snapshot(request.getPipelineId())).thenReturn(Optional.of(completed));
@@ -111,6 +112,8 @@ class AsyncPipelineLatencyBenchmarkRunnerTest {
         assertThat(report.getBackpressureSummary().getProbeErrorCount()).isZero();
         assertThat(report.getModeSummaries().get("SYNC_BASELINE").getMainPathSuccessRate()).isEqualTo(1.0d);
         assertThat(report.getModeSummaries().get("ASYNC_PIPELINE").getMainPathSuccessRate()).isEqualTo(1.0d);
+        assertThat(report.getModeSummaries().get("SYNC_BASELINE").getWriteThroughVisibilityRate()).isEqualTo(1.0d);
+        assertThat(report.getModeSummaries().get("ASYNC_PIPELINE").getWriteThroughVisibilityRate()).isEqualTo(1.0d);
         assertThat(report.getModeSummaries().get("SYNC_BASELINE").getPersistenceSuccessRate()).isEqualTo(1.0d);
         assertThat(report.getModeSummaries().get("ASYNC_PIPELINE").getPersistenceSuccessRate()).isEqualTo(1.0d);
         assertThat(report.getModeSummaries().get("ASYNC_PIPELINE").getRecallSuccesses()).isEqualTo(4);
@@ -135,11 +138,13 @@ class AsyncPipelineLatencyBenchmarkRunnerTest {
         assertThat(summary.getTotal()).isEqualTo(4);
         assertThat(summary.getSuccesses()).isEqualTo(3);
         assertThat(summary.getMainPathSuccesses()).isEqualTo(4);
+        assertThat(summary.getWriteThroughVisibleCount()).isEqualTo(4);
         assertThat(summary.getRecallSuccesses()).isEqualTo(4);
         assertThat(summary.getPromptAssemblySuccesses()).isEqualTo(4);
         assertThat(summary.getErrors()).isEqualTo(1);
         assertThat(summary.getPersistenceSuccessRate()).isEqualTo(0.75d);
         assertThat(summary.getMainPathSuccessRate()).isEqualTo(1.0d);
+        assertThat(summary.getWriteThroughVisibilityRate()).isEqualTo(1.0d);
         assertThat(summary.getMainPathLatencyP50Ms()).isEqualTo(20.0d);
         assertThat(summary.getMainPathLatencyP95Ms()).isEqualTo(40.0d);
         assertThat(summary.getRecallLatencyAverageMs()).isEqualTo(5.5d);
@@ -277,6 +282,7 @@ class AsyncPipelineLatencyBenchmarkRunnerTest {
                 .recallSucceeded(true)
                 .promptAssemblySucceeded(true)
                 .mainPathSucceeded(true)
+                .writeThroughVisibleAtReturn(true)
                 .l2Ready(persistenceSucceeded)
                 .l3Ready(persistenceSucceeded)
                 .persistenceSucceeded(persistenceSucceeded)

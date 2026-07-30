@@ -65,17 +65,28 @@ public class AsyncMemoryPipeline {
 
     public MemoryPipelineStatus submit(MemoryPipelineRequest request) {
         MemoryPipelineRequest normalized = normalize(request);
+        HierarchicalMemoryController.L1WriteThrough writeThrough = hmc.stageL1WriteThrough(
+                normalized.getContent(),
+                normalized.getNamespace(),
+                normalized.getTags(),
+                normalized.getReasoningChainId(),
+                normalized.getPinTtlMillis());
+        List<String> writeThroughFragmentIds = writeThrough.fragmentIds();
         MemoryPipelineStatus accepted = MemoryPipelineStatus.builder()
                 .pipelineId(normalized.getPipelineId())
                 .status(MemoryPipelineStatusCode.ACCEPTED)
                 .namespace(normalized.getNamespace())
                 .acceptedAt(Instant.now())
-                .completedStages(List.of(MemoryPipelineStage.ADMISSION))
-                .fragmentIds(List.of())
+                .completedStages(List.of(
+                        MemoryPipelineStage.ADMISSION,
+                        MemoryPipelineStage.L1_WRITE_THROUGH))
+                .fragmentIds(writeThroughFragmentIds)
+                .fragmentCount(writeThroughFragmentIds.size())
                 .build();
         putStatus(accepted);
-        CompletableFuture.runAsync(() -> runPipeline(normalized, true), executor)
+        CompletableFuture.runAsync(() -> runPipeline(normalized, true, writeThrough), executor)
                 .exceptionally(ex -> {
+                    hmc.restoreL1WriteThroughPins(writeThrough);
                     markFailed(normalized.getPipelineId(), ex);
                     return null;
                 });
@@ -93,7 +104,7 @@ public class AsyncMemoryPipeline {
                 .fragmentIds(List.of())
                 .build();
         putStatus(accepted);
-        return runPipeline(normalized, true);
+        return runPipeline(normalized, true, HierarchicalMemoryController.L1WriteThrough.empty());
     }
 
     public Optional<MemoryPipelineStatus> snapshot(String pipelineId) {
@@ -118,21 +129,28 @@ public class AsyncMemoryPipeline {
                 BACKPRESSURE_POLICY);
     }
 
-    private MemoryPipelineStatus runPipeline(MemoryPipelineRequest request, boolean waitForPersistence) {
+    private MemoryPipelineStatus runPipeline(
+            MemoryPipelineRequest request,
+            boolean waitForPersistence,
+            HierarchicalMemoryController.L1WriteThrough writeThrough) {
+        List<String> writeThroughFragmentIds = writeThrough.fragmentIds();
         Instant startedAt = Instant.now();
         EnumSet<MemoryPipelineStage> stages = EnumSet.of(MemoryPipelineStage.ADMISSION);
+        if (writeThroughFragmentIds != null && !writeThroughFragmentIds.isEmpty()) {
+            stages.add(MemoryPipelineStage.L1_WRITE_THROUGH);
+        }
         updateStatus(request.getPipelineId(), MemoryPipelineStatusCode.RUNNING, startedAt, null, stages,
-                List.of(), 0, 0, 0, null);
+                writeThroughFragmentIds, 0, 0, sizeOf(writeThroughFragmentIds), null);
         try {
             MemoryExtractionService.ExtractionResult extraction = extractionService.extract(request.getContent());
             stages.add(MemoryPipelineStage.EXTRACTION);
             updateStatus(request.getPipelineId(), MemoryPipelineStatusCode.RUNNING, startedAt, null, stages,
-                    List.of(), extraction.units().size(), 0, 0, null);
+                    writeThroughFragmentIds, extraction.units().size(), 0, sizeOf(writeThroughFragmentIds), null);
 
             MemorySummaryService.SummaryResult summary = summaryService.summarize(extraction);
             stages.add(MemoryPipelineStage.SUMMARY);
             updateStatus(request.getPipelineId(), MemoryPipelineStatusCode.RUNNING, startedAt, null, stages,
-                    List.of(), extraction.units().size(), summary.tokenCount(), 0, null);
+                    writeThroughFragmentIds, extraction.units().size(), summary.tokenCount(), sizeOf(writeThroughFragmentIds), null);
 
             List<String> fragmentIds = hmc.storeProcessed(
                     summary.summaryText(),
@@ -142,6 +160,7 @@ public class AsyncMemoryPipeline {
                     request.getPinTtlMillis(),
                     "async-memory-pipeline",
                     waitForPersistence);
+            hmc.discardL1WriteThrough(writeThrough);
             stages.addAll(List.of(
                     MemoryPipelineStage.SPLIT,
                     MemoryPipelineStage.EMBEDDING,
@@ -160,10 +179,15 @@ public class AsyncMemoryPipeline {
                     fragmentIds.size(),
                     null);
         } catch (RuntimeException e) {
+            hmc.restoreL1WriteThroughPins(writeThrough);
             log.warn("Async memory pipeline failed pipelineId={} namespace={}",
                     request.getPipelineId(), request.getNamespace(), e);
             return markFailed(request.getPipelineId(), e);
         }
+    }
+
+    private int sizeOf(List<String> fragmentIds) {
+        return fragmentIds == null ? 0 : fragmentIds.size();
     }
 
     private MemoryPipelineStatus markFailed(String pipelineId, Throwable failure) {

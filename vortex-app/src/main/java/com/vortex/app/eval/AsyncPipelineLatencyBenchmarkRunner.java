@@ -41,11 +41,13 @@ public class AsyncPipelineLatencyBenchmarkRunner {
     static final String ASYNC_MODE = "ASYNC_PIPELINE";
     static final long RANDOM_SEED = 20260629L;
     static final String MAIN_PATH_SCOPE = "request -> hybrid retrieval -> rerank -> prompt/context assembly -> return payload; "
-            + "excludes external LLM generation and waits only for synchronous baseline memory write";
-    static final String ASYNC_PIPELINE_SCOPE = "background memory extraction + summary + semantic split + embedding + L1 admission "
-            + "+ L2 index + L3 archive readiness";
+            + "excludes external LLM generation; sync mode waits for the full write, while async mode waits for raw-memory "
+            + "L1 write-through admission; each mode/case uses an isolated namespace";
+    static final String ASYNC_PIPELINE_SCOPE = "synchronous raw-memory L1 write-through at admission; background memory "
+            + "extraction + summary + semantic split + embedding + processed L1 admission + L2 index + L3 archive readiness";
     static final String SUCCESS_DEFINITION = "A case passes when main-path recall/rerank/prompt assembly returns at least one "
-            + "expected benchmark memory, and the mode-specific memory write reaches L2/L3 readiness without errors.";
+            + "expected benchmark memory, the submitted write is visible in L1 at return, and the mode-specific memory write "
+            + "reaches L2/L3 readiness without errors.";
 
     private final AsyncMemoryPipeline memoryPipeline;
     private final HierarchicalMemoryController hmc;
@@ -64,7 +66,6 @@ public class AsyncPipelineLatencyBenchmarkRunner {
         log.info("Running main-path async memory latency benchmark runId={} namespace={} cases={} warmup={}",
                 runId, namespace, caseCount, warmupCount);
 
-        seedRecallCorpus(namespace, runId, caseCount + warmupCount);
         List<AsyncPipelineLatencyBenchmarkReport.CaseResult> warmupResults = runWarmup(namespace, runId, warmupCount);
         cleanup(warmupResults);
 
@@ -102,30 +103,27 @@ public class AsyncPipelineLatencyBenchmarkRunner {
                 .build();
     }
 
-    private void seedRecallCorpus(String namespace, String runId, int totalCases) {
-        int corpusSize = Math.max(12, totalCases * 2 + 8);
-        for (int index = 0; index < corpusSize; index++) {
-            String service = serviceName(index);
-            MemoryFragment fragment = MemoryFragment.builder()
-                    .id("main-path-seed::%s::%03d".formatted(runId, index + 1))
-                    .namespace(namespace)
-                    .content("""
-                            Benchmark memory seed %d for %s.
-                            Current routing owner: %s-owner.
-                            Current escalation queue: %s-critical.
-                            Current deployment guardrail: %s requires replay verification before promotion.
-                            """.formatted(index + 1, service, service, service, service))
-                    .embedding(embeddingFor(index))
-                    .l2Embedding(embeddingFor(index))
-                    .tokenCount(42)
-                    .importance(0.60d + (index % 5) * 0.05d)
-                    .tags(List.of("main-path-latency-benchmark", service))
-                    .reasoningChainId("main-path-latency-" + runId)
-                    .build();
-            l1.put(fragment, false);
-            l2.upsert(fragment);
-            l3.archiveFragment(fragment);
-        }
+    private void seedRecallCase(String namespace, String runId, int index) {
+        String service = serviceName(index);
+        MemoryFragment fragment = MemoryFragment.builder()
+                .id("main-path-seed::%s::%03d".formatted(runId, index + 1))
+                .namespace(namespace)
+                .content("""
+                        Benchmark memory seed %d for %s.
+                        Current routing owner: %s-owner.
+                        Current escalation queue: %s-critical.
+                        Current deployment guardrail: %s requires replay verification before promotion.
+                        """.formatted(index + 1, service, service, service, service))
+                .embedding(embeddingFor(index))
+                .l2Embedding(embeddingFor(index))
+                .tokenCount(42)
+                .importance(0.60d + (index % 5) * 0.05d)
+                .tags(List.of("main-path-latency-benchmark", service))
+                .reasoningChainId("main-path-latency-" + runId)
+                .build();
+        l1.put(fragment, false);
+        l2.upsert(fragment);
+        l3.archiveFragment(fragment);
     }
 
     private List<AsyncPipelineLatencyBenchmarkReport.CaseResult> runWarmup(
@@ -167,8 +165,14 @@ public class AsyncPipelineLatencyBenchmarkRunner {
             String namespace,
             String runId,
             int index) {
-        MemoryPipelineRequest memoryWrite = buildRequest(mode, namespace, runId, index);
-        RecallQuery recallQuery = buildRecallQuery(namespace, index);
+        String caseNamespace = "%s-%s-%s-%03d".formatted(
+                namespace,
+                runId,
+                mode.toLowerCase().replace('_', '-'),
+                index + 1);
+        seedRecallCase(caseNamespace, runId + "-" + mode.toLowerCase(), index);
+        MemoryPipelineRequest memoryWrite = buildRequest(mode, caseNamespace, runId, index);
+        RecallQuery recallQuery = buildRecallQuery(caseNamespace, index);
         String question = buildQuestion(index);
         AsyncMemoryPipeline.PipelineQueueSnapshot beforeQueue = memoryPipeline.queueSnapshot();
         long startedAt = System.nanoTime();
@@ -187,10 +191,12 @@ public class AsyncPipelineLatencyBenchmarkRunner {
             MemoryPipelineStatus completed;
             double writeSubmissionLatencyMs;
             double mainPathLatencyMs;
+            boolean writeThroughVisibleAtReturn;
             if (SYNC_MODE.equals(mode)) {
                 long writeStartedAt = System.nanoTime();
                 writeStatus = memoryPipeline.processBlocking(memoryWrite);
                 completed = writeStatus;
+                writeThroughVisibleAtReturn = fragmentsVisibleInL1(writeStatus);
                 waitForReadiness(completed);
                 writeSubmissionLatencyMs = elapsedMillis(writeStartedAt);
                 mainPathLatencyMs = elapsedMillis(startedAt);
@@ -199,6 +205,7 @@ public class AsyncPipelineLatencyBenchmarkRunner {
                 writeStatus = memoryPipeline.submit(memoryWrite);
                 writeSubmissionLatencyMs = elapsedMillis(writeStartedAt);
                 mainPathLatencyMs = elapsedMillis(startedAt);
+                writeThroughVisibleAtReturn = fragmentsVisibleInL1(writeStatus);
                 completed = waitForCompletion(writeStatus.getPipelineId());
                 waitForReadiness(completed);
             }
@@ -229,10 +236,11 @@ public class AsyncPipelineLatencyBenchmarkRunner {
                     .keywordCandidateCount(keywordCandidateCount(recallResult))
                     .recallSucceeded(recallSucceeded)
                     .promptAssemblySucceeded(promptSucceeded)
+                    .writeThroughVisibleAtReturn(writeThroughVisibleAtReturn)
                     .l2Ready(l2Ready)
                     .l3Ready(l3Ready)
                     .persistenceSucceeded(persistenceSucceeded)
-                    .mainPathSucceeded(recallSucceeded && promptSucceeded)
+                    .mainPathSucceeded(recallSucceeded && promptSucceeded && writeThroughVisibleAtReturn)
                     .queueSizeBefore(beforeQueue.queueSize())
                     .queueSizeAfter(afterQueue.queueSize())
                     .queueCapacity(afterQueue.queueCapacity())
@@ -511,8 +519,15 @@ public class AsyncPipelineLatencyBenchmarkRunner {
         return diagnostics == null ? 0 : diagnostics.getKeywordCandidateCount();
     }
 
+    private boolean fragmentsVisibleInL1(MemoryPipelineStatus status) {
+        List<String> fragmentIds = status == null || status.getFragmentIds() == null
+                ? List.of()
+                : status.getFragmentIds();
+        return !fragmentIds.isEmpty() && fragmentIds.stream().allMatch(id -> l1.peek(id).isPresent());
+    }
+
     private String serviceName(int index) {
-        return "service-" + ((index % 8) + 1);
+        return "service-" + (index + 1);
     }
 
     private float[] embeddingFor(int index) {
@@ -689,6 +704,9 @@ public class AsyncPipelineLatencyBenchmarkRunner {
         int mainPathSuccesses = (int) safeResults.stream()
                 .filter(AsyncPipelineLatencyBenchmarkReport.CaseResult::isMainPathSucceeded)
                 .count();
+        int writeThroughVisibleCount = (int) safeResults.stream()
+                .filter(AsyncPipelineLatencyBenchmarkReport.CaseResult::isWriteThroughVisibleAtReturn)
+                .count();
         int recallSuccesses = (int) safeResults.stream()
                 .filter(AsyncPipelineLatencyBenchmarkReport.CaseResult::isRecallSucceeded)
                 .count();
@@ -726,6 +744,7 @@ public class AsyncPipelineLatencyBenchmarkRunner {
                 .total(total)
                 .successes(persistenceSuccesses)
                 .mainPathSuccesses(mainPathSuccesses)
+                .writeThroughVisibleCount(writeThroughVisibleCount)
                 .recallSuccesses(recallSuccesses)
                 .promptAssemblySuccesses(promptAssemblySuccesses)
                 .errors(errors)
@@ -738,6 +757,7 @@ public class AsyncPipelineLatencyBenchmarkRunner {
                 .l2IndexCompletedCount(stageCount(safeResults, MemoryPipelineStage.L2_INDEX))
                 .l3ArchiveCompletedCount(stageCount(safeResults, MemoryPipelineStage.L3_ARCHIVE))
                 .mainPathSuccessRate(total == 0 ? 0.0d : (double) mainPathSuccesses / total)
+                .writeThroughVisibilityRate(total == 0 ? 0.0d : (double) writeThroughVisibleCount / total)
                 .persistenceSuccessRate(total == 0 ? 0.0d : (double) persistenceSuccesses / total)
                 .mainPathLatencyP50Ms(percentile(mainLatencies, 0.50d))
                 .mainPathLatencyP95Ms(percentile(mainLatencies, 0.95d))

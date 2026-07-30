@@ -149,6 +149,35 @@ public class TieredEvictionCoordinator {
         }
     }
 
+    /** Remove a transient L1 entry without propagating it to durable tiers. */
+    void removeTransientFromL1(String fragmentId) {
+        admissionLock.lock();
+        try {
+            l1.peek(fragmentId).ifPresent(fragment -> {
+                l1.remove(fragmentId);
+                pinManager.removePinIndex(fragment);
+                reindexTierMembership(fragment);
+            });
+        } finally {
+            admissionLock.unlock();
+        }
+    }
+
+    /** Restore a transient entry's caller-visible pin state after background processing fails. */
+    void refreshTransientPin(String fragmentId, Long pinnedUntil) {
+        admissionLock.lock();
+        try {
+            l1.peek(fragmentId).ifPresent(fragment -> {
+                fragment.setPinnedUntil(pinnedUntil);
+                l1.put(fragment, false);
+                pinManager.indexPin(fragment);
+                reindexTierMembership(fragment);
+            });
+        } finally {
+            admissionLock.unlock();
+        }
+    }
+
     /**
      * Admit an entire semantic page to L1 atomically.
      * Used by the paging subsystem when handling page faults.
