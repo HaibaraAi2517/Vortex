@@ -56,13 +56,15 @@ guarantees.
 
 | Area | Result | Evidence |
 | --- | --- | --- |
-| Hybrid recall | `Hybrid+Rerank` improved Recall@5 from `0.7917` to `0.9500` versus `Vector+Rerank`, a `+20.00%` relative lift, with `0/100` run errors across five retrieval modes. | [Recall ablation evidence](ops/runbooks/vortex-recall-ablation-benchmark-evidence-20260630.md) |
-| Main-path latency | Moving memory extraction, summary, embedding, L1 admission, L2 indexing, and L3 archive off the measured request path reduced P99 from `1172.50 ms` to `220.34 ms`; average latency fell from `829.40 ms` to `186.64 ms`. | [Main-path latency evidence](ops/runbooks/vortex-main-path-latency-benchmark-evidence-20260629.md) |
+| LongMemEval recall | On the official LongMemEval oracle, a 120-case case-isolated evaluation completed five modes and `600` paired runs with `0` errors. `VectorOnly` reached fragment Recall@5 `0.8094` and exceeded `KeywordOnly` by `+0.1856`, paired 95% CI `[+0.1086, +0.2632]`. | [LongMemEval evaluation report](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md) |
+| Cross-Encoder gate | A pinned ONNX Cross-Encoder DEV candidate changed ordering in `120/120` cases but failed five frozen quality and latency rules. `VectorOnly` remains the default; validation and reserve were not run. | [Cross-Encoder DEV decision](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
+| Main-path latency | With synchronous raw-memory L1 write-through and final processing in a bounded background pipeline, measured P99 fell from `818.82 ms` to `268.65 ms` (`-67.19%`) over 100 cases per mode. L1 visibility at return and eventual L2/L3 readiness were both `100%`. | [Write-through latency evidence](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md) |
 | Runtime recovery | The deterministic fault-injection matrix passed `32/32` covered cases across service restart, tool failure, LLM exception, state integrity, and concurrency categories. | [Runtime recovery evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md) |
 
-These results should not be restated as full production recovery coverage,
-end-to-end LLM quality improvement, online recall improvement, or full Agent
-latency reduction. The linked evidence files define the exact scope.
+Recall is oracle-fragment retrieval, not answer accuracy. Latency is from a
+local deterministic benchmark with external LLM generation excluded, not
+production P99 or full Agent latency. The linked evidence files define the
+exact scope; the rejected Cross-Encoder result is not evidence of model gain.
 
 ## Architecture
 

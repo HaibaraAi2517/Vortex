@@ -8,55 +8,72 @@ evidence runbook with scope, boundaries, and reproduction commands.
 
 | Area | Safe wording | Evidence |
 | --- | --- | --- |
-| Hybrid recall | In a deterministic Docker-backed Milvus + BGE-Small recall ablation on the v3.1 real-agent workload, `Hybrid+Rerank` improved Recall@5 over `Vector+Rerank` from `0.7917` to `0.9500`, a `+0.1583` absolute and `+20.00%` relative lift, with `0/100` benchmark run errors across five retrieval modes. | [Recall ablation evidence](../ops/runbooks/vortex-recall-ablation-benchmark-evidence-20260630.md) |
-| Main-path latency | In a deterministic main-path benchmark under Docker-backed Milvus/MinIO, moving memory extraction, summary, embedding, L1 admission, L2 indexing, and L3 archival off the request path reduced measured P99 from `1172.50 ms` to `220.34 ms` and average latency from `829.40 ms` to `186.64 ms`. | [Main-path latency evidence](../ops/runbooks/vortex-main-path-latency-benchmark-evidence-20260629.md) |
+| Recall | On the official LongMemEval oracle dataset, the 120-case case-isolated retrieval evaluation measured `VectorOnly` Recall@5 at `0.8094`, `+0.1856` over `KeywordOnly`, with a paired 95% CI of `[+0.1086, +0.2632]`. | [LongMemEval evaluation](../ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md) |
+| Cross-Encoder | The locked ONNX DEV candidate changed ordering in `120/120` cases, but failed five frozen quality and latency gates. It was rejected, and `VectorOnly` remains the default. | [Cross-Encoder DEV decision](../ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
+| Main-path latency | In the canonical deterministic write-through benchmark, async processing reduced measured main-path P99 from `818.82 ms` to `268.65 ms` (`-67.19%`) while L1 was visible and L2/L3 were ready at return in `100/100` cases. External LLM generation was excluded. | [Write-through latency evidence](../ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md) |
 | Runtime recovery | In the deterministic runtime recovery benchmark, Vortex passed `32/32` covered fault-injection cases across service restart, tool failure, LLM exception, state integrity, and concurrency categories. | [Runtime recovery evidence](../ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md) |
 
 These numbers are benchmark evidence, not production guarantees.
 
-## Recall Ablation
+## Recall Retrieval Evaluation
 
 Benchmark scope:
 
-- Dataset: `classpath:llm-memory-eval-set-v3-1-real-agent-workload.json`
-- Cases: `20`
-- Runs: `100`
+- Dataset: official LongMemEval oracle, converted to case-isolated retrieval cases
+- Cases: `120`
+- Runs: `600`
 - Modes: `KeywordOnly`, `VectorOnly`, `Vector+Rerank`, `Hybrid`, `Hybrid+Rerank`
 - Primary K: `5`
-- Storage/runtime: Docker-backed Milvus/MinIO with local BGE-Small embeddings
-- Semantic paging: disabled with `VORTEX_PAGING_ENABLED=false`
-- Generation: disabled; this is deterministic retrieval evaluation
+- Foreign returned fragments: `0`
+- Generation: excluded; this evaluates retrieval of oracle evidence fragments
 
-| Mode | Recall@5 | Precision@5 | MRR | NDCG@5 | Avg Latency Ms | Errors |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| VectorOnly | 0.7917 | 0.3400 | 0.7750 | 0.6754 | 248.5000 | 0 |
-| Vector+Rerank | 0.7917 | 0.3400 | 0.7750 | 0.6754 | 249.3000 | 0 |
-| KeywordOnly | 0.9333 | 0.4000 | 0.8917 | 0.8352 | 685.6000 | 0 |
-| Hybrid | 0.9500 | 0.4100 | 0.8750 | 0.8378 | 371.8500 | 0 |
-| Hybrid+Rerank | 0.9500 | 0.4100 | 0.8750 | 0.8343 | 360.5500 | 0 |
+| Mode | Recall@5 | Case Hit Rate | MRR | NDCG | Avg Latency Ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| KeywordOnly | 0.6239 | 0.7333 | 0.5138 | 0.5065 | 2526.0 |
+| VectorOnly | 0.8094 | 0.9333 | 0.6554 | 0.6493 | 163.1 |
+| Vector+Rerank | 0.8094 | 0.9333 | 0.6554 | 0.6493 | 159.7 |
+| Hybrid | 0.6317 | 0.7667 | 0.5349 | 0.5171 | 210.2 |
+| Hybrid+Rerank | 0.7864 | 0.9167 | 0.6753 | 0.6635 | 210.3 |
 
-Boundary: this supports deterministic retrieval-quality wording only. It does
-not prove LLM answer accuracy lift, online production recall lift, or
-end-to-end Agent quality lift.
+The paired `VectorOnly` versus `KeywordOnly` Recall@5 delta was `+0.1856`,
+with a 95% bootstrap CI of `[+0.1086, +0.2632]`.
+
+Boundary: this is oracle fragment retrieval recall, not LLM answer accuracy.
+It does not prove online production recall lift or end-to-end Agent quality.
+
+## Cross-Encoder DEV Decision
+
+The first locked candidate used ONNX Runtime CPU with the
+`cross-encoder/ms-marco-MiniLM-L6-v2` INT8 artifact. On the 120-case DEV
+partition it completed `360` runs with `0` errors and changed the baseline
+ordering in `120/120` cases. The result was nevertheless rejected by the
+pre-frozen decision gate:
+
+| Measure | Result |
+| --- | ---: |
+| Recall@5 delta vs `VectorOnly` | +0.0072 |
+| Recall 95% CI | [-0.0497, +0.0640] |
+| NDCG delta / 95% CI | +0.0423 / [-0.0137, +0.0986] |
+| Added P95 latency | +1330.65 ms |
+| Added P99 latency | +1465.24 ms |
+
+The candidate failed five gates: Recall delta, Recall CI lower bound, NDCG CI
+lower bound, added P95 latency, and added P99 latency. `VectorOnly` therefore
+remains the default. Validation and reserve partitions were not opened.
 
 ## Main-Path Latency
 
-Measured request path:
+The canonical run compares synchronous processing with async raw-memory L1
+write-through. Async return includes local embedding and L1 visibility;
+extraction, summary, final embedding, L2, and L3 complete in the background.
 
-```text
-request -> hybrid retrieval -> rerank -> prompt/context assembly -> return payload
-```
-
-External LLM generation is excluded. Background async memory pipeline readiness
-is reported separately in the evidence runbook.
-
-| Mode | Main Avg Ms | Main P50 Ms | Main P95 Ms | Main P99 Ms | Main Success | Persistence Success | Errors |
+| Mode | Cases | Main Success | L1 Visible at Return | L2/L3 Ready | Avg Ms | P95 Ms | P99 Ms |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| SYNC_BASELINE | 829.3997 | 863.9291 | 1172.5000 | 1172.5000 | 1.0000 | 1.0000 | 0 |
-| ASYNC_PIPELINE | 186.6363 | 184.6629 | 220.3377 | 220.3377 | 1.0000 | 1.0000 | 0 |
+| Sync | 100 | 100% | 100% | 100% | 747.95 | 815.45 | 818.82 |
+| Async | 100 | 100% | 100% | 100% | 258.27 | 265.49 | 268.65 |
 
-Boundary: this is not a full Agent execution latency claim because real LLM
-generation is not part of the measured path.
+Boundary: external LLM generation is excluded. This local deterministic
+benchmark is not a production P99 or full Agent execution latency claim.
 
 ## Runtime Recovery
 
@@ -80,22 +97,15 @@ Boundary: this is covered deterministic recovery behavior over the current
 checkpoint/WAL/runtime-state surface. It does not claim complete production
 recovery coverage.
 
-## Pending Public-Dataset Promotion
-
-The execution plan asks for public dataset cross-validation. This README/docs
-pass intentionally does not promote a public-dataset headline metric yet,
-because the committed evidence promoted by the current repository state is the
-deterministic v3.1 workload evidence above.
-
-Add a public LongMemEval or other public-dataset result here only after the
-dataset conversion, report artifacts, model/base URL disclosure, and boundary
-notes are committed and reviewed.
-
 ## Do Not Claim
 
 - Do not claim `99.99%` main-path latency reduction.
-- Do not claim `20.00%` LLM answer accuracy improvement.
+- Do not describe oracle fragment Recall@5 as LLM answer accuracy.
 - Do not claim online production recall improvement.
+- Do not claim production P99 or full Agent execution latency from the local
+  write-through benchmark.
+- Do not claim the rejected Cross-Encoder candidate passed DEV or is approved
+  for validation.
 - Do not claim complete production recovery coverage.
 - Do not quote local coverage or test-count numbers in public docs until the
   latest reports are regenerated and committed or otherwise reproducibly

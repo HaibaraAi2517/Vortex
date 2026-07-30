@@ -48,11 +48,14 @@ Vortex 是有 benchmark 证据的基础设施内核，不是托管 SaaS。仓库
 
 | 方向 | 结果 | 证据 |
 | --- | --- | --- |
-| Hybrid recall | `Hybrid+Rerank` 相比 `Vector+Rerank` 将 Recall@5 从 `0.7917` 提升到 `0.9500`，relative lift `+20.00%`；五种检索模式共 `100` 次运行，错误数 `0`。 | [Recall ablation evidence](ops/runbooks/vortex-recall-ablation-benchmark-evidence-20260630.md) |
-| Main-path latency | 将 memory extraction、summary、embedding、L1 admission、L2 indexing 和 L3 archive 移出请求主路径后，P99 从 `1172.50 ms` 降至 `220.34 ms`，平均 latency 从 `829.40 ms` 降至 `186.64 ms`。 | [Main-path latency evidence](ops/runbooks/vortex-main-path-latency-benchmark-evidence-20260629.md) |
+| LongMemEval recall | 官方 LongMemEval oracle 的 120-case case-isolated 评测完成五种模式 `600` 次配对运行，错误数 `0`。`VectorOnly` fragment Recall@5 为 `0.8094`，相对 `KeywordOnly` 提升 `+0.1856`，paired 95% CI `[+0.1086, +0.2632]`。 | [LongMemEval 评测报告](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md) |
+| Cross-Encoder 门禁 | 锁定的 ONNX Cross-Encoder DEV 候选在 `120/120` case 改变排序，但未通过五项冻结的质量与延迟规则。`VectorOnly` 保持默认，validation 和 reserve 均未运行。 | [Cross-Encoder DEV 决策](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
+| Main-path latency | 返回前同步完成 raw-memory L1 write-through，最终处理进入有界后台 Pipeline；100 case/mode 下 P99 从 `818.82 ms` 降至 `268.65 ms`（`-67.19%`），返回时 L1 可见率和最终 L2/L3 readiness 均为 `100%`。 | [Write-through 延迟证据](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md) |
 | Runtime recovery | deterministic fault-injection matrix 在 service restart、tool failure、LLM exception、state integrity 和 concurrency 五类场景中通过 `32/32` covered cases。 | [Runtime recovery evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md) |
 
-不要把这些结果表述为完整生产恢复覆盖、端到端 LLM 质量提升、线上 recall 提升或完整 Agent latency 降低。具体边界以链接的 evidence 文件为准。
+Recall 是 oracle fragment 检索指标，不是答案准确率。延迟来自排除外部 LLM generation
+的本地确定性 benchmark，不是 production P99 或完整 Agent latency。Cross-Encoder
+被拒绝的结果也不能表述为模型收益；具体边界以链接的 evidence 文件为准。
 
 ## 架构
 
