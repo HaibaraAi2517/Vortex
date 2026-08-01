@@ -1,4 +1,4 @@
-﻿# Vortex Recall Ablation Benchmark Evidence - 2026-06-30
+# Vortex Recall Ablation Benchmark Evidence - 2026-06-30
 
 This note records the current five-mode recall ablation evidence for Vortex
 hybrid retrieval wording.
@@ -114,5 +114,5 @@ $env:VORTEX_WAL_DIR='E:/tmp/vortex-recall-ablation-benchmark-20260630-003/wal'
 $env:BGE_MODEL_PATH='models/bge-small-zh'
 $env:VORTEX_SCHEDULER_ENABLED='false'
 $env:VORTEX_PAGING_ENABLED='false'
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar recall-benchmark
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar recall-benchmark
 ```

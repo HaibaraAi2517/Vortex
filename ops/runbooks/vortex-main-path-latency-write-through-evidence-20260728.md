@@ -111,7 +111,7 @@ $env:VORTEX_EVAL_ASYNC_PIPELINE_BENCHMARK_ASYNC_PARALLELISM='4'
 $env:VORTEX_MEMORY_PIPELINE_MAX_WORKERS='4'
 $env:VORTEX_MEMORY_PIPELINE_QUEUE_CAPACITY='8'
 $env:VORTEX_SCHEDULER_ENABLED='false'
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar async-pipeline-latency-benchmark
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar async-pipeline-latency-benchmark
 ```
 
 ## Resume-Safe Wording

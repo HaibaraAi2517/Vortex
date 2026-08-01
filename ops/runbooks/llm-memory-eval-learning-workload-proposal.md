@@ -189,8 +189,8 @@ Do not commit generated Markdown as fixture evidence unless a governance decisio
 
 Implemented entry points:
 
-1. `java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar learning`
-2. `java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar learning verify <report.json>`
+1. `java -jar vortex-app/target/vortex-app-0.1.0-eval-cli.jar learning`
+2. `java -jar vortex-app/target/vortex-app-0.1.0-eval-cli.jar learning verify <report.json>`
 3. `ops/run-learning-memory-eval.ps1`
 4. `ops/run-learning-governance-check.ps1`
 

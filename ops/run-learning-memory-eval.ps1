@@ -61,7 +61,7 @@ $normalizedReportRoot = $ReportRoot.TrimEnd('/').TrimEnd([char]92)
 $reportDir = Join-Path $repoRoot ($normalizedReportRoot + "/" + $Stamp)
 $milvusCollection = "vortex_learning_eval_" + ($Stamp -replace "-", "_")
 $minioKeyPrefix = "learning-eval/$Stamp/"
-$evalCliJar = Join-Path $repoRoot "vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar"
+$evalCliJar = Join-Path $repoRoot "vortex-app/target/vortex-app-0.1.0-eval-cli.jar"
 
 Assert-PathExists -Path $modelDir -Label "BGE model directory"
 Assert-PathExists -Path (Join-Path $modelDir "model.onnx") -Label "BGE model.onnx"

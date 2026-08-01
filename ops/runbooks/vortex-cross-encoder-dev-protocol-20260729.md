@@ -169,7 +169,7 @@ $env:BGE_MODEL_PATH='models/bge-small-zh'
 $env:VORTEX_GENERATION_ENABLED='false'
 $env:VORTEX_SCHEDULER_ENABLED='false'
 $env:VORTEX_PAGING_ENABLED='false'
-java -jar ./vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar recall-benchmark
+java -jar ./vortex-app/target/vortex-app-0.1.0-eval-cli.jar recall-benchmark
 ```
 
 Provider-specific model location, tokenizer, batching, device, thread count, and precision must be

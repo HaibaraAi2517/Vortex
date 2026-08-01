@@ -94,7 +94,7 @@ Testcontainers 2.0.2
 `vortex-app` 会打两个 Spring Boot artifact：
 
 1. 常规应用 jar。
-2. `vortex-app-0.1.0-SNAPSHOT-eval-cli.jar`，main class 是 `LlmMemoryEvalCliApplication`，用于独立运行真实 LLM eval 和 baseline verify。
+2. `vortex-app-0.1.0-eval-cli.jar`，main class 是 `LlmMemoryEvalCliApplication`，用于独立运行真实 LLM eval 和 baseline verify。
 
 当前架构边界总体健康：核心记忆逻辑在 kernel，存储实现不泄露到 app，eval 是 app 内独立子系统，baseline governance 由 ops 脚本驱动。
 
@@ -813,13 +813,13 @@ mvn -pl vortex-app -am -DskipTests package
 列出 baseline profiles：
 
 ```powershell
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify --list-profiles
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar verify --list-profiles
 ```
 
 查看 v3.1 strict profile：
 
 ```powershell
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar verify `
   --profile official-v3.1-real-agent-workload-strict `
   --describe
 ```

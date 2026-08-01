@@ -5,6 +5,7 @@
 </p>
 
 [![CI](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml/badge.svg)](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml)
+[![Release: v0.1.0](https://img.shields.io/badge/release-v0.1.0-2EA44F.svg)](docs/releases/v0.1.0.md)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](pom.xml)
 [![Spring Boot 3.3](https://img.shields.io/badge/Spring%20Boot-3.3-6DB33F.svg)](vortex-app/pom.xml)
@@ -14,38 +15,86 @@
 retrieve the right context, and resume after crashes. Built with Java 21,
 Spring Boot, Milvus, MinIO, Redis, and Caffeine.**
 
-Long-running agents fail in predictable ways. Vortex turns those failure modes
-into backend runtime primitives:
-
-| Agent pain | Vortex runtime primitive |
-| --- | --- |
-| Context disappears across sessions and token pressure. | Tiered long-term memory with L1 Caffeine, L2 Milvus, and L3 MinIO. |
-| Retrieval quality degrades when vector search misses exact operational facts. | Hybrid recall: keyword + vector candidates, rerank, namespaces, tags, and token budgets. |
-| Multi-step work dies on restart or tool/LLM failures. | Task DAG checkpoints, WAL replay, runtime snapshots, and Execution ID idempotency. |
+`v0.1.0` is the stable, evidence-backed portfolio release. Vortex is an
+infrastructure kernel rather than a hosted SaaS: the repository keeps code,
+deterministic benchmarks, failure-injection evidence, and reproduction paths
+together.
 
 <p align="center">
   <a href="#quick-start"><b>Quick Start</b></a> ·
-  <a href="examples/quickstart-agent"><b>Agent Demo</b></a> ·
-  <a href="docs/architecture.md"><b>Architecture</b></a> ·
+  <a href="#three-core-engineering-decisions"><b>Engineering Decisions</b></a> ·
   <a href="docs/benchmark.md"><b>Benchmarks</b></a> ·
-  <a href="docs/comparison.md"><b>Comparison</b></a>
+  <a href="docs/architecture.md"><b>Detailed Architecture</b></a>
 </p>
 
+## System Architecture
+
 ```mermaid
-flowchart LR
-    A[Long-running Agent] --> V[Vortex Runtime]
-    V --> M[Memory: L1 / L2 / L3]
-    V --> R[Hybrid Retrieval]
-    V --> S[Task Recovery]
-    M --> C[Caffeine]
-    M --> MV[Milvus]
-    M --> IO[MinIO]
-    S --> W[Checkpoint + WAL]
+flowchart TB
+    A[Agent / Spring AI / LangChain4j] --> API[Vortex REST and Java contracts]
+    API --> K[Memory and Task Kernel]
+
+    subgraph W[Write path]
+        direction LR
+        K --> E[Split and local embedding]
+        E --> L1[L1 Caffeine write-through]
+        L1 --> ACK[Return with read-your-own-write]
+        L1 --> P[Bounded async pipeline]
+        P --> L2[L2 Milvus vector index]
+        P --> L3[L3 MinIO cold archive]
+    end
+
+    subgraph R[Recall path]
+        direction LR
+        K --> KW[Keyword candidates]
+        K --> VC[Vector candidates]
+        KW --> H[Hybrid merge and filters]
+        VC --> H
+        H --> B[Rerank and token budget]
+        B --> CTX[Context returned to Agent]
+    end
+
+    subgraph S[Recovery path]
+        direction LR
+        K --> CP[Runtime snapshot and checkpoint]
+        CP --> WAL[WAL deduplicated replay]
+        WAL --> ID[Execution ID idempotency]
+        ID --> RES[Resume task DAG]
+    end
 ```
 
-Vortex is a benchmarked infrastructure kernel, not a hosted SaaS. The repository
-keeps runnable code, deterministic eval harnesses, evidence reports, runbooks,
-and CI governance checks together.
+The synchronous boundary ends at L1 visibility. Durable indexing and archival
+run behind a bounded pipeline; recall and recovery remain separate kernel paths.
+This boundary is the central latency, consistency, and failure-recovery decision
+in the project.
+
+## Quick Start
+
+Prerequisite: Docker Desktop or Docker Engine with Compose and at least 6 GB
+available memory. One command builds the stack, waits for health, stores and
+recalls memory, kills a worker after checkpointing, and resumes the task:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\run.ps1 -StartQuickstart
+```
+
+Linux/macOS:
+
+```bash
+START_QUICKSTART=true bash examples/quickstart-agent/run.sh
+```
+
+A successful run prints `WITH VORTEX: recalled durable memory`, then
+`WITH VORTEX: recovered task ...`, and finishes with
+`No external LLM API key was used.` Stop the stack with:
+
+```powershell
+docker compose -f docker-compose.quickstart.yml down
+```
+
+The recorded output and expanded HTTP walkthrough live in
+[examples/quickstart-agent](examples/quickstart-agent) and
+[docs/quickstart.md](docs/quickstart.md).
 
 ## Benchmark Evidence
 
@@ -66,151 +115,73 @@ local deterministic benchmark with external LLM generation excluded, not
 production P99 or full Agent latency. The linked evidence files define the
 exact scope; the rejected Cross-Encoder result is not evidence of model gain.
 
-## Architecture
+## Three Core Engineering Decisions
 
-Detailed architecture notes live in [docs/architecture.md](docs/architecture.md).
+### 1. Return after L1 write-through; persist final state asynchronously
 
-Hybrid retrieval:
+**Problem.** Synchronously extracting, summarizing, indexing, and archiving every
+memory made the request path pay for work that the caller did not need before
+return.
 
-```mermaid
-flowchart LR
-    Q[Agent query] --> N[Namespace and tag filter]
-    N --> K[Keyword recall]
-    N --> V[Vector recall]
-    K --> M[Hybrid candidate merge]
-    V --> M
-    M --> R[Rerank and budget]
-    R --> C[Context assembly]
-```
+**Decision.** Vortex keeps raw-memory L1 write-through inside the synchronous
+boundary, then moves final extraction, L2 indexing, and L3 archival to a bounded
+pipeline with retry and backpressure. The caller gets read-your-own-write
+semantics without waiting for all durable tiers.
 
-Three-tier memory:
+**Trade-off.** The design accepts eventual L2/L3 readiness and must expose
+pipeline status and failure handling. In return, deterministic 100-case runs
+reduced main-path P99 from `818.82 ms` to `268.65 ms` while preserving `100%`
+L1 visibility at return and eventual L2/L3 readiness. See the
+[write-through latency evidence](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md).
 
-```mermaid
-flowchart TB
-    W[Memory write] --> S[Split and embed]
-    S --> L1[L1 Hot: Caffeine]
-    S --> P[Async persistence pipeline]
-    P --> L2[L2 Warm: Milvus]
-    P --> L3[L3 Cold: MinIO]
-    L2 --> REC[L1 recovery after eviction]
-```
+### 2. Prefer an auditable retrieval baseline over an unproven reranker
 
-Runtime recovery:
+**Problem.** A shared evaluation namespace caused cross-case leakage, and a
+reranker can appear useful simply because it changes ordering.
 
-```mermaid
-flowchart LR
-    F[Failure or restart] --> CP[Checkpoint load]
-    CP --> WAL[WAL replay]
-    WAL --> RS[Runtime state reconstruction]
-    RS --> ID[Execution ID idempotency check]
-    ID --> RES[Task resume]
-```
+**Decision.** The contaminated result was discarded, LongMemEval was rerun with
+case isolation, and model promotion was placed behind five frozen quality and
+latency gates. The pinned ONNX Cross-Encoder changed `120/120` rankings but
+failed the gate, so `VectorOnly` remains the default.
 
-```text
-vortex-app      REST API, Actuator, OpenAPI, eval CLI, benchmark runners
-vortex-kernel   memory orchestration, recall, eviction, async pipeline, recovery
-vortex-langchain4j  optional ChatModel and EmbeddingModel adapters
-vortex-storage  L1 Caffeine, L2 Milvus, L3 MinIO
-vortex-common   shared models, DTOs, serialization, exceptions, contracts
-```
+**Trade-off.** Vortex gives up speculative reranking gain and keeps a simpler,
+lower-latency serving path until evidence clears the gate. The isolated
+120-case run reached fragment Recall@5 `0.8094`, `+0.1856` over
+`KeywordOnly`, with paired 95% CI `[+0.1086, +0.2632]`. See the
+[LongMemEval report](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md)
+and [Cross-Encoder decision](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md).
 
-## Quick Start
+### 3. Combine Snapshot, WAL, and Execution ID instead of claiming distributed exactly-once
 
-The container-first path is documented in [docs/quickstart.md](docs/quickstart.md). It starts Vortex with Milvus, MinIO, Redis, and etcd, and does not require any external LLM API key.
+**Problem.** A checkpoint alone cannot distinguish completed work from an
+in-flight tool or LLM call after a restart, so replay can duplicate side
+effects.
 
-For local development, use the host Maven path:
+**Decision.** Runtime snapshots persist the task DAG, conversation, memory
+references, and tool/LLM state. Recovery loads a checkpoint, deduplicates WAL
+replay, reconstructs state, and uses Execution ID request hashes, atomic
+reservation, and response replay for idempotency.
 
-Prerequisites:
+**Trade-off.** This adds serialization, WAL write amplification, and stricter
+state-transition contracts. It provides deterministic single-runtime recovery,
+not distributed consensus or cross-region exactly-once. The fault-injection
+matrix passed `32/32` covered cases across five failure categories. See the
+[runtime recovery evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md).
 
-- JDK 21
-- Maven 3.9+
-- Docker Desktop / Docker Compose
+## Implementation Surface
 
-The default local BGE model files are tracked under `models/bge-small-zh/`.
-
-```powershell
-docker compose up -d --wait
-mvn -pl vortex-app -am -DskipTests package
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-exec.jar
-```
-
-Open:
-
-- Swagger UI: `http://localhost:8080/swagger-ui.html`
-- Health: `http://localhost:8080/actuator/health`
-- Prometheus: `http://localhost:8080/actuator/prometheus`
-- MinIO console: `http://localhost:9001` with `minioadmin` / `minioadmin`
-
-Stop dependencies:
-
-```powershell
-docker compose down
-```
-
-## Zero-Key Agent Demo
-
-With the quickstart stack running, try the focused demo in [examples/quickstart-agent](examples/quickstart-agent):
-
-![Vortex zero-key agent demo](docs/assets/quickstart-agent-demo.gif)
-
-Transcript from the recorded local run: [docs/assets/quickstart-agent-demo.txt](docs/assets/quickstart-agent-demo.txt).
-
-```powershell
-.\examples\quickstart-agent\run.ps1
-```
-
-It shows memory off/on behavior and kills a worker process before recovering the task from a Vortex checkpoint. No external LLM API key is required.
-
-Java users can also try the [Spring AI ChatClient advisor example](examples/spring-ai-integration) and [LangChain4j AiServices transformer example](examples/langchain4j-integration). Both inject Vortex recall into model context without requiring an external LLM key. For direct model-provider integration, the [vortex-langchain4j module](vortex-langchain4j) adapts LangChain4j `ChatModel` and `EmbeddingModel` implementations to Vortex's `GenerationService` and `EmbeddingService` contracts.
-
-## Try The Memory API
-
-Store memory:
-
-```bash
-curl -X POST http://localhost:8080/api/v1/memory/store \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "Java synchronized provides mutual exclusion and visibility guarantees.",
-    "namespace": "session-1",
-    "tags": ["java", "concurrency"],
-    "reasoningChainId": "chain-1"
-  }'
-```
-
-Recall memory:
-
-```bash
-curl -X POST http://localhost:8080/api/v1/memory/recall \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "Java concurrency lock visibility",
-    "namespace": "session-1",
-    "topK": 5,
-    "tokenBudget": 2048,
-    "tags": ["java"],
-    "scenario": "coding"
-  }'
-```
-
-Async ingest is available through `POST /api/v1/memory/store/async`, with
-pipeline status at `GET /api/v1/memory/pipeline/{pipelineId}`.
-
-## Task State And Recovery API
-
-Vortex also exposes a task-state kernel for long-running agent workflows:
-
-| Capability | API |
+| Surface | What is implemented |
 | --- | --- |
-| Create/list/fetch/complete/fail/delete tasks | `/api/v1/tasks` |
-| Mutate task DAG nodes and edges | `/api/v1/tasks/{taskId}/nodes` |
-| Update task context | `/api/v1/tasks/{taskId}/context` |
-| Create/list/recover checkpoints | `/api/v1/tasks/{taskId}/checkpoint`, `/recover` |
-| Branch, switch, and merge task state | `/branch`, `/branch/switch`, `/merge` |
-| Export Graphviz DOT | `/api/v1/tasks/{taskId}/dag` |
+| Memory | Store, recall, feedback, pin/unpin, eviction, async ingest status, namespace/tag filtering, and token budgets |
+| Retrieval | Keyword, vector, hybrid candidate merge, optional reranking gates, and context assembly |
+| Runtime state | Task DAG mutation, checkpoint, WAL replay, branch/switch/merge, and Execution ID idempotency |
+| Storage | L1 Caffeine, L2 Milvus, L3 MinIO, plus optional Redis-backed Execution ID state |
+| Model integration | Vortex generation/embedding contracts, Spring AI example, and LangChain4j adapters |
 
-Mutating task APIs accept the optional `X-Execution-Id` header for idempotent
-replay protection.
+The public REST surface is available through Swagger UI at
+`http://localhost:8080/swagger-ui.html` after Quickstart. Detailed endpoints
+and configuration remain in [docs/quickstart.md](docs/quickstart.md) and
+[docs/architecture.md](docs/architecture.md).
 
 ## Build And Test
 
@@ -218,7 +189,7 @@ CI runs unit tests, app integration verification, baseline governance, and
 learning governance:
 
 ```powershell
-mvn -B test -pl vortex-common,vortex-kernel,vortex-storage -am
+mvn -B test -pl vortex-common,vortex-kernel,vortex-storage,vortex-langchain4j -am
 mvn -B verify -pl vortex-app -am
 ./ops/run-baseline-governance-check.ps1 -SkipMavenTest -SkipPackage
 ./ops/run-learning-governance-check.ps1 -SkipMavenTest -SkipPackage -SkipLearningRun
@@ -227,64 +198,20 @@ mvn -B verify -pl vortex-app -am
 `vortex-app` integration verification starts Docker Compose during
 `pre-integration-test` and stops it during `post-integration-test`.
 
-## Eval CLI
+## Evidence And Reproduction
 
-Package the eval CLI:
-
-```powershell
-mvn -pl vortex-app -am -DskipTests package
-```
-
-Available benchmark commands:
-
-```text
-recall-benchmark
-runtime-recovery-benchmark
-async-pipeline-latency-benchmark
-```
-
-Use the evidence runbooks for isolated Milvus collections, MinIO prefixes, WAL
-directories, and exact environment variables:
-
-- [Recall ablation](ops/runbooks/vortex-recall-ablation-benchmark-evidence-20260630.md)
-- [Main-path latency](ops/runbooks/vortex-main-path-latency-benchmark-evidence-20260629.md)
-- [Runtime recovery](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md)
-- [Async pipeline latency](ops/runbooks/vortex-async-pipeline-latency-benchmark-evidence-20260628.md)
-
-## Configuration
-
-Default configuration lives in
-[`vortex-app/src/main/resources/application.yml`](vortex-app/src/main/resources/application.yml).
-
-Common environment variables:
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `VORTEX_STORAGE_L1_MAX_TOKENS` | `8192` | L1 token capacity |
-| `MILVUS_HOST` / `MILVUS_PORT` | `localhost` / `19530` | Milvus connection |
-| `VORTEX_STORAGE_L2_MILVUS_COLLECTION` | `vortex_memory` | Milvus collection |
-| `VORTEX_L2_EMBEDDING_DIM` | `512` | L2 vector dimension |
-| `MINIO_ENDPOINT` / `MINIO_BUCKET` | `http://localhost:9000` / `vortex` | L3 object storage |
-| `MINIO_KEY_PREFIX` | empty | Object key prefix for isolation |
-| `VORTEX_EXECUTION_ID_BACKEND` | `MEMORY` | Idempotency backend; Redis is optional |
-| `BGE_MODEL_PATH` | `models/bge-small-zh` | Local BGE model directory |
-| `VORTEX_GENERATION_ENABLED` | `false` | Enable external LLM generation integration |
-| `VORTEX_PAGING_ENABLED` | `true` | Enable semantic paging |
-
-Changing the Milvus vector dimension is destructive and must be explicit:
-
-```powershell
-$env:MILVUS_DROP_COLLECTION = "true"
-$env:MILVUS_DROP_CONFIRM_TOKEN = "I-KNOW-WHAT-I-AM-DOING"
-```
-
-Reset those values after the one-time migration.
+- [Benchmark scope and headline results](docs/benchmark.md)
+- [Architecture and component boundaries](docs/architecture.md)
+- [LongMemEval case-isolated evaluation](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md)
+- [Main-path write-through latency evidence](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md)
+- [Runtime recovery fault-injection evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md)
+- [Stable v0.1.0 release notes](docs/releases/v0.1.0.md)
 
 ## Project Status
 
 For positioning against plain vector RAG and hand-rolled memory layers, see
-[docs/comparison.md](docs/comparison.md). The first alpha release draft lives in
-[docs/releases/v0.1.0-alpha.md](docs/releases/v0.1.0-alpha.md).
+[docs/comparison.md](docs/comparison.md). The stable portfolio release is
+[`v0.1.0`](docs/releases/v0.1.0.md); the original alpha notes remain archived.
 
 Implemented and covered by code/tests/runbooks:
 
@@ -336,12 +263,11 @@ Not claimed yet:
 - LangChain4j 1.18.0 for optional LLM and embedding adapters
 - Testcontainers 2.0.2
 
-## Community
+## Review Guide
 
-- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Roadmap: [ROADMAP.md](ROADMAP.md)
-- Code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- Suggested GitHub description/topics: [docs/repo-settings.md](docs/repo-settings.md)
+For a focused code review, start with the system diagram and the three decisions
+above, then use the linked evidence reports to inspect the benchmark boundaries.
+The repository map above points to the corresponding implementation.
 
 ## License
 

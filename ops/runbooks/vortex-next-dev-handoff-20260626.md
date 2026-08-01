@@ -128,7 +128,7 @@ mvn -DskipTests package
 结果：
 
 - `BUILD SUCCESS`
-- eval CLI jar 已更新：`vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar`
+- eval CLI jar 已更新：`vortex-app/target/vortex-app-0.1.0-eval-cli.jar`
 
 完整 app 模块测试：
 
@@ -164,7 +164,7 @@ $env:VORTEX_EVAL_REPORT_OUTPUT_DIR='ops/eval-reports/20260626-recall-benchmark-v
 $env:VORTEX_EVAL_RECALL_TOP_K='1'
 $env:VORTEX_EVAL_RECALL_TOKEN_BUDGET='1024'
 $env:BGE_MODEL_PATH='models/bge-small-zh'
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar recall-benchmark
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar recall-benchmark
 ```
 
 `Recall@5`：
@@ -178,7 +178,7 @@ $env:VORTEX_EVAL_REPORT_OUTPUT_DIR='ops/eval-reports/20260626-recall-benchmark-v
 $env:VORTEX_EVAL_RECALL_TOP_K='5'
 $env:VORTEX_EVAL_RECALL_TOKEN_BUDGET='1024'
 $env:BGE_MODEL_PATH='models/bge-small-zh'
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar recall-benchmark
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar recall-benchmark
 ```
 
 ## 当前工作区状态

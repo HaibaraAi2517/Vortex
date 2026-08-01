@@ -6,6 +6,7 @@ COPY pom.xml ./
 COPY vortex-common/pom.xml vortex-common/pom.xml
 COPY vortex-storage/pom.xml vortex-storage/pom.xml
 COPY vortex-kernel/pom.xml vortex-kernel/pom.xml
+COPY vortex-langchain4j/pom.xml vortex-langchain4j/pom.xml
 COPY vortex-app/pom.xml vortex-app/pom.xml
 
 RUN mvn -B -DskipTests dependency:go-offline
@@ -22,7 +23,7 @@ FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
-COPY --from=build /workspace/vortex-app/target/vortex-app-0.1.0-SNAPSHOT-exec.jar /app/vortex-app.jar
+COPY --from=build /workspace/vortex-app/target/vortex-app-0.1.0-exec.jar /app/vortex-app.jar
 COPY --from=build /workspace/models /app/models
 
 EXPOSE 8080

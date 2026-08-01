@@ -114,7 +114,7 @@ function Assert-LearningReportThresholds {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $repoRoot
 
-$evalCliJar = Join-Path $repoRoot "vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar"
+$evalCliJar = Join-Path $repoRoot "vortex-app/target/vortex-app-0.1.0-eval-cli.jar"
 $learningRunScript = Join-Path $repoRoot "ops/run-learning-memory-eval.ps1"
 $stamp = "learning-governance-" + (Get-Date -Format "yyyyMMdd-HHmmss")
 $reportDir = Join-Path $repoRoot ($ReportRoot.TrimEnd("/").TrimEnd([char]92) + "/" + $stamp)

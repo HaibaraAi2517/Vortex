@@ -54,7 +54,7 @@
   - 新增多阶段构建。
   - build stage 使用 `maven:3.9-eclipse-temurin-21`。
   - runtime stage 使用 `eclipse-temurin:21-jre`。
-  - 将 `vortex-app-0.1.0-SNAPSHOT-exec.jar` 和 `models/` 复制进 image。
+  - 将 `vortex-app-0.1.0-exec.jar` 和 `models/` 复制进 image。
 
 - `docker-compose.quickstart.yml`
   - 新增 quickstart stack：Vortex app + Milvus + MinIO + Redis + etcd。

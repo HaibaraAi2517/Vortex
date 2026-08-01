@@ -30,13 +30,13 @@ Invoke-RestMethod http://localhost:8080/actuator/health
 ## Run On Windows
 
 ```powershell
-.\examples\quickstart-agent\run.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\run.ps1
 ```
 
 To let the script start the quickstart stack first:
 
 ```powershell
-.\examples\quickstart-agent\run.ps1 -StartQuickstart
+powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\run.ps1 -StartQuickstart
 ```
 
 ## Run On Bash

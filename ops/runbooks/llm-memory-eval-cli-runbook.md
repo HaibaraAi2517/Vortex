@@ -254,13 +254,13 @@ powershell -ExecutionPolicy Bypass -File .\ops\run-real-llm-memory-eval.ps1 `
 列出当前 jar 支持的 profile：
 
 ```powershell
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify --list-profiles
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar verify --list-profiles
 ```
 
 查看单个 profile 的数据集、baseline id 和 strict verify 期望：
 
 ```powershell
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar verify `
   --profile official-v2.1-strict `
   --describe
 ```
@@ -268,7 +268,7 @@ java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
 显式验证 v2.1 单轮报告：
 
 ```powershell
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar verify `
   --profile official-v2.1-strict `
   .\ops\eval-reports\20260601-v2-009-contract-audit-5x-net\runs\20260601-v2-009-contract-audit-5x-net-run01\llm-memory-eval-*.json
 ```
@@ -360,7 +360,7 @@ $env:VORTEX_EVAL_REPORT_OUTPUT_DIR=("ops/eval-reports/" + $stamp)
 $env:VORTEX_STORAGE_L2_MILVUS_COLLECTION=("vortex_memory_eval_" + $stamp.Replace('-','_'))
 $env:MINIO_KEY_PREFIX=("eval/" + $stamp + "/")
 mvn -pl vortex-app -am -DskipTests package
-java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar
+java -jar vortex-app/target/vortex-app-0.1.0-eval-cli.jar
 ```
 
 ## 参数说明
@@ -438,7 +438,7 @@ ops/eval-reports/<stamp>/
 使用方式：
 
 ```powershell
-java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
+java -jar vortex-app/target/vortex-app-0.1.0-eval-cli.jar verify `
   ops/eval-reports/20260529-real-bge-v2-006/llm-memory-eval-20260529-140002.json
 ```
 

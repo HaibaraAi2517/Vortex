@@ -396,7 +396,7 @@ $env:VORTEX_WAL_DIR='E:/tmp/vortex-recall-case-isolated-20260728-001/wal'
 $env:BGE_MODEL_PATH='models/bge-small-zh'
 $env:VORTEX_SCHEDULER_ENABLED='false'
 $env:VORTEX_PAGING_ENABLED='false'
-java -jar ./vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar recall-benchmark
+java -jar ./vortex-app/target/vortex-app-0.1.0-eval-cli.jar recall-benchmark
 ```
 
 生成统计并强制 case 隔离：

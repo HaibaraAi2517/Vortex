@@ -3,29 +3,47 @@
 This quickstart is the container-first path for trying Vortex without any LLM
 API key. It starts Vortex plus Milvus, MinIO, Redis, and etcd.
 
-Validation status in this branch:
+Validation status for `v0.1.0` on 2026-08-01:
 
-- `docker compose -f docker-compose.quickstart.yml config --quiet` passed.
-- Clean one-command startup was verified on 2026-07-26 with `docker compose -f docker-compose.quickstart.yml up --build -d`.
-- The quickstart stack started Vortex, Milvus, MinIO, Redis, and etcd from the quickstart compose file.
+- The exact README PowerShell Quickstart command completed successfully.
+- Docker built `vortex-app-0.1.0-exec.jar` and started Vortex, Milvus, MinIO,
+  Redis, and etcd.
 - `/actuator/health` returned `UP`.
-- Memory store/recall was verified through HTTP with one stored fragment and one recalled fragment.
-- Task checkpoint/recover was verified through HTTP with one recovered task node.
-- Maven tests were not rerun as part of this container quickstart verification.
+- The demo stored and recalled one durable memory fragment.
+- A worker was killed after checkpointing, then the task recovered with
+  `nodeCount=1` and continued to the next checkpoint.
+- `mvn -B clean verify` passed `548` tests with zero failures, errors, or skips.
+- JaCoCo reported `74.25%` aggregate line coverage across the five code modules.
 
 ## Prerequisites
 
 - Docker Desktop or Docker Engine with Compose
 - At least 6 GB available memory for the app and storage services
 
-## Start Everything
+## Run The End-To-End Quickstart
+
+PowerShell:
 
 ```powershell
-docker compose -f docker-compose.quickstart.yml up --build
+powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\run.ps1 -StartQuickstart
 ```
 
-Wait until the `vortex` service logs show that Spring Boot has started, then
-open:
+Linux/macOS:
+
+```bash
+START_QUICKSTART=true bash examples/quickstart-agent/run.sh
+```
+
+These commands build and start the stack, wait for Vortex health, then run the
+memory recall and worker-recovery demo.
+
+## Start The Stack Only
+
+```powershell
+docker compose -f docker-compose.quickstart.yml up --build -d
+```
+
+Wait until the `vortex` service is ready, then open:
 
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 - Health: `http://localhost:8080/actuator/health`
@@ -37,7 +55,7 @@ open:
 With the quickstart stack running, run the focused no-key comparison demo:
 
 ```powershell
-.\examples\quickstart-agent\run.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\run.ps1
 ```
 
 ```bash

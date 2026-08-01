@@ -236,7 +236,7 @@ $env:BGE_MODEL_PATH='models/bge-small-zh'
 $env:VORTEX_STORAGE_L1_MAX_TOKENS='32768'
 $env:VORTEX_EVAL_ASYNC_PIPELINE_BENCHMARK_FRAGMENTS='16'
 $env:VORTEX_EVAL_ASYNC_PIPELINE_BENCHMARK_WARMUP_FRAGMENTS='2'
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar async-pipeline-latency-benchmark
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar async-pipeline-latency-benchmark
 ```
 
 结果：

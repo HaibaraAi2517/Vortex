@@ -328,7 +328,7 @@ mvn -DskipTests package
 
 - 时间：2026-06-28 22:01 Asia/Shanghai
 - `BUILD SUCCESS`
-- Eval CLI jar 生成：`vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar`
+- Eval CLI jar 生成：`vortex-app/target/vortex-app-0.1.0-eval-cli.jar`
 
 最近一次真实 Docker-backed main-path latency benchmark：
 
@@ -345,7 +345,7 @@ $env:VORTEX_EVAL_ASYNC_PIPELINE_BENCHMARK_ASYNC_PARALLELISM='4'
 $env:VORTEX_MEMORY_PIPELINE_MAX_WORKERS='4'
 $env:VORTEX_MEMORY_PIPELINE_QUEUE_CAPACITY='8'
 $env:VORTEX_SCHEDULER_ENABLED='false'
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar async-pipeline-latency-benchmark
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar async-pipeline-latency-benchmark
 ```
 结果：
 

@@ -142,6 +142,9 @@ if ($StartQuickstart) {
   Push-Location $repoRoot
   try {
     docker compose -f docker-compose.quickstart.yml up --build -d
+    if ($LASTEXITCODE -ne 0) {
+      throw "Quickstart Docker Compose failed with exit code $LASTEXITCODE."
+    }
   } finally {
     Pop-Location
   }

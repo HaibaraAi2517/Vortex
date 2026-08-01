@@ -110,21 +110,21 @@ Do not fabricate hidden facts or fragment identifiers.
 `eval-cli verify` 默认使用 `official-v2-strict`。其它 strict profile 需要显式传入：
 
 ```powershell
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify --list-profiles
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar verify --list-profiles
 
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar verify `
   --profile official-v2.1-strict `
   --describe
 ```
 
 ```powershell
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar verify `
   --profile official-v2.1-strict `
   .\ops\eval-reports\20260601-v2-009-contract-audit-5x-net\runs\20260601-v2-009-contract-audit-5x-net-run01\llm-memory-eval-*.json
 ```
 
 ```powershell
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar verify `
   --profile official-v2.1-extended-strict `
   --describe
 ```
@@ -251,7 +251,7 @@ mvn -pl vortex-app -am -DskipTests package
 再校验报告：
 
 ```powershell
-java -jar vortex-app/target/vortex-app-0.1.0-SNAPSHOT-eval-cli.jar verify `
+java -jar vortex-app/target/vortex-app-0.1.0-eval-cli.jar verify `
   ops/eval-reports/20260529-real-bge-v2-006/llm-memory-eval-20260529-140002.json
 ```
 

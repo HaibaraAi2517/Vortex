@@ -82,7 +82,7 @@ $env:MINIO_KEY_PREFIX='runtime-recovery-benchmark/20260629-003/'
 $env:VORTEX_EXECUTION_ID_BACKEND='MEMORY'
 $env:VORTEX_SCHEDULER_ENABLED='false'
 $env:VORTEX_STORAGE_L2_MILVUS_COLLECTION='vortex_memory_runtime_recovery_20260629_003'
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar runtime-recovery-benchmark
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar runtime-recovery-benchmark
 ```
 
 ## P0 任务 2：真实 Main-Path Latency Benchmark
@@ -166,7 +166,7 @@ $env:VORTEX_EVAL_ASYNC_PIPELINE_BENCHMARK_ASYNC_PARALLELISM='4'
 $env:VORTEX_MEMORY_PIPELINE_MAX_WORKERS='4'
 $env:VORTEX_MEMORY_PIPELINE_QUEUE_CAPACITY='8'
 $env:VORTEX_SCHEDULER_ENABLED='false'
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar async-pipeline-latency-benchmark
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar async-pipeline-latency-benchmark
 ```
 
 ## 已实现/改动的主要代码范围
@@ -246,7 +246,7 @@ mvn -pl vortex-app -am -DskipTests package
 真实 CLI benchmark：
 
 ```powershell
-java -jar .\vortex-app\target\vortex-app-0.1.0-SNAPSHOT-eval-cli.jar async-pipeline-latency-benchmark
+java -jar .\vortex-app\target\vortex-app-0.1.0-eval-cli.jar async-pipeline-latency-benchmark
 ```
 
 结果：
