@@ -15,6 +15,10 @@ provider.
 
 ## Prerequisites
 
+Use Windows PowerShell 5.1 or later for `run.ps1`. The Bash path requires
+`bash`, `curl`, and `python3`. Both paths require Docker Compose v2 and at
+least 6 GB available memory.
+
 Start the quickstart stack from the repository root:
 
 ```powershell

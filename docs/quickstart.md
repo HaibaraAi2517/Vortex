@@ -3,22 +3,24 @@
 This quickstart is the container-first path for trying Vortex without any LLM
 API key. It starts Vortex plus Milvus, MinIO, Redis, and etcd.
 
-Validation status for `v0.1.0` on 2026-08-01:
+Validation status for `v0.1.1` on 2026-08-01:
 
 - The exact README PowerShell Quickstart command completed successfully.
-- Docker built `vortex-app-0.1.0-exec.jar` and started Vortex, Milvus, MinIO,
+- Docker built `vortex-app-0.1.1-exec.jar` and started Vortex, Milvus, MinIO,
   Redis, and etcd.
 - `/actuator/health` returned `UP`.
 - The demo stored and recalled one durable memory fragment.
 - A worker was killed after checkpointing, then the task recovered with
   `nodeCount=1` and continued to the next checkpoint.
 - `mvn -B clean verify` passed `548` tests with zero failures, errors, or skips.
-- JaCoCo reported `74.25%` aggregate line coverage across the five code modules.
+- JaCoCo reported `74.26%` aggregate line coverage across the five code modules.
 
 ## Prerequisites
 
 - Docker Desktop or Docker Engine with Compose
 - At least 6 GB available memory for the app and storage services
+- Windows: Windows PowerShell 5.1 or later
+- Linux/macOS: `bash`, `curl`, and `python3`
 
 ## Run The End-To-End Quickstart
 

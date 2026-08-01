@@ -3,6 +3,7 @@ package com.vortex.kernel.hmc;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.dto.RerankerType;
 import com.vortex.common.dto.RetrievalMode;
 import com.vortex.common.model.CheckpointMetadata;
 import com.vortex.common.model.MemoryFragment;
@@ -75,6 +76,7 @@ class AsyncMemoryPipelineTest {
                     .tags(List.of("write-through"))
                     .retrievalMode(RetrievalMode.HYBRID)
                     .rerankEnabled(true)
+                    .rerankerType(RerankerType.LINEAR_SCORE_FUSION)
                     .topK(3)
                     .tokenBudget(256)
                     .build());

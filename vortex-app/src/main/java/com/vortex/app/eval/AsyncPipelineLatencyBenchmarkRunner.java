@@ -3,6 +3,7 @@ package com.vortex.app.eval;
 import com.vortex.common.dto.RecallDiagnostics;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.dto.RerankerType;
 import com.vortex.common.dto.RetrievalMode;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.kernel.generation.PromptAssembler;
@@ -459,6 +460,8 @@ public class AsyncPipelineLatencyBenchmarkRunner {
                 .tokenBudget(Math.max(256, properties.getRecallTokenBudget()))
                 .tags(List.of("main-path-latency-benchmark", service))
                 .retrievalMode(RetrievalMode.HYBRID)
+                .rerankEnabled(true)
+                .rerankerType(RerankerType.LINEAR_SCORE_FUSION)
                 .scenario(properties.getLearningScenario())
                 .build();
     }

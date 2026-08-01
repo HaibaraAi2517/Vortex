@@ -1,11 +1,11 @@
 # Vortex
 
 <p align="center">
-  English | <a href="README_zh.md">简体中文</a>
+  English | <strong><a href="README_zh.md">简体中文（面试版）</a></strong>
 </p>
 
 [![CI](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml/badge.svg)](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml)
-[![Release: v0.1.0](https://img.shields.io/badge/release-v0.1.0-2EA44F.svg)](docs/releases/v0.1.0.md)
+[![Release: v0.1.1](https://img.shields.io/badge/release-v0.1.1-2EA44F.svg)](docs/releases/v0.1.1.md)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](pom.xml)
 [![Spring Boot 3.3](https://img.shields.io/badge/Spring%20Boot-3.3-6DB33F.svg)](vortex-app/pom.xml)
@@ -15,10 +15,14 @@
 retrieve the right context, and resume after crashes. Built with Java 21,
 Spring Boot, Milvus, MinIO, Redis, and Caffeine.**
 
-`v0.1.0` is the stable, evidence-backed portfolio release. Vortex is an
+`v0.1.1` is the stable, evidence-backed portfolio release. Vortex is an
 infrastructure kernel rather than a hosted SaaS: the repository keeps code,
 deterministic benchmarks, failure-injection evidence, and reproduction paths
 together.
+
+Release verification: `548` tests with zero failures, `13/13` Docker integration
+cases, and `74.26%` aggregate line coverage. See the
+[v0.1.1 release notes](docs/releases/v0.1.1.md).
 
 <p align="center">
   <a href="#quick-start"><b>Quick Start</b></a> ·
@@ -46,12 +50,13 @@ flowchart TB
 
     subgraph R[Recall path]
         direction LR
-        K --> KW[Keyword candidates]
-        K --> VC[Vector candidates]
-        KW --> H[Hybrid merge and filters]
+        K --> VC[Vector candidates - default]
+        K -. optional .-> KW[Keyword candidates]
+        KW --> H[Candidate filters and merge]
         VC --> H
-        H --> B[Rerank and token budget]
-        B --> CTX[Context returned to Agent]
+        H --> B[Optional linear or gated Cross-Encoder rerank]
+        B --> T[Token budget]
+        T --> CTX[Context returned to Agent]
     end
 
     subgraph S[Recovery path]
@@ -68,11 +73,21 @@ run behind a bounded pipeline; recall and recovery remain separate kernel paths.
 This boundary is the central latency, consistency, and failure-recovery decision
 in the project.
 
+The public recall contract defaults to `VECTOR_ONLY` with reranking disabled.
+`HYBRID`, linear score fusion, and the gated Cross-Encoder remain explicit
+opt-in paths.
+
 ## Quick Start
 
-Prerequisite: Docker Desktop or Docker Engine with Compose and at least 6 GB
-available memory. One command builds the stack, waits for health, stores and
-recalls memory, kills a worker after checkpointing, and resumes the task:
+Prerequisites:
+
+- Docker Desktop or Docker Engine with Compose v2
+- At least 6 GB available memory
+- Windows command: Windows PowerShell 5.1 or later
+- Linux/macOS command: `bash`, `curl`, and `python3`
+
+One command builds the stack, waits for health, stores and recalls memory, kills
+a worker after checkpointing, and resumes the task:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\run.ps1 -StartQuickstart
@@ -88,7 +103,7 @@ A successful run prints `WITH VORTEX: recalled durable memory`, then
 `WITH VORTEX: recovered task ...`, and finishes with
 `No external LLM API key was used.` Stop the stack with:
 
-```powershell
+```bash
 docker compose -f docker-compose.quickstart.yml down
 ```
 
@@ -106,8 +121,8 @@ guarantees.
 | Area | Result | Evidence |
 | --- | --- | --- |
 | LongMemEval recall | On the official LongMemEval oracle, a 120-case case-isolated evaluation completed five modes and `600` paired runs with `0` errors. `VectorOnly` reached fragment Recall@5 `0.8094` and exceeded `KeywordOnly` by `+0.1856`, paired 95% CI `[+0.1086, +0.2632]`. | [LongMemEval evaluation report](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md) |
-| Cross-Encoder gate | A pinned ONNX Cross-Encoder DEV candidate changed ordering in `120/120` cases but failed five frozen quality and latency rules. `VectorOnly` remains the default; validation and reserve were not run. | [Cross-Encoder DEV decision](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
-| Main-path latency | With synchronous raw-memory L1 write-through and final processing in a bounded background pipeline, measured P99 fell from `818.82 ms` to `268.65 ms` (`-67.19%`) over 100 cases per mode. L1 visibility at return and eventual L2/L3 readiness were both `100%`. | [Write-through latency evidence](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md) |
+| Cross-Encoder gate | A pinned ONNX Cross-Encoder DEV candidate changed ordering in `120/120` cases but failed five frozen quality and latency rules. `VectorOnly` remains the public request default and model-promotion baseline; validation and reserve were not run. | [Cross-Encoder DEV decision](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
+| Main-path latency | With synchronous pre-extraction chunking and local embedding for L1 write-through, then final processing in a bounded background pipeline, measured P99 fell from `818.82 ms` to `268.65 ms` (`-67.19%`) over 100 cases per mode. L1 visibility at return and eventual L2/L3 readiness were both `100%`. | [Write-through latency evidence](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md) |
 | Runtime recovery | The deterministic fault-injection matrix passed `32/32` covered cases across service restart, tool failure, LLM exception, state integrity, and concurrency categories. | [Runtime recovery evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md) |
 
 Recall is oracle-fragment retrieval, not answer accuracy. Latency is from a
@@ -123,16 +138,20 @@ exact scope; the rejected Cross-Encoder result is not evidence of model gain.
 memory made the request path pay for work that the caller did not need before
 return.
 
-**Decision.** Vortex keeps raw-memory L1 write-through inside the synchronous
-boundary, then moves final extraction, L2 indexing, and L3 archival to a bounded
-pipeline with retry and backpressure. The caller gets read-your-own-write
-semantics without waiting for all durable tiers.
+**Decision.** Vortex synchronously splits the pre-extraction memory, creates its
+local embedding, and admits the chunks to L1. Final extraction, L2 indexing, and
+L3 archival move to a bounded pipeline with retry and backpressure. The caller
+gets read-your-own-write semantics without waiting for all durable tiers.
 
 **Trade-off.** The design accepts eventual L2/L3 readiness and must expose
 pipeline status and failure handling. In return, deterministic 100-case runs
 reduced main-path P99 from `818.82 ms` to `268.65 ms` while preserving `100%`
 L1 visibility at return and eventual L2/L3 readiness. See the
 [write-through latency evidence](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md).
+
+**Implementation.** [AsyncMemoryPipeline](vortex-kernel/src/main/java/com/vortex/kernel/hmc/AsyncMemoryPipeline.java)
+defines the bounded handoff; [HierarchicalMemoryController](vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java)
+owns chunking, local embedding, and L1 admission.
 
 ### 2. Prefer an auditable retrieval baseline over an unproven reranker
 
@@ -142,14 +161,21 @@ reranker can appear useful simply because it changes ordering.
 **Decision.** The contaminated result was discarded, LongMemEval was rerun with
 case isolation, and model promotion was placed behind five frozen quality and
 latency gates. The pinned ONNX Cross-Encoder changed `120/120` rankings but
-failed the gate, so `VectorOnly` remains the default.
+failed the gate. The public request default therefore remains `VectorOnly`
+with reranking disabled; Hybrid, linear fusion, and Cross-Encoder paths require
+an explicit request.
 
-**Trade-off.** Vortex gives up speculative reranking gain and keeps a simpler,
-lower-latency serving path until evidence clears the gate. The isolated
-120-case run reached fragment Recall@5 `0.8094`, `+0.1856` over
-`KeywordOnly`, with paired 95% CI `[+0.1086, +0.2632]`. See the
+**Trade-off.** Vortex gives up speculative Cross-Encoder gain and keeps a
+simpler, lower-latency default while retaining Hybrid and linear fusion as
+explicit scenario-level options. The isolated 120-case run reached fragment
+Recall@5 `0.8094`, `+0.1856` over `KeywordOnly`, with paired 95% CI
+`[+0.1086, +0.2632]`. See the
 [LongMemEval report](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md)
 and [Cross-Encoder decision](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md).
+
+**Implementation.** [RecallQuery](vortex-common/src/main/java/com/vortex/common/dto/RecallQuery.java)
+defines the evidence-backed defaults; [RecallOrchestrator](vortex-kernel/src/main/java/com/vortex/kernel/hmc/RecallOrchestrator.java)
+implements the explicit retrieval and reranker branches.
 
 ### 3. Combine Snapshot, WAL, and Execution ID instead of claiming distributed exactly-once
 
@@ -168,6 +194,11 @@ not distributed consensus or cross-region exactly-once. The fault-injection
 matrix passed `32/32` covered cases across five failure categories. See the
 [runtime recovery evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md).
 
+**Implementation.** [SnapshotService](vortex-kernel/src/main/java/com/vortex/kernel/snapshot/SnapshotService.java)
+persists checkpoints, [RecoveryEngine](vortex-kernel/src/main/java/com/vortex/kernel/snapshot/RecoveryEngine.java)
+replays runtime state, and [ExecutionIdService](vortex-app/src/main/java/com/vortex/app/runtime/ExecutionIdService.java)
+guards externally visible execution.
+
 ## Implementation Surface
 
 | Surface | What is implemented |
@@ -177,97 +208,27 @@ matrix passed `32/32` covered cases across five failure categories. See the
 | Runtime state | Task DAG mutation, checkpoint, WAL replay, branch/switch/merge, and Execution ID idempotency |
 | Storage | L1 Caffeine, L2 Milvus, L3 MinIO, plus optional Redis-backed Execution ID state |
 | Model integration | Vortex generation/embedding contracts, Spring AI example, and LangChain4j adapters |
+| Operations | Health catalog, SLO snapshots, Prometheus metrics, deterministic benchmarks, and governance checks |
 
 The public REST surface is available through Swagger UI at
 `http://localhost:8080/swagger-ui.html` after Quickstart. Detailed endpoints
 and configuration remain in [docs/quickstart.md](docs/quickstart.md) and
-[docs/architecture.md](docs/architecture.md).
+[docs/architecture.md](docs/architecture.md). CI and benchmark reproduction
+commands are linked from [docs/benchmark.md](docs/benchmark.md).
 
-## Build And Test
-
-CI runs unit tests, app integration verification, baseline governance, and
-learning governance:
-
-```powershell
-mvn -B test -pl vortex-common,vortex-kernel,vortex-storage,vortex-langchain4j -am
-mvn -B verify -pl vortex-app -am
-./ops/run-baseline-governance-check.ps1 -SkipMavenTest -SkipPackage
-./ops/run-learning-governance-check.ps1 -SkipMavenTest -SkipPackage -SkipLearningRun
-```
-
-`vortex-app` integration verification starts Docker Compose during
-`pre-integration-test` and stops it during `post-integration-test`.
-
-## Evidence And Reproduction
-
-- [Benchmark scope and headline results](docs/benchmark.md)
-- [Architecture and component boundaries](docs/architecture.md)
-- [LongMemEval case-isolated evaluation](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md)
-- [Main-path write-through latency evidence](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md)
-- [Runtime recovery fault-injection evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md)
-- [Stable v0.1.0 release notes](docs/releases/v0.1.0.md)
-
-## Project Status
+## Project Boundaries
 
 For positioning against plain vector RAG and hand-rolled memory layers, see
 [docs/comparison.md](docs/comparison.md). The stable portfolio release is
-[`v0.1.0`](docs/releases/v0.1.0.md); the original alpha notes remain archived.
+[`v0.1.1`](docs/releases/v0.1.1.md); earlier release notes remain archived.
 
-Implemented and covered by code/tests/runbooks:
-
-- Hierarchical memory store, recall, feedback, pin/unpin, and eviction.
-- Vector, keyword, hybrid, and rerank retrieval paths.
-- Async memory ingest pipeline with persistence status tracking.
-- Task DAG, checkpoint, WAL replay, branch/switch/merge, and recovery.
-- Health catalog, SLO snapshots, Prometheus metrics, and monitoring assets.
-- Deterministic benchmark and governance harnesses.
-- Optional LangChain4j adapters for LLM generation and embedding providers.
-
-Not claimed yet:
+Vortex does not claim:
 
 - Production-grade auth, RBAC, tenant isolation, rate limits, or audit logs.
 - Long-duration high-concurrency production capacity results.
 - Distributed consensus, multi-node scheduling, or cross-region replication.
 - Full external process-manager crash-loop orchestration.
 - Full Agent runtime integration with real LLM generation inside the latency benchmark.
-
-## Repository Map
-
-```text
-.
-|-- vortex-common/        shared contracts, DTOs, serialization, exceptions
-|-- vortex-storage/       L1/L2/L3 storage APIs and implementations
-|-- vortex-kernel/        memory, retrieval, recovery, snapshot, paging, learning
-|-- vortex-langchain4j/   optional ChatModel and EmbeddingModel adapters
-|-- vortex-app/           Spring Boot API, eval CLI, benchmark runners, tests
-|-- ops/                  runbooks, evidence reports, CI/governance scripts
-|-- docs/                 architecture and benchmark summaries
-|-- demo/                 demo scripts
-|-- examples/             focused runnable examples
-|-- models/bge-small-zh/  default local BGE-Small model files
-|-- docker-compose.yml    etcd, Milvus, MinIO, Redis
-`-- pom.xml               Maven multi-module parent
-```
-
-## Tech Stack
-
-- Java 21 with preview enabled
-- Spring Boot 3.3.4
-- Maven multi-module build
-- Caffeine 3.1.8
-- Milvus SDK 2.4.4
-- MinIO 8.5.11
-- Redis 7.2 optional Execution ID backend
-- Kryo 5.6.0
-- DJL 0.28.0 and ONNX Runtime 1.18.0 for local BGE embeddings
-- LangChain4j 1.18.0 for optional LLM and embedding adapters
-- Testcontainers 2.0.2
-
-## Review Guide
-
-For a focused code review, start with the system diagram and the three decisions
-above, then use the linked evidence reports to inspect the benchmark boundaries.
-The repository map above points to the corresponding implementation.
 
 ## License
 

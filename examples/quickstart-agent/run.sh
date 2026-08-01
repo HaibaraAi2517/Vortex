@@ -88,7 +88,7 @@ echo "Demo namespace: $NAMESPACE"
 
 echo
 echo "== 1. Memory off vs memory on =="
-MEMORY='Demo session facts: project codename is Aurora Ledger; launch goal is a star-ready GitHub README; preferred stack is Java 21 with Milvus and MinIO.'
+MEMORY='Demo session facts: project codename is Aurora Ledger; launch goal is an interviewer-ready architecture review; preferred stack is Java 21 with Milvus and MinIO.'
 STORE_JSON="$(post_json /api/v1/memory/store "{\"content\":\"$MEMORY\",\"namespace\":\"$NAMESPACE\",\"tags\":[\"demo\",\"memory-on-off\"]}")"
 echo "Stored fragments: $(printf '%s' "$STORE_JSON" | json_field "['count']")"
 echo "Question: What is the project codename and launch goal?"

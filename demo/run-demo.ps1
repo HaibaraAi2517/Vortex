@@ -71,7 +71,7 @@ try {
     (Join-Path $projectRoot "models\bge-small-zh")
   }
 
-  $jarPath = Join-Path $projectRoot "vortex-app\target\vortex-app-0.1.0-exec.jar"
+  $jarPath = Join-Path $projectRoot "vortex-app\target\vortex-app-0.1.1-exec.jar"
   if (-not (Test-Path $jarPath)) {
     throw "Jar not found: $jarPath"
   }

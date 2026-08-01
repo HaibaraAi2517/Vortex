@@ -156,7 +156,7 @@ Write-Host "Vortex base URL: $BaseUrl"
 Write-Host "Demo namespace: $Namespace"
 
 Write-Section "1. Memory off vs memory on"
-$memory = "Demo session facts: project codename is Aurora Ledger; launch goal is a star-ready GitHub README; preferred stack is Java 21 with Milvus and MinIO."
+$memory = "Demo session facts: project codename is Aurora Ledger; launch goal is an interviewer-ready architecture review; preferred stack is Java 21 with Milvus and MinIO."
 
 $store = Invoke-VortexJson -Method Post -Path "/api/v1/memory/store" -Body @{
   content = $memory

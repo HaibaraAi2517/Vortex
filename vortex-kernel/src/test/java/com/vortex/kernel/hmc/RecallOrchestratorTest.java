@@ -186,6 +186,7 @@ class RecallOrchestratorTest {
                 .topK(1)
                 .tokenBudget(100)
                 .tags(List.of("role:user"))
+                .retrievalMode(RetrievalMode.HYBRID)
                 .build());
 
         assertThat(result.getFragments()).hasSize(1);
@@ -294,6 +295,9 @@ class RecallOrchestratorTest {
                 .topK(1)
                 .tokenBudget(100)
                 .tags(List.of("role:user"))
+                .retrievalMode(RetrievalMode.HYBRID)
+                .rerankEnabled(true)
+                .rerankerType(RerankerType.LINEAR_SCORE_FUSION)
                 .build());
 
         assertThat(result.getFragments()).hasSize(1);
@@ -338,7 +342,7 @@ class RecallOrchestratorTest {
     }
 
     @Test
-    void vectorOnlyRecallSkipsKeywordCandidateCollection() {
+    void defaultRecallUsesVectorOnlyWithoutRerank() {
         MemoryFragment exact = fragment("kw-vector-only", "ns", "Pegasus owner is avery-deploy@example.com", List.of("role:user"), 4);
         l2.seedSearchResults(List.of());
         l2.seedNamespaceResults(List.of(exact));
@@ -349,12 +353,14 @@ class RecallOrchestratorTest {
                 .topK(1)
                 .tokenBudget(100)
                 .tags(List.of("role:user"))
-                .retrievalMode(RetrievalMode.VECTOR_ONLY)
                 .build());
 
         assertThat(result.getFragments()).isEmpty();
         assertThat(result.getDiagnostics().getRetrievalMode()).isEqualTo(RetrievalMode.VECTOR_ONLY.name());
         assertThat(result.getDiagnostics().getKeywordCandidateCount()).isZero();
+        assertThat(result.getDiagnostics().getRerankerType()).isEqualTo(RerankerType.NONE);
+        assertThat(result.getDiagnostics().getRerankEffectStatus())
+                .isEqualTo(RerankEffectStatus.NOT_EXECUTED);
     }
 
     @Test

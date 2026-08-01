@@ -1,9 +1,11 @@
 package com.vortex.kernel.hmc;
 
-import com.vortex.common.dto.RecallQuery;
-import com.vortex.common.dto.RecallResult;
 import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.MemoryScenario;
+import com.vortex.common.dto.RecallQuery;
+import com.vortex.common.dto.RecallResult;
+import com.vortex.common.dto.RerankerType;
+import com.vortex.common.dto.RetrievalMode;
 import com.vortex.common.health.MemoryHealthCodes;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.common.model.PageState;
@@ -1172,6 +1174,9 @@ class HierarchicalMemoryControllerTest {
                 .namespace("ns")
                 .topK(3)
                 .tokenBudget(100)
+                .retrievalMode(RetrievalMode.HYBRID)
+                .rerankEnabled(true)
+                .rerankerType(RerankerType.LINEAR_SCORE_FUSION)
                 .build());
 
         RecallResult.ScoredFragment recalled = result.getFragments().stream()

@@ -23,7 +23,7 @@ FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
-COPY --from=build /workspace/vortex-app/target/vortex-app-0.1.0-exec.jar /app/vortex-app.jar
+COPY --from=build /workspace/vortex-app/target/vortex-app-0.1.1-exec.jar /app/vortex-app.jar
 COPY --from=build /workspace/models /app/models
 
 EXPOSE 8080

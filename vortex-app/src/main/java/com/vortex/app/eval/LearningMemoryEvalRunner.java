@@ -6,6 +6,8 @@ import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.dto.RerankerType;
+import com.vortex.common.dto.RetrievalMode;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.kernel.embedding.TokenCounter;
 import com.vortex.kernel.hmc.AdaptiveWeightLearner;
@@ -313,6 +315,9 @@ public class LearningMemoryEvalRunner {
                 .topK(effectiveTopK(evalCase))
                 .tokenBudget(effectiveTokenBudget(evalCase))
                 .scenario(scenario)
+                .retrievalMode(RetrievalMode.HYBRID)
+                .rerankEnabled(true)
+                .rerankerType(RerankerType.LINEAR_SCORE_FUSION)
                 .tags(recallTags(evalCase))
                 .build());
         List<RecallResult.ScoredFragment> fragments = result == null || result.getFragments() == null

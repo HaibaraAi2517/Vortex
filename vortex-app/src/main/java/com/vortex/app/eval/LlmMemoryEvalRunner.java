@@ -9,6 +9,7 @@ import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.RecallDiagnostics;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
+import com.vortex.common.dto.RerankerType;
 import com.vortex.common.exception.GenerationException;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.kernel.embedding.TokenCounter;
@@ -274,6 +275,8 @@ public class LlmMemoryEvalRunner {
                         .tokenBudget(properties.getRecallTokenBudget())
                         .scenario(properties.getLearningScenario())
                         .retrievalMode(mode.retrievalMode())
+                        .rerankEnabled(true)
+                        .rerankerType(RerankerType.LINEAR_SCORE_FUSION)
                         .tags(recallTags(evalCase))
                         .build());
                 latencyBreakdown.recallLatencyMs = elapsedMillis(recallStartedAt);

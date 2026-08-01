@@ -6,7 +6,7 @@ Stored fragments: 1
 Question: What is the project codename and launch goal?
 NO MEMORY: I only see the current question, so I do not know the codename or launch goal.
 WITH VORTEX: recalled durable memory:
-- Demo session facts: project codename is Aurora Ledger; launch goal is a star-ready GitHub README; preferred stack is Java 21 with Milvus and MinIO.
+- Demo session facts: project codename is Aurora Ledger; launch goal is an interviewer-ready architecture review; preferred stack is Java 21 with Milvus and MinIO.
 
 == 2. Local crash vs Vortex recovery ==
 Worker process reached checkpoint; killing PID 32736.

@@ -39,15 +39,15 @@ public class RecallQuery {
     @Builder.Default
     private MemoryScenario scenario = MemoryScenario.CHAT;
 
-    /** Retrieval pipeline variant. HYBRID combines lexical and vector candidates. */
+    /** Retrieval pipeline variant. Vector-only is the evidence-backed default. */
     @Builder.Default
-    private RetrievalMode retrievalMode = RetrievalMode.HYBRID;
+    private RetrievalMode retrievalMode = RetrievalMode.VECTOR_ONLY;
 
     /** Whether to apply the recall reranker after candidate generation. */
     @Builder.Default
-    private boolean rerankEnabled = true;
+    private boolean rerankEnabled = false;
 
-    /** Reranker implementation to use when reranking is enabled. */
+    /** Reranker implementation to use when reranking is explicitly enabled. */
     @Builder.Default
     private RerankerType rerankerType = RerankerType.LINEAR_SCORE_FUSION;
 }
