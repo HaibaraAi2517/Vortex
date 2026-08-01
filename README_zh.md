@@ -100,6 +100,7 @@ flowchart LR
 ```text
 vortex-app      REST API, Actuator, OpenAPI, eval CLI, benchmark runners
 vortex-kernel   memory orchestration, recall, eviction, async pipeline, recovery
+vortex-langchain4j  optional ChatModel and EmbeddingModel adapters
 vortex-storage  L1 Caffeine, L2 Milvus, L3 MinIO
 vortex-common   shared models, DTOs, serialization, exceptions, contracts
 ```
@@ -151,7 +152,7 @@ quickstart stack 运行后，可以试用 [examples/quickstart-agent](examples/q
 
 它会展示 memory off/on 的差异，并强杀一个 worker 进程后从 Vortex checkpoint 恢复任务。不需要任何外部 LLM API key。
 
-Java 用户也可以试用 [Spring AI ChatClient advisor example](examples/spring-ai-integration) 和 [LangChain4j AiServices transformer example](examples/langchain4j-integration)。两者都会把 Vortex recall 注入模型上下文，同样不需要外部 LLM key。
+Java 用户也可以试用 [Spring AI ChatClient advisor example](examples/spring-ai-integration) 和 [LangChain4j AiServices transformer example](examples/langchain4j-integration)。两者都会把 Vortex recall 注入模型上下文，同样不需要外部 LLM key。需要直接接入模型提供方时，[vortex-langchain4j 模块](vortex-langchain4j) 会把 LangChain4j `ChatModel`、`EmbeddingModel` 适配到 Vortex 的 `GenerationService`、`EmbeddingService` 契约。
 
 ## 试用 Memory API
 
@@ -278,6 +279,7 @@ Vortex 与纯向量 RAG、手写 memory layer 的定位差异见
 - Task DAG、checkpoint、WAL replay、branch/switch/merge 和 recovery。
 - Health catalog、SLO snapshot、Prometheus metrics 和监控资产。
 - Deterministic benchmark 与 governance harness。
+- 面向 LLM generation 与 embedding provider 的可选 LangChain4j 适配层。
 
 暂不声称已经具备：
 
@@ -294,6 +296,7 @@ Vortex 与纯向量 RAG、手写 memory layer 的定位差异见
 |-- vortex-common/        shared contracts, DTOs, serialization, exceptions
 |-- vortex-storage/       L1/L2/L3 storage APIs and implementations
 |-- vortex-kernel/        memory, retrieval, recovery, snapshot, paging, learning
+|-- vortex-langchain4j/   optional ChatModel and EmbeddingModel adapters
 |-- vortex-app/           Spring Boot API, eval CLI, benchmark runners, tests
 |-- ops/                  runbooks, evidence reports, CI/governance scripts
 |-- docs/                 architecture and benchmark summaries
@@ -315,6 +318,7 @@ Vortex 与纯向量 RAG、手写 memory layer 的定位差异见
 - Redis 7.2 optional Execution ID backend
 - Kryo 5.6.0
 - DJL 0.28.0 and ONNX Runtime 1.18.0 for local BGE embeddings
+- LangChain4j 1.18.0 optional LLM and embedding adapters
 - Testcontainers 2.0.2
 
 ## 社区协作

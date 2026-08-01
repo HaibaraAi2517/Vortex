@@ -40,6 +40,26 @@ L1 is optimized for hot low-latency access, L2 for vector retrieval and
 recovery after eviction, and L3 for cold fragments and checkpoint/WAL-related
 artifacts.
 
+L1 capacity is enforced by the kernel admission coordinator rather than by a
+second Caffeine size policy. Capacity check, semantic eviction, and insertion
+run under one admission lock. Pinned fragments are excluded from victim
+selection; repeated recalls refresh recency and reinforce importance, so access
+history contributes to retention. If the protected working set leaves no
+effective capacity, the incoming fragment is rejected from L1 instead of
+silently displacing a pinned entry.
+
+## Model Provider Adapters
+
+The optional `vortex-langchain4j` module keeps provider integration outside the
+memory kernel. `LangChain4jGenerationAdapter` maps a LangChain4j `ChatModel` to
+Vortex's `GenerationService`, while `LangChain4jEmbeddingAdapter` maps an
+`EmbeddingModel` to `EmbeddingService`. Provider authentication, retry, timeout,
+and transport policy remain owned by the supplied LangChain4j model.
+
+The default application path remains OpenAI-compatible generation plus local
+ONNX BGE embeddings. The adapter module is an explicit integration choice and
+does not change the benchmark provider path.
+
 ## Runtime Recovery Flow
 
 ```mermaid

@@ -24,7 +24,7 @@ jobs:
           cache: maven
 
       - name: Unit tests
-        run: mvn -B test -pl vortex-common,vortex-kernel,vortex-storage -am
+        run: mvn -B test -pl vortex-common,vortex-kernel,vortex-storage,vortex-langchain4j -am
 
       - name: App integration verify
         run: mvn -B verify -pl vortex-app -am

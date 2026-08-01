@@ -109,6 +109,7 @@ flowchart LR
 ```text
 vortex-app      REST API, Actuator, OpenAPI, eval CLI, benchmark runners
 vortex-kernel   memory orchestration, recall, eviction, async pipeline, recovery
+vortex-langchain4j  optional ChatModel and EmbeddingModel adapters
 vortex-storage  L1 Caffeine, L2 Milvus, L3 MinIO
 vortex-common   shared models, DTOs, serialization, exceptions, contracts
 ```
@@ -160,7 +161,7 @@ Transcript from the recorded local run: [docs/assets/quickstart-agent-demo.txt](
 
 It shows memory off/on behavior and kills a worker process before recovering the task from a Vortex checkpoint. No external LLM API key is required.
 
-Java users can also try the [Spring AI ChatClient advisor example](examples/spring-ai-integration) and [LangChain4j AiServices transformer example](examples/langchain4j-integration). Both inject Vortex recall into model context without requiring an external LLM key.
+Java users can also try the [Spring AI ChatClient advisor example](examples/spring-ai-integration) and [LangChain4j AiServices transformer example](examples/langchain4j-integration). Both inject Vortex recall into model context without requiring an external LLM key. For direct model-provider integration, the [vortex-langchain4j module](vortex-langchain4j) adapts LangChain4j `ChatModel` and `EmbeddingModel` implementations to Vortex's `GenerationService` and `EmbeddingService` contracts.
 
 ## Try The Memory API
 
@@ -293,6 +294,7 @@ Implemented and covered by code/tests/runbooks:
 - Task DAG, checkpoint, WAL replay, branch/switch/merge, and recovery.
 - Health catalog, SLO snapshots, Prometheus metrics, and monitoring assets.
 - Deterministic benchmark and governance harnesses.
+- Optional LangChain4j adapters for LLM generation and embedding providers.
 
 Not claimed yet:
 
@@ -309,6 +311,7 @@ Not claimed yet:
 |-- vortex-common/        shared contracts, DTOs, serialization, exceptions
 |-- vortex-storage/       L1/L2/L3 storage APIs and implementations
 |-- vortex-kernel/        memory, retrieval, recovery, snapshot, paging, learning
+|-- vortex-langchain4j/   optional ChatModel and EmbeddingModel adapters
 |-- vortex-app/           Spring Boot API, eval CLI, benchmark runners, tests
 |-- ops/                  runbooks, evidence reports, CI/governance scripts
 |-- docs/                 architecture and benchmark summaries
@@ -330,6 +333,7 @@ Not claimed yet:
 - Redis 7.2 optional Execution ID backend
 - Kryo 5.6.0
 - DJL 0.28.0 and ONNX Runtime 1.18.0 for local BGE embeddings
+- LangChain4j 1.18.0 for optional LLM and embedding adapters
 - Testcontainers 2.0.2
 
 ## Community
