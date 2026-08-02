@@ -27,6 +27,7 @@ cases, and `74.26%` aggregate line coverage. See the
 <p align="center">
   <a href="#quick-start"><b>Quick Start</b></a> ·
   <a href="#three-core-engineering-decisions"><b>Engineering Decisions</b></a> ·
+  <a href="docs/interview-guide.md"><b>Interview Guide</b></a> ·
   <a href="docs/benchmark.md"><b>Benchmarks</b></a> ·
   <a href="docs/architecture.md"><b>Detailed Architecture</b></a>
 </p>

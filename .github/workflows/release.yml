@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+    paths:
+      - '.github/workflows/release.yml'
+      - 'docs/releases/v*.md'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable tag to publish; defaults to the latest merged tag
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+          elif [[ -n "${REQUESTED_TAG}" ]]; then
+            tag="${REQUESTED_TAG}"
+          else
+            tag="$(git tag --merged HEAD --sort=-version:refname --list 'v[0-9]*' | head -n 1)"
+          fi
+
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "No stable semantic-version tag was resolved." >&2
+            exit 1
+          fi
+
+          notes_file="docs/releases/${tag}.md"
+          if [[ ! -f "${notes_file}" ]]; then
+            echo "Release notes not found: ${notes_file}" >&2
+            exit 1
+          fi
+
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          NOTES_FILE: ${{ steps.release.outputs.notes_file }}
+        run: |
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "GitHub Release ${RELEASE_TAG} already exists."
+            exit 0
+          fi
+
+          gh release create "${RELEASE_TAG}" \
+            --verify-tag \
+            --title "Vortex ${RELEASE_TAG}" \
+            --notes-file "${NOTES_FILE}"
