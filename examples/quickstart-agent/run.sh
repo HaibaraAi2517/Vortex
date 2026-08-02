@@ -47,7 +47,15 @@ worker_mode() {
   checkpoint_json="$(post_json "/api/v1/tasks/$task_id/checkpoint" '')"
   checkpoint_id="$(printf '%s' "$checkpoint_json" | json_field "['checkpointId']")"
 
-  python3 -c 'import json,sys; json.dump({"namespace":sys.argv[1],"taskId":sys.argv[2],"firstNodeId":sys.argv[3],"checkpointId":sys.argv[4]}, open(sys.argv[5], "w"))' \
+  python3 -c 'import json,os,sys
+state={"namespace":sys.argv[1],"taskId":sys.argv[2],"firstNodeId":sys.argv[3],"checkpointId":sys.argv[4]}
+target=sys.argv[5]
+pending=f"{target}.pending"
+with open(pending, "w", encoding="utf-8") as handle:
+    json.dump(state, handle)
+    handle.flush()
+    os.fsync(handle.fileno())
+os.replace(pending, target)' \
     "$namespace" "$task_id" "$node_id" "$checkpoint_id" "$state_file"
 
   while true; do
@@ -72,7 +80,7 @@ fi
 
 wait_vortex 180
 
-NAMESPACE="quickstart-agent-$(date +%Y%m%d%H%M%S)"
+NAMESPACE="${NAMESPACE:-quickstart-agent-$(date +%Y%m%d%H%M%S)-$$-$RANDOM}"
 STATE_FILE="${TMPDIR:-/tmp}/vortex-quickstart-agent-$NAMESPACE.json"
 
 cleanup() {
@@ -80,6 +88,7 @@ cleanup() {
     kill "$WORKER_PID" >/dev/null 2>&1 || true
   fi
   rm -f "$STATE_FILE"
+  rm -f "$STATE_FILE.pending"
 }
 trap cleanup EXIT
 
@@ -87,19 +96,47 @@ echo "Vortex base URL: $BASE_URL"
 echo "Demo namespace: $NAMESPACE"
 
 echo
-echo "== 1. Memory off vs memory on =="
-MEMORY='Demo session facts: project codename is Aurora Ledger; launch goal is an interviewer-ready architecture review; preferred stack is Java 21 with Milvus and MinIO.'
+echo "== 1. Store memory and run VectorOnly recall =="
+MEMORY="Demo session facts for $NAMESPACE: project codename is Aurora Ledger; launch goal is a stable architecture review; preferred stack is Java 21 with Milvus and MinIO."
 STORE_JSON="$(post_json /api/v1/memory/store "{\"content\":\"$MEMORY\",\"namespace\":\"$NAMESPACE\",\"tags\":[\"demo\",\"memory-on-off\"]}")"
 echo "Stored fragments: $(printf '%s' "$STORE_JSON" | json_field "['count']")"
 echo "Question: What is the project codename and launch goal?"
 echo "NO MEMORY: I only see the current question, so I do not know the codename or launch goal."
+echo "Recall request: retrievalMode=VECTOR_ONLY; rerankEnabled=false."
 
-RECALL_JSON="$(post_json /api/v1/memory/recall "{\"query\":\"What is the project codename and launch goal?\",\"namespace\":\"$NAMESPACE\",\"topK\":5,\"tokenBudget\":512}")"
-RECALL_COUNT="$(printf '%s' "$RECALL_JSON" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("fragments", [])))')"
+RECALL_JSON=""
+RECALL_COUNT=0
+for _ in $(seq 1 10); do
+  RECALL_JSON="$(post_json /api/v1/memory/recall "{\"query\":\"What is the project codename and launch goal?\",\"namespace\":\"$NAMESPACE\",\"topK\":5,\"tokenBudget\":512,\"retrievalMode\":\"VECTOR_ONLY\",\"rerankEnabled\":false}")"
+  RECALL_COUNT="$(printf '%s' "$RECALL_JSON" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("fragments", [])))')"
+  if [ "$RECALL_COUNT" -gt 0 ]; then
+    break
+  fi
+  sleep 1
+done
+
 if [ "$RECALL_COUNT" -eq 0 ]; then
   echo "ERROR: Vortex recall returned no fragments for namespace $NAMESPACE" >&2
   exit 1
 fi
+
+printf '%s' "$RECALL_JSON" | python3 -c 'import json,sys
+payload=json.load(sys.stdin)
+diagnostics=payload.get("diagnostics") or {}
+if diagnostics.get("retrievalMode") != "VECTOR_ONLY":
+    raise SystemExit("ERROR: recall diagnostics did not confirm VECTOR_ONLY retrieval")
+if diagnostics.get("rerankEnabled"):
+    raise SystemExit("ERROR: recall diagnostics reported reranking enabled")
+contents=[]
+for item in payload.get("fragments", []):
+    fragment=item.get("fragment") or item
+    if fragment.get("content"):
+        contents.append(fragment["content"])
+recalled="\n".join(contents)
+if "Aurora Ledger" not in recalled or "stable architecture review" not in recalled:
+    raise SystemExit("ERROR: recall did not return the expected durable facts")
+print("Recall diagnostics: retrievalMode={}; rerankEnabled={}.".format(
+    diagnostics.get("retrievalMode"), str(diagnostics.get("rerankEnabled")).lower()))'
 
 echo "WITH VORTEX: recalled durable memory:"
 printf '%s' "$RECALL_JSON" | python3 -c 'import json,sys
@@ -111,7 +148,7 @@ for item in payload.get("fragments", []):
         print(f"- {content}")'
 
 echo
-echo "== 2. Local crash vs Vortex recovery =="
+echo "== 2. Checkpoint, terminate worker, and recover =="
 bash "$SCRIPT_DIR/run.sh" worker "$BASE_URL" "$NAMESPACE" "$STATE_FILE" &
 WORKER_PID=$!
 

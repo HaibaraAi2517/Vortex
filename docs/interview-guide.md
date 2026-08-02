@@ -14,8 +14,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\
 确认脚本完成后保留 Quickstart stack。现场演示直接运行：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\run.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\demo\run-live-demo.ps1
 ```
+
+正式使用前连续验证两轮：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\demo\run-live-demo.ps1 -Runs 2
+```
+
+2026-08-02 在预热后的 Windows Quickstart 环境完成重复性验证：PowerShell
+连续 `2/2` 通过，单轮耗时分别为 `1.96s` 和 `1.38s`；Git Bash 入口也完成
+同一链路验证。耗时只代表本机预热环境，脚本本身以每轮 `300s` 为硬上限。
 
 结束后清理环境：
 
@@ -37,9 +47,11 @@ docker compose -f docker-compose.quickstart.yml down
 
 ```text
 NO MEMORY: I only see the current question ...
+Recall diagnostics: retrievalMode=VECTOR_ONLY; rerankEnabled=False.
 WITH VORTEX: recalled durable memory ...
 WITH VORTEX: recovered task ... nodeCount=1 ...
 No external LLM API key was used.
+LIVE DEMO PASS: 1/1 runs completed within 300 seconds each.
 ```
 
 ## 五个高概率追问

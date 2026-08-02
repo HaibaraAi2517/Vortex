@@ -76,6 +76,8 @@ function Invoke-RecallWithRetry {
       namespace = $Namespace
       topK = 5
       tokenBudget = 512
+      retrievalMode = "VECTOR_ONLY"
+      rerankEnabled = $false
     } -TimeoutSeconds 120
 
     if (@($recall.fragments).Count -gt 0) {
@@ -117,8 +119,10 @@ function Invoke-WorkerMode {
     checkpointId = $checkpoint.checkpointId
   } | ConvertTo-Json -Depth 5
 
+  $pendingStateFile = "$StateFile.pending"
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-  [System.IO.File]::WriteAllText($StateFile, $state, $utf8NoBom)
+  [System.IO.File]::WriteAllText($pendingStateFile, $state, $utf8NoBom)
+  Move-Item -LiteralPath $pendingStateFile -Destination $StateFile
 
   while ($true) {
     Start-Sleep -Seconds 5
@@ -134,7 +138,8 @@ $scriptRoot = Split-Path -Parent $PSCommandPath
 $repoRoot = Resolve-Path (Join-Path $scriptRoot "..\..")
 
 if ([string]::IsNullOrWhiteSpace($Namespace)) {
-  $Namespace = "quickstart-agent-" + (Get-Date -Format "yyyyMMddHHmmss")
+  $runId = [Guid]::NewGuid().ToString("N").Substring(0, 8)
+  $Namespace = "quickstart-agent-" + (Get-Date -Format "yyyyMMddHHmmss") + "-$runId"
 }
 
 if ($StartQuickstart) {
@@ -155,8 +160,8 @@ Wait-Vortex -TimeoutSeconds 180
 Write-Host "Vortex base URL: $BaseUrl"
 Write-Host "Demo namespace: $Namespace"
 
-Write-Section "1. Memory off vs memory on"
-$memory = "Demo session facts: project codename is Aurora Ledger; launch goal is an interviewer-ready architecture review; preferred stack is Java 21 with Milvus and MinIO."
+Write-Section "1. Store memory and run VectorOnly recall"
+$memory = "Demo session facts for ${Namespace}: project codename is Aurora Ledger; launch goal is a stable architecture review; preferred stack is Java 21 with Milvus and MinIO."
 
 $store = Invoke-VortexJson -Method Post -Path "/api/v1/memory/store" -Body @{
   content = $memory
@@ -167,19 +172,38 @@ $store = Invoke-VortexJson -Method Post -Path "/api/v1/memory/store" -Body @{
 Write-Host ("Stored fragments: {0}" -f $store.count)
 Write-Host "Question: What is the project codename and launch goal?"
 Write-Host "NO MEMORY: I only see the current question, so I do not know the codename or launch goal."
+Write-Host "Recall request: retrievalMode=VECTOR_ONLY; rerankEnabled=false."
 
 $recall = Invoke-RecallWithRetry -Query "What is the project codename and launch goal?" -Namespace $Namespace
 $contents = Get-FragmentContents -RecallResponse $recall
+
+if ($null -eq $recall.diagnostics -or $recall.diagnostics.retrievalMode -ne "VECTOR_ONLY") {
+  throw "Recall diagnostics did not confirm VECTOR_ONLY retrieval."
+}
+if ($recall.diagnostics.rerankEnabled) {
+  throw "Recall diagnostics reported reranking enabled."
+}
+
+$recalledText = $contents -join "`n"
+if ($recalledText -notlike "*Aurora Ledger*" -or $recalledText -notlike "*stable architecture review*") {
+  throw "Recall did not return the expected durable facts."
+}
+
+Write-Host ("Recall diagnostics: retrievalMode={0}; rerankEnabled={1}." -f $recall.diagnostics.retrievalMode, $recall.diagnostics.rerankEnabled)
 
 Write-Host "WITH VORTEX: recalled durable memory:"
 foreach ($content in $contents) {
   Write-Host ("- {0}" -f $content)
 }
 
-Write-Section "2. Local crash vs Vortex recovery"
+Write-Section "2. Checkpoint, terminate worker, and recover"
 $stateFile = Join-Path ([System.IO.Path]::GetTempPath()) ("vortex-quickstart-agent-{0}.json" -f $Namespace)
 if (Test-Path -LiteralPath $stateFile) {
   Remove-Item -LiteralPath $stateFile -Force
+}
+$pendingStateFile = "$stateFile.pending"
+if (Test-Path -LiteralPath $pendingStateFile) {
+  Remove-Item -LiteralPath $pendingStateFile -Force
 }
 
 $powerShellExe = if ($PSVersionTable.PSEdition -eq "Core") { "pwsh" } else { "powershell" }
@@ -248,6 +272,9 @@ try {
   }
   if (Test-Path -LiteralPath $stateFile) {
     Remove-Item -LiteralPath $stateFile -Force
+  }
+  if (Test-Path -LiteralPath $pendingStateFile) {
+    Remove-Item -LiteralPath $pendingStateFile -Force
   }
 }
 
