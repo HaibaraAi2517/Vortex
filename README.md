@@ -1,7 +1,7 @@
 # Vortex
 
 <p align="center">
-  English | <a href="README_zh.md">简体中文</a>
+  简体中文 | <a href="README_en.md">English</a>
 </p>
 
 [![CI](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml/badge.svg)](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml)
@@ -11,228 +11,216 @@
 [![Spring Boot 3.3](https://img.shields.io/badge/Spring%20Boot-3.3-6DB33F.svg)](vortex-app/pom.xml)
 [![Milvus](https://img.shields.io/badge/Milvus-2.4-00A1EA.svg)](docker-compose.yml)
 
-**Memory and RAG runtime for long-running AI agents: remember across sessions,
-retrieve the right context, and resume after crashes. Built with Java 21,
-Spring Boot, Milvus, MinIO, Redis, and Caffeine.**
+**面向长时运行 AI Agent 的 Memory 与 RAG runtime：跨会话记住上下文，召回正确事实，并在崩溃后恢复任务。基于 Java 21、Spring Boot、Milvus、MinIO、Redis 和 Caffeine 构建。**
 
-`v0.1.1` is the stable, evidence-backed portfolio release. Vortex is an
-infrastructure kernel rather than a hosted SaaS: the repository keeps code,
-deterministic benchmarks, failure-injection evidence, and reproduction paths
-together.
+`v0.1.1` 是面向项目审阅的稳定证据版本。Vortex 不是托管 SaaS，而是一个
+Agent Memory 与任务恢复内核；仓库把实现代码、确定性基准、故障注入证据和
+复现路径放在一起，便于直接核验。
 
-Release verification: `548` tests with zero failures, `13/13` Docker integration
-cases, and `74.26%` aggregate line coverage. See the
-[v0.1.1 release notes](docs/releases/v0.1.1.md).
+发布验证：`548` 个测试零失败、Docker integration `13/13` 通过、五个代码模块
+聚合行覆盖率 `74.26%`。完整记录见 [v0.1.1 发布说明](docs/releases/v0.1.1.md)。
 
 <p align="center">
-  <a href="#quick-start"><b>Quick Start</b></a> ·
-  <a href="#three-core-engineering-decisions"><b>Engineering Decisions</b></a> ·
-  <a href="docs/benchmark.md"><b>Benchmarks</b></a> ·
-  <a href="docs/architecture.md"><b>Detailed Architecture</b></a>
+  <a href="#演示"><b>演示</b></a> ·
+  <a href="#快速开始"><b>快速开始</b></a> ·
+  <a href="#三个核心技术决策及取舍"><b>技术决策</b></a> ·
+  <a href="docs/benchmark.md"><b>基准证据</b></a> ·
+  <a href="docs/architecture.md"><b>详细架构</b></a>
 </p>
 
-## System Architecture
+## 演示
+
+<p align="center">
+  <img src="docs/assets/quickstart-agent-demo.gif" alt="Vortex 记忆召回与任务恢复演示" width="1000">
+</p>
+
+该演示无需外部 LLM API Key：它会写入并召回持久记忆，在任务 Checkpoint 后
+停止 Worker，再从恢复出的运行时状态继续执行任务。
+
+## 系统架构
 
 ```mermaid
 flowchart TB
-    A[Agent / Spring AI / LangChain4j] --> API[Vortex REST and Java contracts]
-    API --> K[Memory and Task Kernel]
+    A[Agent / Spring AI / LangChain4j] --> API[Vortex REST 与 Java 契约]
+    API --> K[Memory 与 Task Kernel]
 
-    subgraph W[Write path]
+    subgraph W[写入链路]
         direction LR
-        K --> E[Split and local embedding]
+        K --> E[切分与本地 Embedding]
         E --> L1[L1 Caffeine write-through]
-        L1 --> ACK[Return with read-your-own-write]
-        L1 --> P[Bounded async pipeline]
-        P --> L2[L2 Milvus vector index]
-        P --> L3[L3 MinIO cold archive]
+        L1 --> ACK[返回并保证 read-your-own-write]
+        L1 --> P[有界异步 Pipeline]
+        P --> L2[L2 Milvus 向量索引]
+        P --> L3[L3 MinIO 冷归档]
     end
 
-    subgraph R[Recall path]
+    subgraph R[召回链路]
         direction LR
-        K --> VC[Vector candidates - default]
-        K -. optional .-> KW[Keyword candidates]
-        KW --> H[Candidate filters and merge]
+        K --> VC[向量候选 - 默认路径]
+        K -. 显式启用 .-> KW[关键词候选]
+        KW --> H[候选过滤与合并]
         VC --> H
-        H --> B[Optional linear or gated Cross-Encoder rerank]
-        B --> T[Token budget]
-        T --> CTX[Context returned to Agent]
+        H --> B[可选线性融合或门禁 Cross-Encoder]
+        B --> T[token budget]
+        T --> CTX[上下文返回 Agent]
     end
 
-    subgraph S[Recovery path]
+    subgraph S[恢复链路]
         direction LR
-        K --> CP[Runtime snapshot and checkpoint]
-        CP --> WAL[WAL deduplicated replay]
-        WAL --> ID[Execution ID idempotency]
-        ID --> RES[Resume task DAG]
+        K --> CP[Runtime Snapshot 与 Checkpoint]
+        CP --> WAL[WAL 去重回放]
+        WAL --> ID[Execution ID 幂等]
+        ID --> RES[恢复 Task DAG]
     end
 ```
 
-The synchronous boundary ends at L1 visibility. Durable indexing and archival
-run behind a bounded pipeline; recall and recovery remain separate kernel paths.
-This boundary is the central latency, consistency, and failure-recovery decision
-in the project.
+同步边界止于 L1 可见；最终索引和归档进入有界后台 Pipeline，召回与恢复保持为
+独立内核路径。这个边界是项目在延迟、一致性和故障恢复之间最核心的设计选择。
 
-The public recall contract defaults to `VECTOR_ONLY` with reranking disabled.
-`HYBRID`, linear score fusion, and the gated Cross-Encoder remain explicit
-opt-in paths.
+公共 Recall 契约默认使用 `VECTOR_ONLY` 且关闭重排；`HYBRID`、线性分数融合
+和受门禁控制的 Cross-Encoder 都需要调用方显式启用。
 
-## Quick Start
+## 快速开始
 
-Prerequisites:
+前置条件：
 
-- Docker Desktop or Docker Engine with Compose v2
-- At least 6 GB available memory
-- Windows command: Windows PowerShell 5.1 or later
-- Linux/macOS command: `bash`, `curl`, and `python3`
+- Docker Desktop，或支持 Compose v2 的 Docker Engine
+- 至少 6 GB 可用内存
+- Windows 命令需要 Windows PowerShell 5.1 或更高版本
+- Linux/macOS 命令需要 `bash`、`curl` 和 `python3`
 
-One command builds the stack, waits for health, stores and recalls memory, kills
-a worker after checkpointing, and resumes the task:
+下面一条命令会构建并启动完整环境，等待健康检查，完成记忆写入与召回，然后在
+Checkpoint 后强杀 Worker 并恢复任务：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\run.ps1 -StartQuickstart
 ```
 
-Linux/macOS:
+Linux/macOS：
 
 ```bash
 START_QUICKSTART=true bash examples/quickstart-agent/run.sh
 ```
 
-A successful run prints `WITH VORTEX: recalled durable memory`, then
-`WITH VORTEX: recovered task ...`, and finishes with
-`No external LLM API key was used.` Stop the stack with:
+成功输出会先出现 `WITH VORTEX: recalled durable memory`，再出现
+`WITH VORTEX: recovered task ...`，最后打印
+`No external LLM API key was used.`。停止环境：
 
 ```bash
 docker compose -f docker-compose.quickstart.yml down
 ```
 
-The recorded output and expanded HTTP walkthrough live in
-[examples/quickstart-agent](examples/quickstart-agent) and
-[docs/quickstart.md](docs/quickstart.md).
+录制输出和完整 HTTP 操作见
+[examples/quickstart-agent](examples/quickstart-agent) 与
+[docs/quickstart.md](docs/quickstart.md)。
 
-## Benchmark Evidence
+## 基准测试证据
 
-The headline numbers below are deterministic benchmark results with linked
-evidence and reproduction commands. See [docs/benchmark.md](docs/benchmark.md)
-for scope, boundaries, and reproduction notes. They are not production
-guarantees.
+下面的核心数据来自 deterministic benchmark，并链接了证据文件和复现命令。完整范围、边界和复现说明见 [docs/benchmark.md](docs/benchmark.md)。这些数据不是生产环境保证。
 
-| Area | Result | Evidence |
+| 方向 | 结果 | 证据 |
 | --- | --- | --- |
-| LongMemEval recall | On the official LongMemEval oracle, a 120-case case-isolated evaluation completed five modes and `600` paired runs with `0` errors. `VectorOnly` reached fragment Recall@5 `0.8094` and exceeded `KeywordOnly` by `+0.1856`, paired 95% CI `[+0.1086, +0.2632]`. | [LongMemEval evaluation report](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md) |
-| Cross-Encoder gate | A pinned ONNX Cross-Encoder DEV candidate changed ordering in `120/120` cases but failed five frozen quality and latency rules. `VectorOnly` remains the public request default and model-promotion baseline; validation and reserve were not run. | [Cross-Encoder DEV decision](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
-| Main-path latency | With synchronous pre-extraction chunking and local embedding for L1 write-through, then final processing in a bounded background pipeline, measured P99 fell from `818.82 ms` to `268.65 ms` (`-67.19%`) over 100 cases per mode. L1 visibility at return and eventual L2/L3 readiness were both `100%`. | [Write-through latency evidence](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md) |
-| Runtime recovery | The deterministic fault-injection matrix passed `32/32` covered cases across service restart, tool failure, LLM exception, state integrity, and concurrency categories. | [Runtime recovery evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md) |
+| LongMemEval recall | 官方 LongMemEval oracle 的 120-case case-isolated 评测完成五种模式 `600` 次配对运行，错误数 `0`。`VectorOnly` fragment Recall@5 为 `0.8094`，相对 `KeywordOnly` 提升 `+0.1856`，paired 95% CI `[+0.1086, +0.2632]`。 | [LongMemEval 评测报告](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md) |
+| Cross-Encoder 门禁 | 锁定的 ONNX Cross-Encoder DEV 候选在 `120/120` case 改变排序，但未通过五项冻结的质量与延迟规则。`VectorOnly` 保持公共请求默认值和模型晋级基线，validation 和 reserve 均未运行。 | [Cross-Encoder DEV 决策](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
+| Main-path latency | 返回前同步完成预抽取记忆切分、本地 Embedding 与 L1 write-through，最终处理进入有界后台 Pipeline；100 case/mode 下 P99 从 `818.82 ms` 降至 `268.65 ms`（`-67.19%`），返回时 L1 可见率和最终 L2/L3 readiness 均为 `100%`。 | [Write-through 延迟证据](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md) |
+| Runtime recovery | deterministic fault-injection matrix 在 service restart、tool failure、LLM exception、state integrity 和 concurrency 五类场景中通过 `32/32` covered cases。 | [Runtime recovery evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md) |
 
-Recall is oracle-fragment retrieval, not answer accuracy. Latency is from a
-local deterministic benchmark with external LLM generation excluded, not
-production P99 or full Agent latency. The linked evidence files define the
-exact scope; the rejected Cross-Encoder result is not evidence of model gain.
+Recall 是 oracle fragment 检索指标，不是答案准确率。延迟来自排除外部 LLM generation
+的本地确定性 benchmark，不是 production P99 或完整 Agent latency。Cross-Encoder
+被拒绝的结果也不能表述为模型收益；具体边界以链接的 evidence 文件为准。
 
-## Three Core Engineering Decisions
+## 三个核心技术决策及取舍
 
-### 1. Return after L1 write-through; persist final state asynchronously
+### 1. L1 write-through 后返回，最终持久化异步化
 
-**Problem.** Synchronously extracting, summarizing, indexing, and archiving every
-memory made the request path pay for work that the caller did not need before
-return.
+**问题。** 如果每次写入都同步完成记忆抽取、摘要、向量索引和冷归档，请求主链路
+会为调用方返回前并不需要的工作付出延迟。
 
-**Decision.** Vortex synchronously splits the pre-extraction memory, creates its
-local embedding, and admits the chunks to L1. Final extraction, L2 indexing, and
-L3 archival move to a bounded pipeline with retry and backpressure. The caller
-gets read-your-own-write semantics without waiting for all durable tiers.
+**决策。** Vortex 在同步边界内完成预抽取记忆的切分、本地 Embedding 和 L1
+admission；最终抽取、L2 索引和 L3 归档进入带重试与 backpressure 的有界
+Pipeline。调用方获得 read-your-own-write，同时不等待所有持久层完成。
 
-**Trade-off.** The design accepts eventual L2/L3 readiness and must expose
-pipeline status and failure handling. In return, deterministic 100-case runs
-reduced main-path P99 from `818.82 ms` to `268.65 ms` while preserving `100%`
-L1 visibility at return and eventual L2/L3 readiness. See the
-[write-through latency evidence](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md).
+**取舍。** 系统接受 L2/L3 最终一致，并必须暴露 Pipeline 状态与失败处理。换来的
+结果是：100 case/mode 的确定性基准中，主链路 P99 从 `818.82 ms` 降至
+`268.65 ms`，返回时 L1 可见率和最终 L2/L3 readiness 均为 `100%`。证据见
+[write-through 延迟报告](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md)。
 
-**Implementation.** [AsyncMemoryPipeline](vortex-kernel/src/main/java/com/vortex/kernel/hmc/AsyncMemoryPipeline.java)
-defines the bounded handoff; [HierarchicalMemoryController](vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java)
-owns chunking, local embedding, and L1 admission.
+**实现入口。** [AsyncMemoryPipeline](vortex-kernel/src/main/java/com/vortex/kernel/hmc/AsyncMemoryPipeline.java)
+负责有界异步交接；[HierarchicalMemoryController](vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java)
+负责切分、本地 Embedding 和 L1 admission。
 
-### 2. Prefer an auditable retrieval baseline over an unproven reranker
+### 2. 选择可审计的召回基线，不上线未被证据支持的重排模型
 
-**Problem.** A shared evaluation namespace caused cross-case leakage, and a
-reranker can appear useful simply because it changes ordering.
+**问题。** 共享评测命名空间会造成跨用例数据泄漏，而重排模型仅仅“改变排序”并不
+等于提升召回质量。
 
-**Decision.** The contaminated result was discarded, LongMemEval was rerun with
-case isolation, and model promotion was placed behind five frozen quality and
-latency gates. The pinned ONNX Cross-Encoder changed `120/120` rankings but
-failed the gate. The public request default therefore remains `VectorOnly`
-with reranking disabled; Hybrid, linear fusion, and Cross-Encoder paths require
-an explicit request.
+**决策。** 废弃污染结果，按 case 隔离重跑 LongMemEval，并用五项冻结的质量与
+延迟规则控制模型晋级。锁定的 ONNX Cross-Encoder 虽改变 `120/120` 个排序，
+但未通过门禁。因此公共请求默认值保持 `VectorOnly` 且关闭重排；Hybrid、
+线性融合和 Cross-Encoder 路径都需要显式请求。
 
-**Trade-off.** Vortex gives up speculative Cross-Encoder gain and keeps a
-simpler, lower-latency default while retaining Hybrid and linear fusion as
-explicit scenario-level options. The isolated 120-case run reached fragment
-Recall@5 `0.8094`, `+0.1856` over `KeywordOnly`, with paired 95% CI
-`[+0.1086, +0.2632]`. See the
-[LongMemEval report](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md)
-and [Cross-Encoder decision](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md).
+**取舍。** 项目暂时放弃推测性的 Cross-Encoder 收益，保留更简单、延迟更低且
+可解释的默认路径，同时保留 Hybrid 和线性融合供场景化显式启用。隔离后的
+120-case 评测中 fragment Recall@5 为 `0.8094`，相对 `KeywordOnly`
+提升 `+0.1856`，paired 95% CI 为 `[+0.1086, +0.2632]`。证据见
+[LongMemEval 报告](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md)
+和 [Cross-Encoder 决策](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md)。
 
-**Implementation.** [RecallQuery](vortex-common/src/main/java/com/vortex/common/dto/RecallQuery.java)
-defines the evidence-backed defaults; [RecallOrchestrator](vortex-kernel/src/main/java/com/vortex/kernel/hmc/RecallOrchestrator.java)
-implements the explicit retrieval and reranker branches.
+**实现入口。** [RecallQuery](vortex-common/src/main/java/com/vortex/common/dto/RecallQuery.java)
+定义证据支持的默认值；[RecallOrchestrator](vortex-kernel/src/main/java/com/vortex/kernel/hmc/RecallOrchestrator.java)
+实现显式选择的 retrieval 与 reranker 分支。
 
-### 3. Combine Snapshot, WAL, and Execution ID instead of claiming distributed exactly-once
+### 3. Snapshot + WAL + Execution ID，不声称分布式 exactly-once
 
-**Problem.** A checkpoint alone cannot distinguish completed work from an
-in-flight tool or LLM call after a restart, so replay can duplicate side
-effects.
+**问题。** 仅有 Checkpoint 无法区分重启前已经完成和仍在执行的 Tool/LLM 调用，
+直接 replay 可能重复产生副作用。
 
-**Decision.** Runtime snapshots persist the task DAG, conversation, memory
-references, and tool/LLM state. Recovery loads a checkpoint, deduplicates WAL
-replay, reconstructs state, and uses Execution ID request hashes, atomic
-reservation, and response replay for idempotency.
+**决策。** Runtime Snapshot 持久化 Task DAG、Conversation、Memory 引用和
+Tool/LLM 状态；恢复时加载 Checkpoint、去重回放 WAL、重建状态，再以
+Execution ID 请求哈希、原子占位与响应重放保证幂等。
 
-**Trade-off.** This adds serialization, WAL write amplification, and stricter
-state-transition contracts. It provides deterministic single-runtime recovery,
-not distributed consensus or cross-region exactly-once. The fault-injection
-matrix passed `32/32` covered cases across five failure categories. See the
-[runtime recovery evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md).
+**取舍。** 方案增加序列化成本、WAL 写放大和状态迁移约束，提供的是确定性的单运行时
+恢复，而不是分布式一致性或跨区域 exactly-once。故障注入矩阵在五类场景中通过
+`32/32` covered cases。证据见
+[runtime recovery 报告](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md)。
 
-**Implementation.** [SnapshotService](vortex-kernel/src/main/java/com/vortex/kernel/snapshot/SnapshotService.java)
-persists checkpoints, [RecoveryEngine](vortex-kernel/src/main/java/com/vortex/kernel/snapshot/RecoveryEngine.java)
-replays runtime state, and [ExecutionIdService](vortex-app/src/main/java/com/vortex/app/runtime/ExecutionIdService.java)
-guards externally visible execution.
+**实现入口。** [SnapshotService](vortex-kernel/src/main/java/com/vortex/kernel/snapshot/SnapshotService.java)
+持久化 Checkpoint，[RecoveryEngine](vortex-kernel/src/main/java/com/vortex/kernel/snapshot/RecoveryEngine.java)
+负责状态回放，[ExecutionIdService](vortex-app/src/main/java/com/vortex/app/runtime/ExecutionIdService.java)
+保护对外可见执行的幂等性。
 
-## Implementation Surface
+## 已实现范围
 
-| Surface | What is implemented |
+| 方向 | 已实现能力 |
 | --- | --- |
-| Memory | Store, recall, feedback, pin/unpin, eviction, async ingest status, namespace/tag filtering, and token budgets |
-| Retrieval | Keyword, vector, hybrid candidate merge, optional reranking gates, and context assembly |
-| Runtime state | Task DAG mutation, checkpoint, WAL replay, branch/switch/merge, and Execution ID idempotency |
-| Storage | L1 Caffeine, L2 Milvus, L3 MinIO, plus optional Redis-backed Execution ID state |
-| Model integration | Vortex generation/embedding contracts, Spring AI example, and LangChain4j adapters |
-| Operations | Health catalog, SLO snapshots, Prometheus metrics, deterministic benchmarks, and governance checks |
+| Memory | store、recall、feedback、pin/unpin、eviction、异步 ingest 状态、namespace/tag 过滤与 token budget |
+| Retrieval | keyword、vector、hybrid candidate merge、可选重排门禁与 context assembly |
+| Runtime state | Task DAG 修改、Checkpoint、WAL replay、branch/switch/merge 与 Execution ID 幂等 |
+| Storage | L1 Caffeine、L2 Milvus、L3 MinIO，以及可选 Redis Execution ID backend |
+| Model integration | Vortex generation/embedding 契约、Spring AI 示例和 LangChain4j adapter |
+| Operations | Health catalog、SLO snapshot、Prometheus metrics、确定性 benchmark 与 governance check |
 
-The public REST surface is available through Swagger UI at
-`http://localhost:8080/swagger-ui.html` after Quickstart. Detailed endpoints
-and configuration remain in [docs/quickstart.md](docs/quickstart.md) and
-[docs/architecture.md](docs/architecture.md). CI and benchmark reproduction
-commands are linked from [docs/benchmark.md](docs/benchmark.md).
+Quickstart 后可通过 `http://localhost:8080/swagger-ui.html` 查看完整 REST
+接口。详细 endpoint 和配置继续由 [docs/quickstart.md](docs/quickstart.md) 与
+[docs/architecture.md](docs/architecture.md) 承接。CI 与 benchmark 复现命令见
+[docs/benchmark.md](docs/benchmark.md)。
 
-## Project Boundaries
+## 项目边界
 
-For positioning against plain vector RAG and hand-rolled memory layers, see
-[docs/comparison.md](docs/comparison.md). The stable portfolio release is
-[`v0.1.1`](docs/releases/v0.1.1.md); earlier release notes remain archived.
+Vortex 与纯向量 RAG、手写 memory layer 的定位差异见
+[docs/comparison.md](docs/comparison.md)。面向项目审阅的稳定版本为
+[`v0.1.1`](docs/releases/v0.1.1.md)，早期 release note 继续保留归档。
 
-Vortex does not claim:
+Vortex 暂不声称已经具备：
 
-- Production-grade auth, RBAC, tenant isolation, rate limits, or audit logs.
-- Long-duration high-concurrency production capacity results.
-- Distributed consensus, multi-node scheduling, or cross-region replication.
-- Full external process-manager crash-loop orchestration.
-- Full Agent runtime integration with real LLM generation inside the latency benchmark.
+- 生产级 auth、RBAC、tenant isolation、rate limit 或 audit log。
+- 长时间高并发生产容量结果。
+- 分布式一致性、多节点调度或跨区域复制。
+- 完整外部 process-manager crash-loop 编排。
+- 在 latency benchmark 内集成真实 LLM generation 的完整 Agent runtime。
 
-## License
+## 许可证
 
-Vortex code and documentation are licensed under the [Apache License 2.0](LICENSE).
+Vortex 代码与文档使用 [Apache License 2.0](LICENSE)。
 
-Third-party model files, datasets, and external service names remain subject to
-their upstream licenses and terms.
+第三方模型文件、数据集和外部服务名称仍受各自上游许可与服务条款约束。

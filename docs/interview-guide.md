@@ -94,7 +94,7 @@ Snapshot 保存恢复点，WAL 记录可重放的状态变化，Execution ID 对
 
 ## 可核验入口
 
-- [README 架构与三个决策](../README_zh.md)
+- [README 架构与三个决策](../README.md)
 - [Benchmark 范围与证据](benchmark.md)
 - [v0.1.1 发布验证](releases/v0.1.1.md)
 - [Quickstart 细节](quickstart.md)
