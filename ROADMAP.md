@@ -11,25 +11,36 @@ more short, inspectable examples for common integration paths.
 Done:
 
 - Add a Spring AI ChatClient advisor example under `examples/spring-ai-integration/`.
+- Add LangChain4j adapters and a runnable integration example under
+  `examples/langchain4j-integration/`.
 - Record a short quickstart demo GIF and transcript under `docs/assets/`.
 
 Planned work:
 
-- Add one MCP or LangChain4j integration example.
+- Add one MCP integration example.
 - Keep quickstart commands tested on Windows PowerShell and Bash.
 
 ## Make Retrieval Quality Easier To Evaluate
 
-Current problem: deterministic internal workload evidence exists, but public
-dataset promotion is not ready to cite.
+Current problem: case-isolated retrieval evidence on the official LongMemEval
+oracle is committed and safe to cite within its documented scope, but it
+measures oracle-fragment retrieval rather than end-to-end answer quality or
+production traffic.
+
+Done:
+
+- Add a reviewed, case-isolated LongMemEval retrieval evaluation path.
+- Commit dataset conversion notes, hashes, configuration, statistical analysis,
+  and boundary notes with the final evidence report.
 
 Planned work:
 
-- Add a reviewed public-dataset evaluation path.
-- Commit dataset conversion notes, model/base URL disclosure, reports, and
-  boundary notes before promoting any public metric.
-- Add small fixtures that explain where hybrid recall helps and where it does
-  not.
+- Add an end-to-end real-LLM evaluation that measures answer quality separately
+  from oracle-fragment retrieval.
+- Add domain-specific fixtures that explain where hybrid recall helps and where
+  it does not.
+- Validate retrieval quality on traffic-shaped workloads before making online
+  production claims.
 
 ## Harden Runtime Recovery
 

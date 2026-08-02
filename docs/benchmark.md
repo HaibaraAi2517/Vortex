@@ -4,13 +4,23 @@ This page summarizes the benchmark results that are safe to cite from the
 current repository state. Every headline metric below links to a committed
 evidence runbook with scope, boundaries, and reproduction commands.
 
+## Evidence Policy
+
+- Performance and retrieval-quality claims must come from this page and its
+  linked committed runbooks.
+- Test counts and coverage are release-scoped verification, not benchmark
+  metrics or guarantees about an arbitrary working tree. Cite them with the
+  corresponding release notes; [`v0.1.1`](releases/v0.1.1.md) records
+  `548` tests and `74.26%` aggregate line coverage.
+- Roadmap items describe remaining work and do not override completed evidence.
+
 ## Headline Results
 
 | Area | Safe wording | Evidence |
 | --- | --- | --- |
 | Recall | On the official LongMemEval oracle dataset, the 120-case case-isolated retrieval evaluation measured `VectorOnly` Recall@5 at `0.8094`, `+0.1856` over `KeywordOnly`, with a paired 95% CI of `[+0.1086, +0.2632]`. | [LongMemEval evaluation](../ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md) |
 | Cross-Encoder | The locked ONNX DEV candidate changed ordering in `120/120` cases, but failed five frozen quality and latency gates. It was rejected, and `VectorOnly` remains the public request default and model-promotion baseline. | [Cross-Encoder DEV decision](../ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
-| Main-path latency | In the canonical deterministic write-through benchmark, async processing reduced measured main-path P99 from `818.82 ms` to `268.65 ms` (`-67.19%`) while L1 was visible and L2/L3 were ready at return in `100/100` cases. External LLM generation was excluded. | [Write-through latency evidence](../ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md) |
+| Main-path latency | In the canonical deterministic write-through benchmark, async processing reduced measured main-path P99 from `818.82 ms` to `268.65 ms` (`-67.19%`). L1 was visible at return and L2/L3 eventually became ready in `100/100` cases. External LLM generation was excluded. | [Write-through latency evidence](../ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md) |
 | Runtime recovery | In the deterministic runtime recovery benchmark, Vortex passed `32/32` covered fault-injection cases across service restart, tool failure, LLM exception, state integrity, and concurrency categories. | [Runtime recovery evidence](../ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md) |
 
 These numbers are benchmark evidence, not production guarantees.
@@ -67,7 +77,7 @@ The canonical run compares synchronous processing with async raw-memory L1
 write-through. Async return includes local embedding and L1 visibility;
 extraction, summary, final embedding, L2, and L3 complete in the background.
 
-| Mode | Cases | Main Success | L1 Visible at Return | L2/L3 Ready | Avg Ms | P95 Ms | P99 Ms |
+| Mode | Cases | Main Success | L1 Visible at Return | Eventual L2/L3 Ready | Avg Ms | P95 Ms | P99 Ms |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Sync | 100 | 100% | 100% | 100% | 747.95 | 815.45 | 818.82 |
 | Async | 100 | 100% | 100% | 100% | 258.27 | 265.49 | 268.65 |
@@ -107,6 +117,5 @@ recovery coverage.
 - Do not claim the rejected Cross-Encoder candidate passed DEV or is approved
   for validation.
 - Do not claim complete production recovery coverage.
-- Do not quote local coverage or test-count numbers in public docs until the
-  latest reports are regenerated and committed or otherwise reproducibly
-  verified.
+- Do not present the `v0.1.1` test count or coverage as a current-working-tree
+  guarantee; cite those numbers only as versioned release verification.
