@@ -1,7 +1,7 @@
 # Vortex
 
 <p align="center">
-  English | <strong><a href="README_zh.md">简体中文（面试版）</a></strong>
+  English | <a href="README_zh.md">简体中文</a>
 </p>
 
 [![CI](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml/badge.svg)](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml)
@@ -27,7 +27,6 @@ cases, and `74.26%` aggregate line coverage. See the
 <p align="center">
   <a href="#quick-start"><b>Quick Start</b></a> ·
   <a href="#three-core-engineering-decisions"><b>Engineering Decisions</b></a> ·
-  <a href="docs/interview-guide.md"><b>Interview Guide</b></a> ·
   <a href="docs/benchmark.md"><b>Benchmarks</b></a> ·
   <a href="docs/architecture.md"><b>Detailed Architecture</b></a>
 </p>

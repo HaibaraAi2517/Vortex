@@ -1,7 +1,7 @@
 # Vortex
 
 <p align="center">
-  <a href="README.md">English</a> | <strong>简体中文（面试版）</strong>
+  <a href="README.md">English</a> | 简体中文
 </p>
 
 [![CI](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml/badge.svg)](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml)
@@ -23,7 +23,6 @@ Agent Memory 与任务恢复内核；仓库把实现代码、确定性基准、�
 <p align="center">
   <a href="#快速开始"><b>快速开始</b></a> ·
   <a href="#三个核心技术决策及取舍"><b>技术决策</b></a> ·
-  <a href="docs/interview-guide.md"><b>面试演示</b></a> ·
   <a href="docs/benchmark.md"><b>基准证据</b></a> ·
   <a href="docs/architecture.md"><b>详细架构</b></a>
 </p>
