@@ -42,6 +42,7 @@ public class ExecutionIdService {
                 .requestHash(requestHash)
                 .status(ExecutionIdRecord.Status.IN_PROGRESS)
                 .createdAt(Instant.now())
+                .updatedAt(Instant.now())
                 .build();
         if (!store.reserve(reservation, properties.getTtl())) {
             ExecutionIdRecord existing = store.get(normalizedExecutionId)
@@ -51,21 +52,46 @@ public class ExecutionIdService {
             return replayOrReject(existing, operation, requestHash);
         }
 
+        ResponseEntity<T> response;
         try {
-            ResponseEntity<T> response = action.get();
-            store.complete(ExecutionIdRecord.builder()
+            response = action.get();
+        } catch (RuntimeException actionFailure) {
+            markUncertain(reservation, "ACTION_FAILED");
+            throw actionFailure;
+        }
+
+        String responseJson;
+        try {
+            responseJson = toJson(response.getBody());
+        } catch (RuntimeException serializationFailure) {
+            markUncertain(reservation, "RESPONSE_SERIALIZATION_FAILED");
+            throw new ExecutionIdUncertainException(
+                    normalizedExecutionId,
+                    "Execution result is uncertain and will not be executed again automatically",
+                    serializationFailure);
+        }
+
+        ExecutionIdRecord completed = ExecutionIdRecord.builder()
                     .executionId(normalizedExecutionId)
                     .operation(operation)
                     .requestHash(requestHash)
                     .status(ExecutionIdRecord.Status.COMPLETED)
                     .httpStatus(response.getStatusCode().value())
-                    .responseJson(toJson(response.getBody()))
+                    .responseJson(responseJson)
                     .createdAt(reservation.getCreatedAt())
-                    .build(), properties.getTtl());
+                    .updatedAt(Instant.now())
+                    .build();
+        try {
+            if (!store.complete(completed, properties.getTtl())) {
+                throw new IllegalStateException("Execution ID state changed before completion");
+            }
             return response;
-        } catch (RuntimeException e) {
-            store.remove(normalizedExecutionId);
-            throw e;
+        } catch (RuntimeException completionFailure) {
+            markUncertain(reservation, "COMPLETION_PERSIST_FAILED");
+            throw new ExecutionIdUncertainException(
+                    normalizedExecutionId,
+                    "Execution may have completed; automatic retry is blocked",
+                    completionFailure);
         }
     }
 
@@ -78,6 +104,11 @@ public class ExecutionIdService {
                     record.getExecutionId(),
                     "Execution ID has already been used for a different request");
         }
+        if (record.getStatus() == ExecutionIdRecord.Status.UNKNOWN) {
+            throw new ExecutionIdUncertainException(
+                    record.getExecutionId(),
+                    "Execution result is uncertain; recover the result or resolve it manually");
+        }
         if (record.getStatus() != ExecutionIdRecord.Status.COMPLETED) {
             throw new ExecutionIdConflictException(
                     record.getExecutionId(),
@@ -89,6 +120,23 @@ public class ExecutionIdService {
         return ResponseEntity.status(record.getHttpStatus())
                 .header(REPLAYED_HEADER_NAME, "true")
                 .body(typedBody);
+    }
+
+    private void markUncertain(ExecutionIdRecord reservation, String failureCode) {
+        ExecutionIdRecord uncertain = ExecutionIdRecord.builder()
+                .executionId(reservation.getExecutionId())
+                .operation(reservation.getOperation())
+                .requestHash(reservation.getRequestHash())
+                .status(ExecutionIdRecord.Status.UNKNOWN)
+                .createdAt(reservation.getCreatedAt())
+                .updatedAt(Instant.now())
+                .failureCode(failureCode)
+                .build();
+        try {
+            store.markUncertain(uncertain, properties.getTtl());
+        } catch (RuntimeException ignored) {
+            // Preserve the original failure. The existing IN_PROGRESS reservation still blocks immediate replay.
+        }
     }
 
     private String normalize(String executionId) {

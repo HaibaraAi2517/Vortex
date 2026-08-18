@@ -4,14 +4,15 @@ import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.dto.RecallQuery;
 import com.vortex.common.dto.RecallResult;
-import com.vortex.common.model.MemoryFragment;
 import com.vortex.app.health.MemoryHealthSignalCatalog;
 import com.vortex.app.health.MemorySloHealthIndicator;
+import com.vortex.app.security.NamespaceAuthorizationService;
 import com.vortex.kernel.hmc.AsyncMemoryPipeline;
 import com.vortex.kernel.hmc.HierarchicalMemoryController;
 import com.vortex.kernel.hmc.MemoryPipelineRequest;
 import com.vortex.kernel.hmc.MemoryPipelineStatus;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
@@ -20,6 +21,7 @@ import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.Status;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
@@ -29,11 +31,13 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/memory")
 @RequiredArgsConstructor
+@Validated
 public class MemoryController {
 
     private final HierarchicalMemoryController hmc;
     private final AsyncMemoryPipeline asyncMemoryPipeline;
     private final MemorySloHealthIndicator memorySloHealthIndicator;
+    private final NamespaceAuthorizationService namespaceAuthorization;
 
     /**
      * Store raw text into the memory hierarchy.
@@ -47,6 +51,7 @@ public class MemoryController {
      */
     @PostMapping("/store")
     public ResponseEntity<Map<String, Object>> store(@Valid @RequestBody StoreRequest req) {
+        namespaceAuthorization.requireAccess(req.namespace());
         List<String> ids = hmc.store(req.content(), req.namespace(), req.tags(), req.reasoningChainId(), req.pinTtlMillis());
         return ResponseEntity.ok(Map.of(
                 "fragmentIds", ids,
@@ -56,6 +61,7 @@ public class MemoryController {
 
     @PostMapping("/store/async")
     public ResponseEntity<MemoryPipelineStatus> storeAsync(@Valid @RequestBody StoreRequest req) {
+        namespaceAuthorization.requireAccess(req.namespace());
         MemoryPipelineStatus status = asyncMemoryPipeline.submit(MemoryPipelineRequest.builder()
                 .content(req.content())
                 .namespace(req.namespace())
@@ -67,8 +73,13 @@ public class MemoryController {
     }
 
     @GetMapping("/pipeline/{pipelineId}")
-    public ResponseEntity<MemoryPipelineStatus> pipelineStatus(@PathVariable("pipelineId") String pipelineId) {
+    public ResponseEntity<MemoryPipelineStatus> pipelineStatus(
+            @PathVariable("pipelineId") @Size(max = 128) String pipelineId) {
         return asyncMemoryPipeline.snapshot(pipelineId)
+                .map(status -> {
+                    namespaceAuthorization.requireAccess(status.getNamespace());
+                    return status;
+                })
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -79,21 +90,33 @@ public class MemoryController {
      * POST /api/v1/memory/store/fragment
      */
     @PostMapping("/store/fragment")
-    public ResponseEntity<Map<String, String>> storeFragment(@RequestBody MemoryFragment fragment) {
-        hmc.storeFragment(fragment);
-        return ResponseEntity.ok(Map.of("id", fragment.getId()));
+    public ResponseEntity<Map<String, Object>> storeFragment(@Valid @RequestBody StoreFragmentRequest request) {
+        namespaceAuthorization.requireAccess(request.namespace());
+        List<String> ids = hmc.store(request.content(), request.namespace(), request.tags(), null, null);
+        return ResponseEntity.ok(Map.of("fragmentIds", ids, "count", ids.size()));
     }
 
     @GetMapping("/fragment/{fragmentId}")
-    public ResponseEntity<MemoryResponseModels.MemoryFragmentResponse> getFragment(@PathVariable("fragmentId") String fragmentId) {
+    public ResponseEntity<MemoryResponseModels.MemoryFragmentResponse> getFragment(
+            @PathVariable("fragmentId") @Size(max = 128) String fragmentId) {
         return hmc.getFragment(fragmentId)
+                .map(fragment -> {
+                    namespaceAuthorization.requireAccess(fragment.getNamespace());
+                    return fragment;
+                })
                 .map(MemoryResponseModels::from)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/fragment/{fragmentId}")
-    public ResponseEntity<Map<String, String>> deleteFragment(@PathVariable("fragmentId") String fragmentId) {
+    public ResponseEntity<Map<String, String>> deleteFragment(
+            @PathVariable("fragmentId") @Size(max = 128) String fragmentId) {
+        var existing = hmc.getFragment(fragmentId);
+        if (existing.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        namespaceAuthorization.requireAccess(existing.get().getNamespace());
         if (!hmc.deleteFragment(fragmentId)) {
             return ResponseEntity.notFound().build();
         }
@@ -113,17 +136,26 @@ public class MemoryController {
      */
     @PostMapping("/recall")
     public ResponseEntity<RecallResult> recall(@Valid @RequestBody RecallQuery query) {
+        namespaceAuthorization.requireAccess(query.getNamespace());
         return ResponseEntity.ok(hmc.recall(query));
     }
 
     @PostMapping("/feedback")
     public ResponseEntity<Map<String, String>> feedback(@Valid @RequestBody MemoryFeedbackRequest request) {
+        String namespace = hmc.recallSessionNamespace(request.getRecallSessionId())
+                .orElseThrow(() -> new IllegalArgumentException("Unknown or expired recall session"));
+        namespaceAuthorization.requireAccess(namespace);
         hmc.recordFeedback(request);
         return ResponseEntity.ok(Map.of("status", "accepted", "recallSessionId", request.getRecallSessionId()));
     }
 
     @PostMapping("/pin")
-    public ResponseEntity<Map<String, Object>> pin(@RequestBody PinRequest request) {
+    public ResponseEntity<Map<String, Object>> pin(@Valid @RequestBody PinRequest request) {
+        var existing = hmc.getFragment(request.fragmentId());
+        if (existing.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        namespaceAuthorization.requireAccess(existing.get().getNamespace());
         return hmc.pinFragment(request.fragmentId(), request.pinTtlMillis())
                 .<ResponseEntity<Map<String, Object>>>map(fragment -> ResponseEntity.ok(Map.<String, Object>of(
                         "status", "pinned",
@@ -133,7 +165,12 @@ public class MemoryController {
     }
 
     @PostMapping("/unpin")
-    public ResponseEntity<Map<String, Object>> unpin(@RequestBody FragmentRefRequest request) {
+    public ResponseEntity<Map<String, Object>> unpin(@Valid @RequestBody FragmentRefRequest request) {
+        var existing = hmc.getFragment(request.fragmentId());
+        if (existing.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        namespaceAuthorization.requireAccess(existing.get().getNamespace());
         return hmc.unpinFragment(request.fragmentId())
                 .<ResponseEntity<Map<String, Object>>>map(fragment -> ResponseEntity.ok(Map.<String, Object>of(
                         "status", "unpinned",
@@ -191,16 +228,21 @@ public class MemoryController {
     public record StoreRequest(
             @NotBlank @Size(max = 20_000) String content,
             @NotBlank @Size(max = 128) String namespace,
-            List<String> tags,
+            @Size(max = 32) List<@NotBlank @Size(max = 128) String> tags,
             @Size(max = 128) String reasoningChainId,
-            @Positive Long pinTtlMillis) {}
+            @Positive @Max(2_592_000_000L) Long pinTtlMillis) {}
+
+    public record StoreFragmentRequest(
+            @NotBlank @Size(max = 20_000) String content,
+            @NotBlank @Size(max = 128) String namespace,
+            @Size(max = 32) List<@NotBlank @Size(max = 128) String> tags) {}
 
     public record PinRequest(
-            String fragmentId,
-            long pinTtlMillis) {}
+            @NotBlank @Size(max = 128) String fragmentId,
+            @Positive @Max(2_592_000_000L) long pinTtlMillis) {}
 
     public record FragmentRefRequest(
-            String fragmentId) {}
+            @NotBlank @Size(max = 128) String fragmentId) {}
 
     private HttpStatus httpStatusFor(Status status) {
         return Status.UP.equals(status) || MemorySloHealthIndicator.DEGRADED.equals(status)

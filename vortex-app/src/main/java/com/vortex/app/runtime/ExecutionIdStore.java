@@ -9,7 +9,9 @@ public interface ExecutionIdStore {
 
     boolean reserve(ExecutionIdRecord record, Duration ttl);
 
-    void complete(ExecutionIdRecord record, Duration ttl);
+    boolean complete(ExecutionIdRecord record, Duration ttl);
+
+    boolean markUncertain(ExecutionIdRecord record, Duration ttl);
 
     void remove(String executionId);
 }

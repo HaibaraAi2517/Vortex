@@ -1,6 +1,7 @@
 package com.vortex.common.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,10 +16,12 @@ import java.util.List;
 public class MemoryFeedbackRequest {
 
     @NotBlank
+    @Size(max = 128)
     private String recallSessionId;
 
     /** Fragment IDs that were actually used in the final answer. */
-    private List<String> usedFragmentIds;
+    @Size(max = 100)
+    private List<@NotBlank @Size(max = 128) String> usedFragmentIds;
 
     /** Whether the final answer is considered successful/accepted. */
     @Builder.Default

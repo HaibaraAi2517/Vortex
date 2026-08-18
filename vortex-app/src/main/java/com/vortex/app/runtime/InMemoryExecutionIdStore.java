@@ -18,7 +18,7 @@ public class InMemoryExecutionIdStore implements ExecutionIdStore {
         if (stored == null) {
             return Optional.empty();
         }
-        if (stored.expiresAt().isBefore(Instant.now())) {
+        if (isExpired(stored)) {
             records.remove(executionId, stored);
             return Optional.empty();
         }
@@ -27,13 +27,12 @@ public class InMemoryExecutionIdStore implements ExecutionIdStore {
 
     @Override
     public boolean reserve(ExecutionIdRecord record, Duration ttl) {
-        Duration effectiveTtl = effectiveTtl(ttl);
-        StoredRecord stored = new StoredRecord(record, Instant.now().plus(effectiveTtl));
+        StoredRecord stored = new StoredRecord(record, null);
         StoredRecord existing = records.putIfAbsent(record.getExecutionId(), stored);
         if (existing == null) {
             return true;
         }
-        if (existing.expiresAt().isBefore(Instant.now())) {
+        if (isExpired(existing)) {
             records.remove(record.getExecutionId(), existing);
             return records.putIfAbsent(record.getExecutionId(), stored) == null;
         }
@@ -41,8 +40,13 @@ public class InMemoryExecutionIdStore implements ExecutionIdStore {
     }
 
     @Override
-    public void complete(ExecutionIdRecord record, Duration ttl) {
-        records.put(record.getExecutionId(), new StoredRecord(record, Instant.now().plus(effectiveTtl(ttl))));
+    public boolean complete(ExecutionIdRecord record, Duration ttl) {
+        return transition(record, ttl, ExecutionIdRecord.Status.IN_PROGRESS, ExecutionIdRecord.Status.UNKNOWN);
+    }
+
+    @Override
+    public boolean markUncertain(ExecutionIdRecord record, Duration ttl) {
+        return transition(record, ttl, ExecutionIdRecord.Status.IN_PROGRESS);
     }
 
     @Override
@@ -56,6 +60,29 @@ public class InMemoryExecutionIdStore implements ExecutionIdStore {
         return ttl == null || ttl.isNegative() || ttl.isZero()
                 ? Duration.ofHours(24)
                 : ttl;
+    }
+
+    private boolean isExpired(StoredRecord stored) {
+        return stored.expiresAt() != null && stored.expiresAt().isBefore(Instant.now());
+    }
+
+    private boolean transition(
+            ExecutionIdRecord record,
+            Duration ttl,
+            ExecutionIdRecord.Status... allowedStatuses) {
+        final boolean[] updated = {false};
+        records.computeIfPresent(record.getExecutionId(), (executionId, existing) -> {
+            ExecutionIdRecord current = existing.record();
+            boolean statusAllowed = java.util.Arrays.asList(allowedStatuses).contains(current.getStatus());
+            if (!statusAllowed
+                    || !java.util.Objects.equals(current.getOperation(), record.getOperation())
+                    || !java.util.Objects.equals(current.getRequestHash(), record.getRequestHash())) {
+                return existing;
+            }
+            updated[0] = true;
+            return new StoredRecord(record, Instant.now().plus(effectiveTtl(ttl)));
+        });
+        return updated[0];
     }
 
     private record StoredRecord(ExecutionIdRecord record, Instant expiresAt) {

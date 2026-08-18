@@ -20,9 +20,12 @@ public class ExecutionIdRecord {
     private int httpStatus;
     private String responseJson;
     private Instant createdAt;
+    private Instant updatedAt;
+    private String failureCode;
 
     public enum Status {
         IN_PROGRESS,
+        UNKNOWN,
         COMPLETED
     }
 }

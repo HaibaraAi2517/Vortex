@@ -1,6 +1,8 @@
 package com.vortex.app.controller;
 
 import com.vortex.app.health.MemorySloHealthIndicator;
+import com.vortex.app.security.NamespaceAuthorizationService;
+import com.vortex.app.security.VortexSecurityProperties;
 import com.vortex.common.model.MemoryFragment;
 import com.vortex.kernel.hmc.AsyncMemoryPipeline;
 import com.vortex.kernel.hmc.HierarchicalMemoryController;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -22,6 +25,7 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -30,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(MemoryController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class MemoryControllerTest {
 
     @Autowired
@@ -46,6 +51,12 @@ class MemoryControllerTest {
 
     @MockBean
     private L1HotStore l1HotStore;
+
+    @MockBean
+    private NamespaceAuthorizationService namespaceAuthorization;
+
+    @MockBean
+    private VortexSecurityProperties securityProperties;
 
     @Test
     void healthReturnsOkWhenIndicatorIsUp() throws Exception {
@@ -132,6 +143,10 @@ class MemoryControllerTest {
 
     @Test
     void deleteFragmentReturnsDeletedStatusWhenPresent() throws Exception {
+        when(hmc.getFragment("frag-1")).thenReturn(Optional.of(MemoryFragment.builder()
+                .id("frag-1")
+                .namespace("ns")
+                .build()));
         when(hmc.deleteFragment("frag-1")).thenReturn(true);
 
         mockMvc.perform(delete("/api/v1/memory/fragment/frag-1"))
@@ -142,6 +157,10 @@ class MemoryControllerTest {
 
     @Test
     void deleteFragmentReturnsServerErrorWhenColdStoreDeletionFails() throws Exception {
+        when(hmc.getFragment("frag-1")).thenReturn(Optional.of(MemoryFragment.builder()
+                .id("frag-1")
+                .namespace("ns")
+                .build()));
         when(hmc.deleteFragment("frag-1")).thenThrow(new CheckpointStoreException(
                 CheckpointStoreException.FailureType.DELETE_FAILED,
                 "MinIO delete failed for key fragments/frag-1.json",
@@ -150,7 +169,8 @@ class MemoryControllerTest {
         mockMvc.perform(delete("/api/v1/memory/fragment/frag-1"))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.error").value("INTERNAL_SERVER_ERROR"))
-                .andExpect(jsonPath("$.detail").value("MinIO delete failed for key fragments/frag-1.json"));
+                .andExpect(jsonPath("$.detail").value("Internal server error"))
+                .andExpect(jsonPath("$.correlationId").isNotEmpty());
     }
 
     @Test
@@ -178,6 +198,48 @@ class MemoryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(2))
                 .andExpect(jsonPath("$.fragmentIds[0]").value("frag-1"));
+    }
+
+    @Test
+    void storeRejectsOversizedContentBeforeEnteringMemoryPipeline() throws Exception {
+        mockMvc.perform(post("/api/v1/memory/store")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"%s","namespace":"ns"}
+                                """.formatted("x".repeat(20_001))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.fieldErrors.content").exists());
+
+        verifyNoInteractions(hmc);
+    }
+
+    @Test
+    void recallRejectsTopKAboveLimitBeforeEnteringMemoryPipeline() throws Exception {
+        mockMvc.perform(post("/api/v1/memory/recall")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"query":"hello","namespace":"ns","topK":101,"tokenBudget":512}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.fieldErrors.topK").exists());
+
+        verifyNoInteractions(hmc);
+    }
+
+    @Test
+    void recallRejectsInvalidEnumWithStableError() throws Exception {
+        mockMvc.perform(post("/api/v1/memory/recall")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"query":"hello","namespace":"ns","retrievalMode":"INVALID"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("MALFORMED_REQUEST"))
+                .andExpect(jsonPath("$.message").value("Request body is malformed or contains invalid enum values"));
+
+        verifyNoInteractions(hmc);
     }
 
     @Test

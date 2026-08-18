@@ -2,6 +2,8 @@ package com.vortex.app.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vortex.app.runtime.ExecutionIdService;
+import com.vortex.app.security.NamespaceAuthorizationService;
+import com.vortex.app.security.VortexSecurityProperties;
 import com.vortex.common.model.TaskState;
 import com.vortex.kernel.snapshot.SnapshotService;
 import com.vortex.kernel.snapshot.TaskLifecycleManager;
@@ -9,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(TaskController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class TaskControllerTest {
 
     @Autowired
@@ -45,6 +49,12 @@ class TaskControllerTest {
 
     @MockBean
     private ExecutionIdService executionIdService;
+
+    @MockBean
+    private NamespaceAuthorizationService namespaceAuthorization;
+
+    @MockBean
+    private VortexSecurityProperties securityProperties;
 
     @BeforeEach
     void setUpExecutionIdPassthrough() {
@@ -69,6 +79,14 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.size").value(1))
                 .andExpect(jsonPath("$.total").value(3))
                 .andExpect(jsonPath("$.hasNext").value(true));
+    }
+
+    @Test
+    void listTasks_rejectsPageSizeAboveLimit() throws Exception {
+        mockMvc.perform(get("/api/v1/tasks").param("size", "201"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.message").value("Request parameter validation failed"));
     }
 
     @Test

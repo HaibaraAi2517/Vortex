@@ -1,10 +1,14 @@
 package com.vortex.app.controller;
 
 import com.vortex.app.runtime.ExecutionIdConflictException;
+import com.vortex.app.runtime.ExecutionIdUncertainException;
 import com.vortex.kernel.snapshot.CheckpointRecoveryException;
 import com.vortex.kernel.snapshot.CheckpointRecoveryFailureReason;
 import com.vortex.kernel.snapshot.InvalidRequestException;
 import com.vortex.kernel.snapshot.ResourceNotFoundException;
+import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.HttpStatus;
@@ -14,21 +18,31 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @RestControllerAdvice
+@Slf4j
 public class TaskExceptionHandler {
 
     @ExceptionHandler(CheckpointRecoveryException.class)
     public ResponseEntity<ProblemDetail> handleCheckpointRecoveryFailure(CheckpointRecoveryException ex) {
         HttpStatus status = mapStatus(ex.getReason());
-        ProblemDetail detail = ProblemDetail.forStatusAndDetail(status, ex.getMessage());
+        String correlationId = status.is5xxServerError() ? correlationId(ex) : null;
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(
+                status,
+                status.is5xxServerError() ? "Checkpoint recovery failed" : safeMessage(ex.getMessage(), "Checkpoint recovery failed"));
         detail.setProperty("error", "CHECKPOINT_RECOVERY_FAILED");
         detail.setProperty("reason", ex.getReason().name());
-        detail.setProperty("taskId", ex.getTaskId());
-        detail.setProperty("checkpointId", ex.getCheckpointId() == null ? "" : ex.getCheckpointId());
+        if (!status.is5xxServerError()) {
+            detail.setProperty("taskId", ex.getTaskId());
+            detail.setProperty("checkpointId", ex.getCheckpointId() == null ? "" : ex.getCheckpointId());
+        } else {
+            detail.setProperty("correlationId", correlationId);
+        }
         return ResponseEntity.status(status).body(detail);
     }
 
@@ -67,6 +81,17 @@ public class TaskExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(detail);
     }
 
+    @ExceptionHandler(ExecutionIdUncertainException.class)
+    public ResponseEntity<ProblemDetail> handleExecutionIdUncertain(ExecutionIdUncertainException ex) {
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "Execution result is uncertain; automatic retry is blocked");
+        detail.setProperty("error", "EXECUTION_ID_UNCERTAIN");
+        detail.setProperty("executionId", ex.getExecutionId());
+        detail.setProperty("state", "UNKNOWN");
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(detail);
+    }
+
     @ExceptionHandler({InvalidRequestException.class, IllegalArgumentException.class})
     public ResponseEntity<ProblemDetail> handleInvalidRequest(RuntimeException ex) {
         ProblemDetail detail = ProblemDetail.forStatusAndDetail(
@@ -74,6 +99,13 @@ public class TaskExceptionHandler {
                 ex.getMessage() == null ? "Invalid request" : ex.getMessage());
         detail.setProperty("error", "INVALID_REQUEST");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(detail);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ProblemDetail> handleAccessDenied(AccessDeniedException ex) {
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Access is denied");
+        detail.setProperty("error", "ACCESS_DENIED");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(detail);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -89,6 +121,14 @@ public class TaskExceptionHandler {
         ));
     }
 
+    @ExceptionHandler({ConstraintViolationException.class, HandlerMethodValidationException.class})
+    public ResponseEntity<Map<String, Object>> handleMethodValidation(Exception ex) {
+        return ResponseEntity.badRequest().body(Map.of(
+                "error", "VALIDATION_FAILED",
+                "message", "Request parameter validation failed"
+        ));
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, Object>> handleUnreadableBody(HttpMessageNotReadableException ex) {
         return ResponseEntity.badRequest().body(Map.of(
@@ -99,10 +139,22 @@ public class TaskExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnhandled(Exception ex) {
+        String correlationId = correlationId(ex);
         ProblemDetail detail = ProblemDetail.forStatusAndDetail(
                 HttpStatus.INTERNAL_SERVER_ERROR,
-                ex.getMessage() == null ? "Internal server error" : ex.getMessage());
+                "Internal server error");
         detail.setProperty("error", "INTERNAL_SERVER_ERROR");
+        detail.setProperty("correlationId", correlationId);
         return ResponseEntity.status(HttpStatusCode.valueOf(500)).body(detail);
+    }
+
+    private String correlationId(Exception ex) {
+        String correlationId = UUID.randomUUID().toString();
+        log.error("Request failed correlationId={}", correlationId, ex);
+        return correlationId;
+    }
+
+    private String safeMessage(String message, String fallback) {
+        return message == null || message.isBlank() ? fallback : message;
     }
 }

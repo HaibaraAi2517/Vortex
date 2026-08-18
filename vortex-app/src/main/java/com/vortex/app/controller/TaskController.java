@@ -1,20 +1,25 @@
 package com.vortex.app.controller;
 
 import com.vortex.app.runtime.ExecutionIdService;
+import com.vortex.app.security.NamespaceAuthorizationService;
 import com.vortex.common.model.*;
 import com.vortex.kernel.snapshot.SnapshotService;
 import com.vortex.kernel.snapshot.TaskLifecycleManager;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -23,10 +28,12 @@ import java.util.Map;
 @RequestMapping("/api/v1/tasks")
 @RequiredArgsConstructor
 @Tag(name = "Tasks", description = "Task DAG lifecycle, branching, checkpointing, and recovery APIs")
+@Validated
 public class TaskController {
 
     private final SnapshotService snapshotService;
     private final ExecutionIdService executionIdService;
+    private final NamespaceAuthorizationService namespaceAuthorization;
 
     // ---- Task Lifecycle ----
 
@@ -35,6 +42,7 @@ public class TaskController {
     public ResponseEntity<TaskResponseModels.TaskResponse> createTask(
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @Valid @RequestBody CreateTaskRequest req) {
+        namespaceAuthorization.requireAccess(req.namespace());
         return executionIdService.execute(
                 executionId,
                 "task.create",
@@ -45,11 +53,23 @@ public class TaskController {
     @GetMapping
     @Operation(summary = "List active tasks with pagination")
     public ResponseEntity<TaskPageResponse> listTasks(
-            @RequestParam(name = "page", defaultValue = "0") int page,
-            @RequestParam(name = "size", defaultValue = "50") int size) {
+            @RequestParam(name = "namespace", required = false) @Size(max = 128) String namespace,
+            @RequestParam(name = "page", defaultValue = "0") @Min(0) int page,
+            @RequestParam(name = "size", defaultValue = "50") @Min(1) @Max(200) int size) {
+        if (namespaceAuthorization.isEnforced()) {
+            if (namespace == null || namespace.isBlank()) {
+                throw new IllegalArgumentException("namespace is required when security is enabled");
+            }
+            namespaceAuthorization.requireAccess(namespace);
+            return ResponseEntity.ok(listTasksForNamespace(namespace, page, size));
+        }
         TaskLifecycleManager.TaskPage result = snapshotService.listActiveTasks(page, size);
+        List<TaskResponseModels.TaskResponse> items = result.items().stream()
+                .filter(task -> namespace == null || namespace.equals(task.getNamespace()))
+                .map(TaskResponseModels::from)
+                .toList();
         return ResponseEntity.ok(new TaskPageResponse(
-                result.items().stream().map(TaskResponseModels::from).toList(),
+                items,
                 result.page(), result.size(), result.total(), result.hasNext()));
     }
 
@@ -57,6 +77,10 @@ public class TaskController {
     @Operation(summary = "Get a task by ID")
     public ResponseEntity<TaskResponseModels.TaskResponse> getTask(@PathVariable("taskId") String taskId) {
         return snapshotService.getTask(taskId)
+                .map(task -> {
+                    namespaceAuthorization.requireAccess(task.getNamespace());
+                    return task;
+                })
                 .map(TaskResponseModels::from)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -67,6 +91,7 @@ public class TaskController {
     public ResponseEntity<Map<String, String>> completeTask(
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.complete",
@@ -82,6 +107,7 @@ public class TaskController {
     public ResponseEntity<Map<String, String>> failTask(
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.fail",
@@ -97,6 +123,7 @@ public class TaskController {
     public ResponseEntity<Map<String, String>> deleteTask(
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.delete",
@@ -117,6 +144,7 @@ public class TaskController {
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId,
             @Valid @RequestBody AppendNodeRequest req) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.node.append",
@@ -139,6 +167,7 @@ public class TaskController {
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId,
             @Valid @RequestBody CompleteNodeRequest req) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.node.complete",
@@ -152,6 +181,7 @@ public class TaskController {
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId,
             @PathVariable("nodeId") String nodeId) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.node.delete",
@@ -168,6 +198,7 @@ public class TaskController {
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId,
             @Valid @RequestBody AddEdgeRequest req) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.edge.add",
@@ -187,6 +218,7 @@ public class TaskController {
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId,
             @Valid @RequestBody UpdateContextRequest req) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.context.update",
@@ -204,6 +236,7 @@ public class TaskController {
     public ResponseEntity<Map<String, String>> checkpoint(
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.checkpoint",
@@ -217,6 +250,7 @@ public class TaskController {
     @GetMapping("/{taskId}/checkpoints")
     @Operation(summary = "List checkpoints for a task")
     public ResponseEntity<List<CheckpointMetadata>> listCheckpoints(@PathVariable("taskId") String taskId) {
+        authorizeTask(taskId);
         return ResponseEntity.ok(snapshotService.listCheckpoints(taskId));
     }
 
@@ -226,6 +260,7 @@ public class TaskController {
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId,
             @Valid @RequestBody(required = false) RecoverRequest body) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.recover",
@@ -239,6 +274,7 @@ public class TaskController {
     @GetMapping("/{taskId}/branches")
     @Operation(summary = "List branches for a task")
     public ResponseEntity<List<TaskBranch>> listBranches(@PathVariable("taskId") String taskId) {
+        authorizeTask(taskId);
         return ResponseEntity.ok(snapshotService.listBranches(taskId));
     }
 
@@ -248,6 +284,7 @@ public class TaskController {
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId,
             @Valid @RequestBody CreateBranchRequest req) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.branch.create",
@@ -261,6 +298,7 @@ public class TaskController {
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId,
             @Valid @RequestBody SwitchBranchRequest req) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.branch.switch",
@@ -277,6 +315,7 @@ public class TaskController {
             @RequestHeader(name = ExecutionIdService.HEADER_NAME, required = false) String executionId,
             @PathVariable("taskId") String taskId,
             @Valid @RequestBody MergeBranchRequest req) {
+        authorizeTask(taskId);
         return executionIdService.execute(
                 executionId,
                 "task.branch.merge",
@@ -292,6 +331,7 @@ public class TaskController {
     public ResponseEntity<String> exportDag(
             @PathVariable("taskId") String taskId,
             @RequestParam(name = "branchId", required = false) String branchId) {
+        authorizeTask(taskId);
         String dot = branchId != null
                 ? snapshotService.exportDag(taskId, branchId)
                 : snapshotService.exportDag(taskId);
@@ -344,6 +384,32 @@ public class TaskController {
             int size,
             long total,
             boolean hasNext) {}
+
+    private TaskPageResponse listTasksForNamespace(String namespace, int page, int size) {
+        List<TaskState> matching = new ArrayList<>();
+        int sourcePage = 0;
+        while (true) {
+            TaskLifecycleManager.TaskPage batch = snapshotService.listActiveTasks(sourcePage, 200);
+            batch.items().stream()
+                    .filter(task -> namespace.equals(task.getNamespace()))
+                    .forEach(matching::add);
+            if (!batch.hasNext()) {
+                break;
+            }
+            sourcePage++;
+        }
+        int from = Math.min(page * size, matching.size());
+        int to = Math.min(from + size, matching.size());
+        List<TaskResponseModels.TaskResponse> items = matching.subList(from, to).stream()
+                .map(TaskResponseModels::from)
+                .toList();
+        return new TaskPageResponse(items, page, size, matching.size(), to < matching.size());
+    }
+
+    private void authorizeTask(String taskId) {
+        snapshotService.getTask(taskId)
+                .ifPresent(task -> namespaceAuthorization.requireAccess(task.getNamespace()));
+    }
 
     private Map<String, Object> request(Object... keyValues) {
         Map<String, Object> payload = new LinkedHashMap<>();
