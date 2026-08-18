@@ -223,6 +223,11 @@ public class HierarchicalMemoryController {
         storeFragment(fragment, "initial-store", false);
     }
 
+    /** Stores a fragment synchronously for deterministic offline evaluation setup. */
+    public void storeFragmentDurablyForEvaluation(MemoryFragment fragment) {
+        storeFragment(fragment, "evaluation-store", true);
+    }
+
     void storeFragment(MemoryFragment fragment, String persistenceReason, boolean waitForPersistence) {
         long startedAt = System.nanoTime();
         ensureL1Embedding(fragment);
@@ -239,6 +244,11 @@ public class HierarchicalMemoryController {
     /** Delegate to {@link RecallOrchestrator#recall}. */
     public RecallResult recall(RecallQuery query) {
         return recallOrchestrator.recall(query);
+    }
+
+    /** Runs recall without reinforcement or runtime telemetry mutations for offline comparisons. */
+    public RecallResult recallReadOnlyForEvaluation(RecallQuery query) {
+        return recallOrchestrator.recallReadOnlyForEvaluation(query);
     }
 
     public void recordFeedback(MemoryFeedbackRequest feedbackRequest) {
@@ -270,9 +280,14 @@ public class HierarchicalMemoryController {
         return diagnosticsCollector.diagnosticsSnapshot();
     }
 
-    /** Delegate to {@link FragmentPinManager#pinFragment}. */
+    /** Delegate to the admission coordinator so pinning and L1 residency are atomic. */
     public Optional<MemoryFragment> pinFragment(String fragmentId, long ttlMillis) {
-        return pinManager.pinFragment(fragmentId, ttlMillis);
+        return evictionCoordinator.pinFragment(fragmentId, ttlMillis);
+    }
+
+    public Optional<String> recallSessionNamespace(String recallSessionId) {
+        RecallSessionRecord session = adaptiveWeightLearner.peekRecallSession(recallSessionId);
+        return session == null ? Optional.empty() : Optional.ofNullable(session.getNamespace());
     }
 
     public Optional<MemoryFragment> getFragment(String fragmentId) {
@@ -287,23 +302,26 @@ public class HierarchicalMemoryController {
         if (existing.isEmpty()) {
             return false;
         }
-        MemoryFragment fragment = existing.get();
-        l1.remove(fragmentId);
-        pinManager.removePinIndex(fragment);
-        evictionCoordinator.removeFromTierIndexes(fragment);
+        evictionCoordinator.removeFromL1(fragmentId);
         l2.delete(fragmentId);
         l3.deleteFragment(fragmentId);
+        recallOrchestrator.resetRecallSignals(List.of(fragmentId));
         return true;
     }
 
-    /** Delegate to {@link FragmentPinManager#unpinFragment}. */
-    public Optional<MemoryFragment> unpinFragment(String fragmentId) {
-        return pinManager.unpinFragment(fragmentId);
+    /** Clears recall-only mutable signals so benchmark modes remain isolated. */
+    public void resetRecallSignalsForEvaluation(Collection<String> fragmentIds) {
+        recallOrchestrator.resetRecallSignals(fragmentIds);
     }
 
-    /** Delegate to {@link FragmentPinManager#clearExpiredPins} (also called by @Scheduled). */
+    /** Delegate to the admission coordinator so unpinning and index updates are atomic. */
+    public Optional<MemoryFragment> unpinFragment(String fragmentId) {
+        return evictionCoordinator.unpinFragment(fragmentId);
+    }
+
+    /** Clear expired pins through the shared admission transaction. */
     public void clearExpiredPins() {
-        pinManager.clearExpiredPins();
+        evictionCoordinator.clearExpiredPins();
     }
 
     /** Delegate to {@link TieredEvictionCoordinator#maybeEvict}. */

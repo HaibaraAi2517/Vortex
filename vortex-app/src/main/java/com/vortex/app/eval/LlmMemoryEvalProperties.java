@@ -40,6 +40,22 @@ public class LlmMemoryEvalProperties {
     private int asyncPipelineBenchmarkFragments = 24;
     private int asyncPipelineBenchmarkWarmupFragments = 3;
     private int asyncPipelineBenchmarkAsyncParallelism = 4;
+    private List<Integer> admissionBenchmarkParallelismLevels = new ArrayList<>(List.of(1, 2, 4, 8));
+    private int admissionBenchmarkOperationsPerThread = 100;
+    private int admissionBenchmarkWarmupOperationsPerThread = 10;
+    private int admissionBenchmarkTokenCount = 1;
+    private Duration admissionBenchmarkTimeout = Duration.ofSeconds(30);
+    private List<Integer> reclaimBenchmarkSingletonParallelismLevels =
+            new ArrayList<>(List.of(1, 8));
+    private int reclaimBenchmarkSingletonOperationsPerThread = 8;
+    private int reclaimBenchmarkWarmupOperationsPerThread = 1;
+    private List<Integer> reclaimBenchmarkReasoningChainSizes =
+            new ArrayList<>(List.of(20, 50));
+    private int reclaimBenchmarkChainOperationsPerThread = 1;
+    private int reclaimBenchmarkResidentFragments = 512;
+    private int reclaimBenchmarkEmbeddingDimensions = 512;
+    private int reclaimBenchmarkNamespaceCount = 4;
+    private Duration reclaimBenchmarkTimeout = Duration.ofSeconds(60);
     private int evictionFillerFragments = 6;
     private int evictionFillerTokens = 0;
     private double evictionFillerImportance = 0.95d;

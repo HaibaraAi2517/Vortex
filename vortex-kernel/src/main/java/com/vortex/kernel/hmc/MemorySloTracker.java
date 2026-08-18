@@ -32,6 +32,35 @@ public class MemorySloTracker {
     private final AtomicLong tieredColdOnlySelections = new AtomicLong();
     private final AtomicLong tieredHotOnlySelections = new AtomicLong();
     private final AtomicLong tieredExpandedSelections = new AtomicLong();
+    private final AtomicLong admissionPlanningGateWaitCount = new AtomicLong();
+    private final AtomicLong admissionPlanningGateWaitNanosTotal = new AtomicLong();
+    private final AtomicLong admissionPlanningGateWaitNanosMax = new AtomicLong();
+    private final AtomicLong admissionLockWaitNanosTotal = new AtomicLong();
+    private final AtomicLong admissionLockWaitNanosMax = new AtomicLong();
+    private final AtomicLong admissionLockHoldNanosTotal = new AtomicLong();
+    private final AtomicLong admissionLockHoldNanosMax = new AtomicLong();
+    private final AtomicLong admissionPlanningNanosTotal = new AtomicLong();
+    private final AtomicLong admissionPlanningNanosMax = new AtomicLong();
+    private final AtomicLong admissionDetailedSnapshotLockHoldNanosTotal = new AtomicLong();
+    private final AtomicLong admissionDetailedSnapshotLockHoldNanosMax = new AtomicLong();
+    private final AtomicLong admissionDetailedSnapshotFreezeNanosTotal = new AtomicLong();
+    private final AtomicLong admissionDetailedSnapshotFreezeNanosMax = new AtomicLong();
+    private final AtomicLong admissionCommitLockHoldNanosTotal = new AtomicLong();
+    private final AtomicLong admissionCommitLockHoldNanosMax = new AtomicLong();
+    private final AtomicLong admissionRequestCount = new AtomicLong();
+    private final AtomicLong admissionDirectAttemptCount = new AtomicLong();
+    private final AtomicLong admissionDirectCommitCount = new AtomicLong();
+    private final AtomicLong admissionDirectEscalationCount = new AtomicLong();
+    private final AtomicLong admissionDirectRejectionCount = new AtomicLong();
+    private final AtomicLong admissionOptimisticAttemptCount = new AtomicLong();
+    private final AtomicLong admissionOptimisticCommitCount = new AtomicLong();
+    private final AtomicLong admissionLockAcquisitionCount = new AtomicLong();
+    private final AtomicLong admissionPlanningCount = new AtomicLong();
+    private final AtomicLong admissionDetailedSnapshotCount = new AtomicLong();
+    private final AtomicLong admissionDetailedSnapshotFreezeCount = new AtomicLong();
+    private final AtomicLong admissionCommitLockCount = new AtomicLong();
+    private final AtomicLong admissionOptimisticConflictCount = new AtomicLong();
+    private final AtomicLong admissionFallbackCount = new AtomicLong();
     private final AtomicReference<Double> regretRate = new AtomicReference<>(0.0);
     private final AtomicReference<Double> shadowLift = new AtomicReference<>(0.0);
     private final AtomicReference<Double> baselineLift = new AtomicReference<>(0.0);
@@ -72,6 +101,89 @@ public class MemorySloTracker {
         Gauge.builder("vortex.hmc.eviction.tier.hot.only.count", tieredHotOnlySelections, AtomicLong::get)
                 .register(meterRegistry);
         Gauge.builder("vortex.hmc.eviction.tier.expansion.count", tieredExpandedSelections, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.planning.gate.wait.count",
+                        admissionPlanningGateWaitCount, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.planning.gate.wait.total.ms",
+                        admissionPlanningGateWaitNanosTotal,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.planning.gate.wait.max.ms",
+                        admissionPlanningGateWaitNanosMax,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.lock.wait.total.ms", admissionLockWaitNanosTotal,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.lock.wait.max.ms", admissionLockWaitNanosMax,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.lock.hold.total.ms", admissionLockHoldNanosTotal,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.lock.hold.max.ms", admissionLockHoldNanosMax,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.planning.total.ms", admissionPlanningNanosTotal,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.planning.max.ms", admissionPlanningNanosMax,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.snapshot.detailed.lock.hold.total.ms",
+                        admissionDetailedSnapshotLockHoldNanosTotal,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.snapshot.detailed.lock.hold.max.ms",
+                        admissionDetailedSnapshotLockHoldNanosMax,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.snapshot.detailed.freeze.total.ms",
+                        admissionDetailedSnapshotFreezeNanosTotal,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.snapshot.detailed.freeze.max.ms",
+                        admissionDetailedSnapshotFreezeNanosMax,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.commit.lock.hold.total.ms",
+                        admissionCommitLockHoldNanosTotal,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.commit.lock.hold.max.ms",
+                        admissionCommitLockHoldNanosMax,
+                        nanos -> nanos.get() / 1_000_000.0)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.request.count", admissionRequestCount, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.direct.attempt.count",
+                        admissionDirectAttemptCount, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.direct.commit.count",
+                        admissionDirectCommitCount, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.direct.escalation.count",
+                        admissionDirectEscalationCount, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.direct.rejection.count",
+                        admissionDirectRejectionCount, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.optimistic.attempt.count",
+                        admissionOptimisticAttemptCount, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.optimistic.commit.count",
+                        admissionOptimisticCommitCount, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.lock.acquisition.count",
+                        admissionLockAcquisitionCount, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.planning.count", admissionPlanningCount, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.optimistic.conflict.count",
+                        admissionOptimisticConflictCount, AtomicLong::get)
+                .register(meterRegistry);
+        Gauge.builder("vortex.hmc.admission.fallback.count", admissionFallbackCount, AtomicLong::get)
                 .register(meterRegistry);
         Gauge.builder("vortex.hmc.slo.eviction.regret.rate", regretRate, AtomicReference::get)
                 .register(meterRegistry);
@@ -152,6 +264,88 @@ public class MemorySloTracker {
         }
     }
 
+    public void recordAdmissionLockWait(long nanos) {
+        admissionLockAcquisitionCount.incrementAndGet();
+        recordDuration(nanos, admissionLockWaitNanosTotal, admissionLockWaitNanosMax);
+    }
+
+    public void recordAdmissionPlanningGateWait(long nanos) {
+        admissionPlanningGateWaitCount.incrementAndGet();
+        recordDuration(
+                nanos,
+                admissionPlanningGateWaitNanosTotal,
+                admissionPlanningGateWaitNanosMax);
+    }
+
+    public void recordAdmissionLockHold(long nanos) {
+        recordDuration(nanos, admissionLockHoldNanosTotal, admissionLockHoldNanosMax);
+    }
+
+    public void recordAdmissionPlanning(long nanos) {
+        admissionPlanningCount.incrementAndGet();
+        recordDuration(nanos, admissionPlanningNanosTotal, admissionPlanningNanosMax);
+    }
+
+    public void recordAdmissionDetailedSnapshotLockHold(long nanos) {
+        admissionDetailedSnapshotCount.incrementAndGet();
+        recordDuration(
+                nanos,
+                admissionDetailedSnapshotLockHoldNanosTotal,
+                admissionDetailedSnapshotLockHoldNanosMax);
+    }
+
+    public void recordAdmissionDetailedSnapshotFreeze(long nanos) {
+        admissionDetailedSnapshotFreezeCount.incrementAndGet();
+        recordDuration(
+                nanos,
+                admissionDetailedSnapshotFreezeNanosTotal,
+                admissionDetailedSnapshotFreezeNanosMax);
+    }
+
+    public void recordAdmissionCommitLockHold(long nanos) {
+        admissionCommitLockCount.incrementAndGet();
+        recordDuration(
+                nanos,
+                admissionCommitLockHoldNanosTotal,
+                admissionCommitLockHoldNanosMax);
+    }
+
+    public void recordAdmissionRequest() {
+        admissionRequestCount.incrementAndGet();
+    }
+
+    public void recordAdmissionDirectAttempt() {
+        admissionDirectAttemptCount.incrementAndGet();
+    }
+
+    public void recordAdmissionDirectCommit() {
+        admissionDirectCommitCount.incrementAndGet();
+    }
+
+    public void recordAdmissionDirectEscalation() {
+        admissionDirectEscalationCount.incrementAndGet();
+    }
+
+    public void recordAdmissionDirectRejection() {
+        admissionDirectRejectionCount.incrementAndGet();
+    }
+
+    public void recordAdmissionOptimisticAttempt() {
+        admissionOptimisticAttemptCount.incrementAndGet();
+    }
+
+    public void recordAdmissionOptimisticCommit() {
+        admissionOptimisticCommitCount.incrementAndGet();
+    }
+
+    public void recordAdmissionOptimisticConflict() {
+        admissionOptimisticConflictCount.incrementAndGet();
+    }
+
+    public void recordAdmissionFallback() {
+        admissionFallbackCount.incrementAndGet();
+    }
+
     public SloSnapshot snapshot() {
         return new SloSnapshot(
                 storeCount.get(),
@@ -174,8 +368,42 @@ public class MemorySloTracker {
                 recallLatencyPercentiles.percentileMillis(0.99),
                 tieredColdOnlySelections.get(),
                 tieredHotOnlySelections.get(),
-                tieredExpandedSelections.get()
+                tieredExpandedSelections.get(),
+                admissionMetricsSnapshot().toSloSnapshot()
         );
+    }
+
+    public AdmissionMetricsSnapshot admissionMetricsSnapshot() {
+        return new AdmissionMetricsSnapshot(
+                admissionRequestCount.get(),
+                admissionDirectAttemptCount.get(),
+                admissionDirectCommitCount.get(),
+                admissionDirectEscalationCount.get(),
+                admissionDirectRejectionCount.get(),
+                admissionOptimisticAttemptCount.get(),
+                admissionOptimisticCommitCount.get(),
+                admissionOptimisticConflictCount.get(),
+                admissionFallbackCount.get(),
+                admissionPlanningGateWaitCount.get(),
+                admissionPlanningGateWaitNanosTotal.get(),
+                admissionPlanningGateWaitNanosMax.get(),
+                admissionLockAcquisitionCount.get(),
+                admissionLockWaitNanosTotal.get(),
+                admissionLockWaitNanosMax.get(),
+                admissionLockHoldNanosTotal.get(),
+                admissionLockHoldNanosMax.get(),
+                admissionPlanningCount.get(),
+                admissionPlanningNanosTotal.get(),
+                admissionPlanningNanosMax.get(),
+                admissionDetailedSnapshotCount.get(),
+                admissionDetailedSnapshotLockHoldNanosTotal.get(),
+                admissionDetailedSnapshotLockHoldNanosMax.get(),
+                admissionDetailedSnapshotFreezeCount.get(),
+                admissionDetailedSnapshotFreezeNanosTotal.get(),
+                admissionDetailedSnapshotFreezeNanosMax.get(),
+                admissionCommitLockCount.get(),
+                admissionCommitLockHoldNanosTotal.get(),
+                admissionCommitLockHoldNanosMax.get());
     }
 
     private double evictionLogCoverage() {
@@ -203,6 +431,12 @@ public class MemorySloTracker {
         return total == 0 ? 1.0 : success / (double) total;
     }
 
+    private void recordDuration(long nanos, AtomicLong total, AtomicLong max) {
+        long nonNegativeNanos = Math.max(0L, nanos);
+        total.addAndGet(nonNegativeNanos);
+        max.accumulateAndGet(nonNegativeNanos, Math::max);
+    }
+
     public record SloSnapshot(
             long storeCount,
             long recallCount,
@@ -224,7 +458,167 @@ public class MemorySloTracker {
             double recallLatencyP99Ms,
             long tieredColdOnlySelections,
             long tieredHotOnlySelections,
-            long tieredExpandedSelections) {
+            long tieredExpandedSelections,
+            AdmissionSloSnapshot admission) {
+
+        public SloSnapshot(
+                long storeCount,
+                long recallCount,
+                double evictionLogCoverage,
+                double regretRate,
+                double shadowRelativeLift,
+                double baselineRelativeLift,
+                double baselineLiftSustainedRatio,
+                long namespaceIsolationViolations,
+                double recoverySuccessRate,
+                double checkpointRecoverySuccessRate,
+                double persistenceSuccessRate,
+                double durabilitySuccessRate,
+                double storeLatencyMaxMs,
+                double storeLatencyP95Ms,
+                double storeLatencyP99Ms,
+                double recallLatencyMaxMs,
+                double recallLatencyP95Ms,
+                double recallLatencyP99Ms,
+                long tieredColdOnlySelections,
+                long tieredHotOnlySelections,
+                long tieredExpandedSelections) {
+            this(
+                    storeCount,
+                    recallCount,
+                    evictionLogCoverage,
+                    regretRate,
+                    shadowRelativeLift,
+                    baselineRelativeLift,
+                    baselineLiftSustainedRatio,
+                    namespaceIsolationViolations,
+                    recoverySuccessRate,
+                    checkpointRecoverySuccessRate,
+                    persistenceSuccessRate,
+                    durabilitySuccessRate,
+                    storeLatencyMaxMs,
+                    storeLatencyP95Ms,
+                    storeLatencyP99Ms,
+                    recallLatencyMaxMs,
+                    recallLatencyP95Ms,
+                    recallLatencyP99Ms,
+                    tieredColdOnlySelections,
+                    tieredHotOnlySelections,
+                    tieredExpandedSelections,
+                    AdmissionSloSnapshot.empty());
+        }
+    }
+
+    public record AdmissionMetricsSnapshot(
+            long requestCount,
+            long directAttemptCount,
+            long directCommitCount,
+            long directEscalationCount,
+            long directRejectionCount,
+            long optimisticAttemptCount,
+            long optimisticCommitCount,
+            long optimisticConflictCount,
+            long fallbackCount,
+            long planningGateWaitCount,
+            long planningGateWaitNanosTotal,
+            long planningGateWaitNanosMax,
+            long lockAcquisitionCount,
+            long lockWaitNanosTotal,
+            long lockWaitNanosMax,
+            long lockHoldNanosTotal,
+            long lockHoldNanosMax,
+            long planningCount,
+            long planningNanosTotal,
+            long planningNanosMax,
+            long detailedSnapshotCount,
+            long detailedSnapshotLockHoldNanosTotal,
+            long detailedSnapshotLockHoldNanosMax,
+            long detailedSnapshotFreezeCount,
+            long detailedSnapshotFreezeNanosTotal,
+            long detailedSnapshotFreezeNanosMax,
+            long commitLockCount,
+            long commitLockHoldNanosTotal,
+            long commitLockHoldNanosMax) {
+
+        private AdmissionSloSnapshot toSloSnapshot() {
+            return new AdmissionSloSnapshot(
+                    requestCount,
+                    directAttemptCount,
+                    directCommitCount,
+                    directEscalationCount,
+                    directRejectionCount,
+                    optimisticAttemptCount,
+                    optimisticCommitCount,
+                    optimisticConflictCount,
+                    fallbackCount,
+                    planningGateWaitCount,
+                    nanosToMillis(planningGateWaitNanosTotal),
+                    averageMillis(planningGateWaitNanosTotal, planningGateWaitCount),
+                    nanosToMillis(planningGateWaitNanosMax),
+                    lockAcquisitionCount,
+                    nanosToMillis(lockWaitNanosTotal),
+                    averageMillis(lockWaitNanosTotal, lockAcquisitionCount),
+                    nanosToMillis(lockWaitNanosMax),
+                    nanosToMillis(lockHoldNanosTotal),
+                    averageMillis(lockHoldNanosTotal, lockAcquisitionCount),
+                    nanosToMillis(lockHoldNanosMax),
+                    planningCount,
+                    nanosToMillis(planningNanosTotal),
+                    averageMillis(planningNanosTotal, planningCount),
+                    nanosToMillis(planningNanosMax),
+                    ratio(optimisticConflictCount, optimisticAttemptCount),
+                    ratio(fallbackCount, requestCount));
+        }
+    }
+
+    public record AdmissionSloSnapshot(
+            long requestCount,
+            long directAttemptCount,
+            long directCommitCount,
+            long directEscalationCount,
+            long directRejectionCount,
+            long optimisticAttemptCount,
+            long optimisticCommitCount,
+            long optimisticConflictCount,
+            long fallbackCount,
+            long planningGateWaitCount,
+            double planningGateWaitTotalMs,
+            double planningGateWaitAverageMs,
+            double planningGateWaitMaxMs,
+            long lockAcquisitionCount,
+            double lockWaitTotalMs,
+            double lockWaitAverageMs,
+            double lockWaitMaxMs,
+            double lockHoldTotalMs,
+            double lockHoldAverageMs,
+            double lockHoldMaxMs,
+            long planningCount,
+            double planningTotalMs,
+            double planningAverageMs,
+            double planningMaxMs,
+            double optimisticConflictRate,
+            double fallbackRate) {
+
+        private static AdmissionSloSnapshot empty() {
+            return new AdmissionMetricsSnapshot(
+                    0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                    0L, 0L, 0L,
+                    0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                    0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L)
+                    .toSloSnapshot();
+        }
+    }
+
+    private static double nanosToMillis(long nanos) {
+        return Math.max(0L, nanos) / 1_000_000.0;
+    }
+
+    private static double averageMillis(long nanos, long count) {
+        return count == 0L ? 0.0 : nanosToMillis(nanos) / count;
+    }
+
+    private static double ratio(long numerator, long denominator) {
+        return denominator == 0L ? 0.0 : numerator / (double) denominator;
     }
 
     private static final class RollingPercentile {

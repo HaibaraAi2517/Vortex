@@ -159,8 +159,8 @@ public class PageFaultHandler {
 
     /**
      * Admit an entire page of fragments to L1.
-     * Each fragment is individually put into L1 — the caller (SemanticPagingManager)
-     * should wrap this in a single admissionLock for atomicity.
+     * Admission must flow through HMC so capacity, quota, pin, and tier indexes
+     * are committed through the shared admission transaction.
      */
     void admitPageToL1(SemanticPage page, List<MemoryFragment> fragments, String primaryFragmentId) {
         HierarchicalMemoryController hmc = hmcProvider.getIfAvailable();
@@ -170,12 +170,7 @@ public class PageFaultHandler {
             log.debug("Page admitted to L1 via HMC pageId={} fragmentCount={}", page.getPageId(), fragments.size());
             return;
         }
-        for (MemoryFragment fragment : fragments) {
-            fragment.recordAccess();
-            l1.put(fragment);
-        }
-        page.recordAccess();
-        log.debug("Page admitted to L1 pageId={} fragmentCount={}", page.getPageId(), fragments.size());
+        throw new IllegalStateException("HMC is unavailable for page admission");
     }
 
     private void prioritizeFaultingFragment(List<MemoryFragment> fragments, String fragmentId) {

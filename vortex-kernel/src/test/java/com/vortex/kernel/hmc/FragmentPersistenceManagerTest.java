@@ -17,7 +17,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -107,6 +112,151 @@ class FragmentPersistenceManagerTest {
         assertThat(l2.upsertedIds).containsExactly("persist-once");
         assertThat(l3.archivedIds).containsExactly("persist-once");
         assertThat(processed.size()).isEqualTo(1);
+    }
+
+    @Test
+    void rejectedAsyncTaskIsDeferredToDlqInsteadOfRunningOnCaller() {
+        ToggleableL2WarmStore l2 = new ToggleableL2WarmStore();
+        RecordingL3ColdStore l3 = new RecordingL3ColdStore();
+        FileBackedDeadLetterQueue queue = new FileBackedDeadLetterQueue(
+                tempDir.resolve("hmc-dlq-rejected.jsonl"),
+                new ObjectMapper().findAndRegisterModules(),
+                5);
+        FileBackedProcessedTaskStore processed = new FileBackedProcessedTaskStore(
+                tempDir.resolve("processed-rejected.txt"),
+                128);
+        Executor rejectingExecutor = command -> {
+            throw new RejectedExecutionException("saturated");
+        };
+        FragmentPersistenceManager manager = new FragmentPersistenceManager(
+                l2, l3, queue, processed, new MemorySloTracker(new SimpleMeterRegistry()), false,
+                rejectingExecutor);
+        MemoryFragment fragment = MemoryFragment.builder()
+                .id("deferred")
+                .namespace("ns")
+                .content("payload")
+                .embedding(new float[]{1.0f})
+                .tokenCount(10)
+                .build();
+
+        manager.persistAsync(fragment, "executor-saturated");
+
+        assertThat(queue.size()).isEqualTo(1);
+        assertThat(l2.upsertedIds).isEmpty();
+        assertThat(l3.archivedIds).isEmpty();
+
+        manager.replayPendingTasks();
+        assertThat(queue.size()).isZero();
+        assertThat(l2.upsertedIds).containsExactly("deferred");
+        assertThat(l3.archivedIds).containsExactly("deferred");
+    }
+
+    @Test
+    void asyncBatchUsesBoundedExecutorSubmissionsAndPersistsEveryFragment() {
+        ToggleableL2WarmStore l2 = new ToggleableL2WarmStore();
+        RecordingL3ColdStore l3 = new RecordingL3ColdStore();
+        FileBackedDeadLetterQueue queue = new FileBackedDeadLetterQueue(
+                tempDir.resolve("hmc-dlq-batch.jsonl"),
+                new ObjectMapper().findAndRegisterModules(),
+                5);
+        FileBackedProcessedTaskStore processed = new FileBackedProcessedTaskStore(
+                tempDir.resolve("processed-batch.txt"),
+                128);
+        AtomicInteger submissions = new AtomicInteger();
+        Executor directExecutor = command -> {
+            submissions.incrementAndGet();
+            command.run();
+        };
+        FragmentPersistenceManager manager = new FragmentPersistenceManager(
+                l2, l3, queue, processed, new MemorySloTracker(new SimpleMeterRegistry()), false,
+                directExecutor);
+        List<MemoryFragment> fragments = java.util.stream.IntStream.range(0, 40)
+                .mapToObj(index -> MemoryFragment.builder()
+                        .id("batch-" + index)
+                        .namespace("ns")
+                        .content("payload")
+                        .embedding(new float[]{1.0f})
+                        .tokenCount(1)
+                        .build())
+                .toList();
+
+        manager.persistAsyncBatch(fragments, "batch-test");
+
+        assertThat(submissions).hasValue(3);
+        assertThat(l2.upsertedIds).hasSize(40);
+        assertThat(l3.archivedIds).hasSize(40);
+        assertThat(processed.size()).isEqualTo(40);
+        assertThat(queue.size()).isZero();
+    }
+
+    @Test
+    void rejectedAsyncBatchDefersEveryTaskToDlq() {
+        ToggleableL2WarmStore l2 = new ToggleableL2WarmStore();
+        RecordingL3ColdStore l3 = new RecordingL3ColdStore();
+        FileBackedDeadLetterQueue queue = new FileBackedDeadLetterQueue(
+                tempDir.resolve("hmc-dlq-rejected-batch.jsonl"),
+                new ObjectMapper().findAndRegisterModules(),
+                5);
+        FileBackedProcessedTaskStore processed = new FileBackedProcessedTaskStore(
+                tempDir.resolve("processed-rejected-batch.txt"),
+                128);
+        Executor rejectingExecutor = command -> {
+            throw new RejectedExecutionException("saturated");
+        };
+        FragmentPersistenceManager manager = new FragmentPersistenceManager(
+                l2, l3, queue, processed, new MemorySloTracker(new SimpleMeterRegistry()), false,
+                rejectingExecutor);
+        List<MemoryFragment> fragments = java.util.stream.IntStream.range(0, 3)
+                .mapToObj(index -> MemoryFragment.builder()
+                        .id("deferred-batch-" + index)
+                        .namespace("ns")
+                        .content("payload")
+                        .embedding(new float[]{1.0f})
+                        .tokenCount(1)
+                        .build())
+                .toList();
+
+        manager.persistAsyncBatch(fragments, "executor-saturated");
+
+        assertThat(queue.size()).isEqualTo(3);
+        assertThat(l2.upsertedIds).isEmpty();
+        assertThat(l3.archivedIds).isEmpty();
+    }
+
+    @Test
+    void awaitQuiescenceWaitsForSubmittedBatchWork() {
+        ToggleableL2WarmStore l2 = new ToggleableL2WarmStore();
+        RecordingL3ColdStore l3 = new RecordingL3ColdStore();
+        FileBackedDeadLetterQueue queue = new FileBackedDeadLetterQueue(
+                tempDir.resolve("hmc-dlq-drain.jsonl"),
+                new ObjectMapper().findAndRegisterModules(),
+                5);
+        FileBackedProcessedTaskStore processed = new FileBackedProcessedTaskStore(
+                tempDir.resolve("processed-drain.txt"),
+                128);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            FragmentPersistenceManager manager = new FragmentPersistenceManager(
+                    l2, l3, queue, processed, new MemorySloTracker(new SimpleMeterRegistry()), false,
+                    executor);
+            List<MemoryFragment> fragments = java.util.stream.IntStream.range(0, 20)
+                    .mapToObj(index -> MemoryFragment.builder()
+                            .id("drain-" + index)
+                            .namespace("ns")
+                            .content("payload")
+                            .embedding(new float[]{1.0f})
+                            .tokenCount(1)
+                            .build())
+                    .toList();
+
+            manager.persistAsyncBatch(fragments, "drain-test");
+
+            assertThat(manager.awaitQuiescence(java.time.Duration.ofSeconds(5))).isTrue();
+            assertThat(l2.upsertedIds).hasSize(20);
+            assertThat(l3.archivedIds).hasSize(20);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test

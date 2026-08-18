@@ -14,6 +14,8 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -42,6 +44,7 @@ public class FragmentPinManager {
 
     private final PriorityBlockingQueue<PinnedFragmentRef> pinExpirations = new PriorityBlockingQueue<>();
     private final ConcurrentMap<String, Long> pinnedFragmentDeadlines = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Long> pinnedFragmentTokens = new ConcurrentHashMap<>();
     private final AtomicBoolean clearingExpiredPins = new AtomicBoolean(false);
     private final AtomicLong pinnedTokenCount = new AtomicLong(0);
 
@@ -79,91 +82,88 @@ public class FragmentPinManager {
     @PostConstruct
     void cleanPinsOnStartup() {
         rebuildPinIndex();
-        clearExpiredPins();
+        clearExpiredPinsLocked().forEach(fragment -> persistenceManager.persistAsync(fragment, "pin-expired"));
     }
 
     // ---- Public API ----
 
     public Optional<MemoryFragment> pinFragment(String fragmentId, long ttlMillis) {
-        if (fragmentId == null || fragmentId.isBlank() || ttlMillis <= 0) {
+        if (evictionCoordinator == null) {
             return Optional.empty();
         }
-        Optional<MemoryFragment> fragment = this.findFragment(fragmentId);
-        fragment.ifPresent(found -> {
-            found.pinForMillis(ttlMillis);
-            l1.put(found, false);
-            this.indexPin(found);
-            evictionCoordinator.reindexTierMembership(found);
-            persistenceManager.persistAsync(found, "pin-update");
-        });
-        return fragment;
+        return evictionCoordinator.pinFragment(fragmentId, ttlMillis);
     }
 
     public Optional<MemoryFragment> unpinFragment(String fragmentId) {
-        if (fragmentId == null || fragmentId.isBlank()) {
+        if (evictionCoordinator == null) {
             return Optional.empty();
         }
-        Optional<MemoryFragment> fragment = this.findFragment(fragmentId);
-        fragment.ifPresent(found -> {
-            found.unpin();
-            l1.put(found, false);
-            this.indexPin(found);
-            evictionCoordinator.reindexTierMembership(found);
-            persistenceManager.persistAsync(found, "pin-update");
-        });
-        return fragment;
+        return evictionCoordinator.unpinFragment(fragmentId);
     }
 
     @Scheduled(fixedDelayString = "${vortex.kernel.pin.cleanup-interval-ms:30000}")
     public void clearExpiredPins() {
-        if (!clearingExpiredPins.compareAndSet(false, true)) {
+        if (evictionCoordinator == null) {
+            clearExpiredPinsLocked().forEach(fragment -> persistenceManager.persistAsync(fragment, "pin-expired"));
             return;
         }
+        evictionCoordinator.clearExpiredPins();
+    }
+
+    List<MemoryFragment> clearExpiredPinsLocked() {
+        if (!clearingExpiredPins.compareAndSet(false, true)) {
+            return List.of();
+        }
+        List<MemoryFragment> clearedFragments = new ArrayList<>();
         try {
-        long now = System.currentTimeMillis();
-        int cleared = 0;
-        while (true) {
-            PinnedFragmentRef ref = pinExpirations.peek();
-            if (ref == null || ref.pinnedUntilEpochMillis() > now) {
-                break;
-            }
-            pinExpirations.poll();
-            Long currentDeadline = pinnedFragmentDeadlines.get(ref.fragmentId());
-            if (currentDeadline == null || currentDeadline.longValue() != ref.pinnedUntilEpochMillis()) {
-                continue;
-            }
-            Optional<MemoryFragment> fragment = this.findFragment(ref.fragmentId());
-            if (fragment.isEmpty()) {
-                pinnedFragmentDeadlines.remove(ref.fragmentId(), currentDeadline);
-                continue;
-            }
-            MemoryFragment found = fragment.get();
-            if (!found.clearExpiredPin()) {
+            long now = System.currentTimeMillis();
+            while (true) {
+                PinnedFragmentRef ref = pinExpirations.peek();
+                if (ref == null || ref.pinnedUntilEpochMillis() > now) {
+                    break;
+                }
+                pinExpirations.poll();
+                Long currentDeadline = pinnedFragmentDeadlines.get(ref.fragmentId());
+                if (currentDeadline == null || currentDeadline.longValue() != ref.pinnedUntilEpochMillis()) {
+                    continue;
+                }
+                Optional<MemoryFragment> fragment = l1.peek(ref.fragmentId());
+                if (fragment.isEmpty()) {
+                    removePinIndex(ref.fragmentId(), currentDeadline);
+                    continue;
+                }
+                MemoryFragment found = fragment.get();
+                if (!found.clearExpiredPin()) {
+                    this.indexPin(found);
+                    continue;
+                }
+                l1.put(found, false);
                 this.indexPin(found);
-                continue;
+                if (evictionCoordinator != null) {
+                    evictionCoordinator.reindexTierMembership(found);
+                }
+                clearedFragments.add(found);
             }
-            l1.put(found, false);
-            this.indexPin(found);
-            evictionCoordinator.reindexTierMembership(found);
-            persistenceManager.persistAsync(found, "pin-expired");
-            cleared++;
-        }
-        if (cleared > 0) {
-            log.debug("Cleared expired pins count={}", cleared);
-        }
+            if (!clearedFragments.isEmpty()) {
+                log.debug("Cleared expired pins count={}", clearedFragments.size());
+            }
         } finally {
             clearingExpiredPins.set(false);
         }
+        return List.copyOf(clearedFragments);
     }
 
     public long getPinnedTokenCount() {
         return pinnedTokenCount.get();
     }
 
+    long getIndexedPinnedTokenCount(String fragmentId) {
+        return pinnedFragmentTokens.getOrDefault(fragmentId, 0L);
+    }
+
     // ---- Package-private (used by TieredEvictionCoordinator) ----
 
     void indexPin(MemoryFragment fragment) {
-        Long previousDeadline = pinnedFragmentDeadlines.get(fragment.getId());
         Long pinnedUntil = fragment.getPinnedUntil();
         if (pinnedUntil == null) {
             this.removePinIndex(fragment);
@@ -174,18 +174,29 @@ public class FragmentPinManager {
             this.removePinIndex(fragment);
             return;
         }
-        if (previousDeadline == null) {
-            pinnedTokenCount.addAndGet(fragment.getTokenCount());
-        }
+        long nextTokens = fragment.getTokenCount();
+        Long previousTokens = pinnedFragmentTokens.put(fragment.getId(), nextTokens);
+        pinnedTokenCount.addAndGet(nextTokens - (previousTokens == null ? 0L : previousTokens));
         pinnedFragmentDeadlines.put(fragment.getId(), pinnedUntil);
         pinExpirations.offer(new PinnedFragmentRef(fragment.getId(), pinnedUntil));
         trimStalePinEntries(fragment.getId(), pinnedUntil);
     }
 
     void removePinIndex(MemoryFragment fragment) {
-        Long removed = pinnedFragmentDeadlines.remove(fragment.getId());
-        if (removed != null) {
-            pinnedTokenCount.addAndGet(-fragment.getTokenCount());
+        pinnedFragmentDeadlines.remove(fragment.getId());
+        Long removedTokens = pinnedFragmentTokens.remove(fragment.getId());
+        if (removedTokens != null) {
+            pinnedTokenCount.addAndGet(-removedTokens);
+        }
+    }
+
+    private void removePinIndex(String fragmentId, long expectedDeadline) {
+        if (!pinnedFragmentDeadlines.remove(fragmentId, expectedDeadline)) {
+            return;
+        }
+        Long removedTokens = pinnedFragmentTokens.remove(fragmentId);
+        if (removedTokens != null) {
+            pinnedTokenCount.addAndGet(-removedTokens);
         }
     }
 
@@ -227,6 +238,7 @@ public class FragmentPinManager {
     private void rebuildPinIndex() {
         pinnedTokenCount.set(0L);
         pinnedFragmentDeadlines.clear();
+        pinnedFragmentTokens.clear();
         pinExpirations.clear();
         if (l1Admin == null) {
             return;

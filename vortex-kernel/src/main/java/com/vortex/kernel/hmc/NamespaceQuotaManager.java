@@ -34,10 +34,7 @@ public class NamespaceQuotaManager {
                         MemoryFragment::getNamespace,
                         Collectors.summingLong(MemoryFragment::getTokenCount)));
 
-        int namespaceCount = Math.max(1, namespaceUsage.size());
-        long defaultHardQuota = Math.max(minHardQuotaTokens, (long) Math.floor(globalCapacity * hardQuotaFraction));
-        long fairShareHardQuota = Math.max(1L, globalCapacity / namespaceCount);
-        long hardQuotaPerNamespace = Math.min(defaultHardQuota, fairShareHardQuota);
+        long hardQuotaPerNamespace = hardQuotaPerNamespace(globalCapacity, namespaceUsage.size());
         long softQuotaPerNamespace = Math.max(1L, Math.min(hardQuotaPerNamespace, (long) Math.floor(globalCapacity * softQuotaFraction)));
 
         long protectedTokens = namespaceUsage.values().stream()
@@ -66,6 +63,14 @@ public class NamespaceQuotaManager {
                 focusAboveHardQuota,
                 namespaceUsage
         );
+    }
+
+    public long hardQuotaPerNamespace(long globalCapacity, int activeNamespaceCount) {
+        int namespaceCount = Math.max(1, activeNamespaceCount);
+        long defaultHardQuota =
+                Math.max(minHardQuotaTokens, (long) Math.floor(globalCapacity * hardQuotaFraction));
+        long fairShareHardQuota = Math.max(1L, globalCapacity / namespaceCount);
+        return Math.min(defaultHardQuota, fairShareHardQuota);
     }
 
     public List<String> evictionPriorityNamespaces(Collection<MemoryFragment> fragments, long globalCapacity, String focusNamespace) {

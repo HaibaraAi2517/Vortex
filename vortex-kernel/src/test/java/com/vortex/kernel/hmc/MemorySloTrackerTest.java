@@ -77,4 +77,85 @@ class MemorySloTrackerTest {
         assertThat(snapshot.recallLatencyP99Ms()).isGreaterThanOrEqualTo(snapshot.recallLatencyP95Ms());
         assertThat(snapshot.recallLatencyP99Ms()).isLessThanOrEqualTo(snapshot.recallLatencyMaxMs());
     }
+
+    @Test
+    void admissionMetricsExposeLockPlanningConflictAndFallbackSignals() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        MemorySloTracker tracker = new MemorySloTracker(registry);
+        tracker.bind();
+
+        tracker.recordAdmissionPlanningGateWait(1_500_000L);
+        tracker.recordAdmissionLockWait(2_000_000L);
+        tracker.recordAdmissionLockHold(3_000_000L);
+        tracker.recordAdmissionPlanning(4_000_000L);
+        tracker.recordAdmissionDetailedSnapshotLockHold(500_000L);
+        tracker.recordAdmissionDetailedSnapshotFreeze(6_000_000L);
+        tracker.recordAdmissionCommitLockHold(700_000L);
+        tracker.recordAdmissionRequest();
+        tracker.recordAdmissionDirectAttempt();
+        tracker.recordAdmissionDirectCommit();
+        tracker.recordAdmissionDirectEscalation();
+        tracker.recordAdmissionDirectRejection();
+        tracker.recordAdmissionOptimisticAttempt();
+        tracker.recordAdmissionOptimisticCommit();
+        tracker.recordAdmissionOptimisticConflict();
+        tracker.recordAdmissionFallback();
+
+        assertThat(registry.get("vortex.hmc.admission.planning.gate.wait.count").gauge().value())
+                .isEqualTo(1.0);
+        assertThat(registry.get("vortex.hmc.admission.planning.gate.wait.total.ms").gauge().value())
+                .isEqualTo(1.5);
+        assertThat(registry.get("vortex.hmc.admission.planning.gate.wait.max.ms").gauge().value())
+                .isEqualTo(1.5);
+        assertThat(registry.get("vortex.hmc.admission.lock.wait.total.ms").gauge().value())
+                .isEqualTo(2.0);
+        assertThat(registry.get("vortex.hmc.admission.lock.hold.max.ms").gauge().value())
+                .isEqualTo(3.0);
+        assertThat(registry.get("vortex.hmc.admission.planning.max.ms").gauge().value())
+                .isEqualTo(4.0);
+        assertThat(registry.get("vortex.hmc.admission.snapshot.detailed.lock.hold.max.ms").gauge().value())
+                .isEqualTo(0.5);
+        assertThat(registry.get("vortex.hmc.admission.snapshot.detailed.freeze.max.ms").gauge().value())
+                .isEqualTo(6.0);
+        assertThat(registry.get("vortex.hmc.admission.commit.lock.hold.max.ms").gauge().value())
+                .isEqualTo(0.7);
+        assertThat(registry.get("vortex.hmc.admission.optimistic.conflict.count").gauge().value())
+                .isEqualTo(1.0);
+        assertThat(registry.get("vortex.hmc.admission.direct.commit.count").gauge().value())
+                .isEqualTo(1.0);
+        assertThat(registry.get("vortex.hmc.admission.direct.escalation.count").gauge().value())
+                .isEqualTo(1.0);
+        assertThat(registry.get("vortex.hmc.admission.fallback.count").gauge().value())
+                .isEqualTo(1.0);
+
+        MemorySloTracker.AdmissionSloSnapshot admission = tracker.snapshot().admission();
+        assertThat(admission.requestCount()).isEqualTo(1);
+        assertThat(admission.directAttemptCount()).isEqualTo(1);
+        assertThat(admission.directCommitCount()).isEqualTo(1);
+        assertThat(admission.directEscalationCount()).isEqualTo(1);
+        assertThat(admission.directRejectionCount()).isEqualTo(1);
+        assertThat(admission.optimisticAttemptCount()).isEqualTo(1);
+        assertThat(admission.optimisticCommitCount()).isEqualTo(1);
+        assertThat(admission.planningGateWaitCount()).isEqualTo(1);
+        assertThat(admission.planningGateWaitTotalMs()).isEqualTo(1.5);
+        assertThat(admission.planningGateWaitAverageMs()).isEqualTo(1.5);
+        assertThat(admission.planningGateWaitMaxMs()).isEqualTo(1.5);
+        assertThat(admission.lockAcquisitionCount()).isEqualTo(1);
+        assertThat(admission.lockWaitAverageMs()).isEqualTo(2.0);
+        assertThat(admission.lockHoldAverageMs()).isEqualTo(3.0);
+        assertThat(admission.planningAverageMs()).isEqualTo(4.0);
+        assertThat(admission.optimisticConflictRate()).isEqualTo(1.0);
+        assertThat(admission.fallbackRate()).isEqualTo(1.0);
+
+        MemorySloTracker.AdmissionMetricsSnapshot metrics = tracker.admissionMetricsSnapshot();
+        assertThat(metrics.planningGateWaitCount()).isEqualTo(1);
+        assertThat(metrics.planningGateWaitNanosTotal()).isEqualTo(1_500_000L);
+        assertThat(metrics.planningGateWaitNanosMax()).isEqualTo(1_500_000L);
+        assertThat(metrics.detailedSnapshotCount()).isEqualTo(1);
+        assertThat(metrics.detailedSnapshotLockHoldNanosTotal()).isEqualTo(500_000L);
+        assertThat(metrics.detailedSnapshotFreezeCount()).isEqualTo(1);
+        assertThat(metrics.detailedSnapshotFreezeNanosTotal()).isEqualTo(6_000_000L);
+        assertThat(metrics.commitLockCount()).isEqualTo(1);
+        assertThat(metrics.commitLockHoldNanosTotal()).isEqualTo(700_000L);
+    }
 }

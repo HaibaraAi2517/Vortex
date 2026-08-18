@@ -18,6 +18,8 @@ public final class LlmMemoryEvalCliApplication {
     private static final String RECALL_BENCHMARK_COMMAND = "recall-benchmark";
     private static final String RUNTIME_RECOVERY_BENCHMARK_COMMAND = "runtime-recovery-benchmark";
     private static final String ASYNC_PIPELINE_LATENCY_BENCHMARK_COMMAND = "async-pipeline-latency-benchmark";
+    private static final String ADMISSION_CONTENTION_BENCHMARK_COMMAND = "admission-contention-benchmark";
+    private static final String ADMISSION_RECLAIM_BENCHMARK_COMMAND = "admission-reclaim-benchmark";
     private static final String PROFILE_TYPE_STRICT_REPORT = "strict-report";
     private static final String PROFILE_TYPE_AUDIT_ONLY = "audit-only";
 
@@ -47,6 +49,12 @@ public final class LlmMemoryEvalCliApplication {
         }
         if (isAsyncPipelineLatencyBenchmarkCommand(args)) {
             return executeAsyncPipelineLatencyBenchmarkRun(args);
+        }
+        if (isAdmissionContentionBenchmarkCommand(args)) {
+            return executeAdmissionContentionBenchmarkRun(args);
+        }
+        if (isAdmissionReclaimBenchmarkCommand(args)) {
+            return executeAdmissionReclaimBenchmarkRun(args);
         }
         return executeEvalRun(args);
     }
@@ -190,6 +198,62 @@ public final class LlmMemoryEvalCliApplication {
         return exitCode;
     }
 
+    private static int executeAdmissionContentionBenchmarkRun(String[] args) {
+        ConfigurableApplicationContext context = null;
+        int exitCode = 1;
+        try {
+            context = new SpringApplicationBuilder(VortexApplication.class)
+                    .web(WebApplicationType.NONE)
+                    .properties(
+                            "vortex.eval.run-on-startup=false",
+                            "spring.main.banner-mode=off")
+                    .run(trimCommand(args));
+            AdmissionContentionBenchmarkExecutionService executionService =
+                    context.getBean(AdmissionContentionBenchmarkExecutionService.class);
+            executionService.executeConfiguredRun();
+            exitCode = SpringApplication.exit(context, () -> 0);
+        } catch (RuntimeException e) {
+            if (context != null) {
+                try {
+                    SpringApplication.exit(context, () -> 1);
+                } catch (RuntimeException closeError) {
+                    log.warn("Failed to close CLI application context cleanly: {}", closeError.getMessage());
+                }
+            }
+            log.error("Admission contention benchmark CLI run failed: {}", e.getMessage(), e);
+            exitCode = 1;
+        }
+        return exitCode;
+    }
+
+    private static int executeAdmissionReclaimBenchmarkRun(String[] args) {
+        ConfigurableApplicationContext context = null;
+        int exitCode = 1;
+        try {
+            context = new SpringApplicationBuilder(VortexApplication.class)
+                    .web(WebApplicationType.NONE)
+                    .properties(
+                            "vortex.eval.run-on-startup=false",
+                            "spring.main.banner-mode=off")
+                    .run(trimCommand(args));
+            AdmissionReclaimBenchmarkExecutionService executionService =
+                    context.getBean(AdmissionReclaimBenchmarkExecutionService.class);
+            executionService.executeConfiguredRun();
+            exitCode = SpringApplication.exit(context, () -> 0);
+        } catch (RuntimeException e) {
+            if (context != null) {
+                try {
+                    SpringApplication.exit(context, () -> 1);
+                } catch (RuntimeException closeError) {
+                    log.warn("Failed to close CLI application context cleanly: {}", closeError.getMessage());
+                }
+            }
+            log.error("Admission reclaim benchmark CLI run failed: {}", e.getMessage(), e);
+            exitCode = 1;
+        }
+        return exitCode;
+    }
+
     private static int executeLearningVerify(String[] args) {
         try {
             LearningVerifyCommand request = parseLearningVerifyCommand(args);
@@ -270,6 +334,18 @@ public final class LlmMemoryEvalCliApplication {
         return args != null
                 && args.length > 0
                 && ASYNC_PIPELINE_LATENCY_BENCHMARK_COMMAND.equalsIgnoreCase(args[0]);
+    }
+
+    private static boolean isAdmissionContentionBenchmarkCommand(String[] args) {
+        return args != null
+                && args.length > 0
+                && ADMISSION_CONTENTION_BENCHMARK_COMMAND.equalsIgnoreCase(args[0]);
+    }
+
+    private static boolean isAdmissionReclaimBenchmarkCommand(String[] args) {
+        return args != null
+                && args.length > 0
+                && ADMISSION_RECLAIM_BENCHMARK_COMMAND.equalsIgnoreCase(args[0]);
     }
 
     private static boolean isLearningVerifyCommand(String[] args) {

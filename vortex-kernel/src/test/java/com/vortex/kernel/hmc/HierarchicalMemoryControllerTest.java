@@ -3,6 +3,7 @@ package com.vortex.kernel.hmc;
 import com.vortex.common.dto.MemoryFeedbackRequest;
 import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.dto.RecallQuery;
+import com.vortex.common.dto.RecallRankingStrategy;
 import com.vortex.common.dto.RecallResult;
 import com.vortex.common.dto.RerankerType;
 import com.vortex.common.dto.RetrievalMode;
@@ -151,6 +152,8 @@ class HierarchicalMemoryControllerTest {
                 .topK(5)
                 .tokenBudget(100)
                 .tags(List.of("role:user"))
+                .retrievalMode(RetrievalMode.VECTOR_ONLY)
+                .rankingStrategy(RecallRankingStrategy.LEGACY)
                 .build());
 
         assertThat(result.getFragments())
@@ -770,6 +773,8 @@ class HierarchicalMemoryControllerTest {
                 .scenario(MemoryScenario.CHAT)
                 .topK(2)
                 .tokenBudget(100)
+                .retrievalMode(RetrievalMode.VECTOR_ONLY)
+                .rankingStrategy(RecallRankingStrategy.LEGACY)
                 .build());
 
         RecallSessionRecord session = learner.peekRecallSession(result.getRecallSessionId());
@@ -896,7 +901,7 @@ class HierarchicalMemoryControllerTest {
         HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64,
                 new SemanticEvictionPolicy(0.0, 0.0, 1.0),
                 new NamespaceQuotaManager(1.0, 1.0, 1),
-                0.95, 60_000L, 1, 2);
+                1.1, 60_000L, 1, 2);
 
         long now = System.currentTimeMillis();
         MemoryFragment coldVictim = fragment("cold-expand", "ns", "cold", List.of(), 4);

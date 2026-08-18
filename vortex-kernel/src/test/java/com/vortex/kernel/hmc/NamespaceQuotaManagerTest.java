@@ -10,6 +10,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 class NamespaceQuotaManagerTest {
 
     @Test
+    void hardQuotaUsesActiveNamespaceCountWithoutFragmentScan() {
+        NamespaceQuotaManager manager = new NamespaceQuotaManager(0.25, 0.15, 20);
+
+        assertThat(manager.hardQuotaPerNamespace(120, 0)).isEqualTo(30);
+        assertThat(manager.hardQuotaPerNamespace(120, 2)).isEqualTo(30);
+        assertThat(manager.hardQuotaPerNamespace(120, 6)).isEqualTo(20);
+    }
+
+    @Test
     void snapshotProtectsHardQuotaForEachNamespace() {
         NamespaceQuotaManager manager = new NamespaceQuotaManager(0.25, 0.15, 20);
 

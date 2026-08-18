@@ -11,7 +11,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 
@@ -29,6 +32,8 @@ public class CaffeineHotStore implements L1HotStore, L1HotStoreAdmin {
     private final Cache<String, MemoryFragment> cache;
     private final long maxTokens;
     private final AtomicLong currentTokens = new AtomicLong(0);
+    private final ConcurrentMap<String, AccountedAllocation> accountedAllocations = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, NamespaceAllocation> namespaceAllocations = new ConcurrentHashMap<>();
 
     /** Called when Caffeine evicts an entry — wired by HMC to push to L2. */
     private BiConsumer<MemoryFragment, EvictionCause> evictionListener = (f, cause) -> {};
@@ -42,7 +47,10 @@ public class CaffeineHotStore implements L1HotStore, L1HotStoreAdmin {
                 .removalListener((String k, MemoryFragment v, RemovalCause cause) -> {
                     if (v != null) {
                         if (cause.wasEvicted()) {
-                            currentTokens.addAndGet(-v.getTokenCount());
+                            AccountedAllocation removedAllocation = accountedAllocations.remove(k);
+                            if (removedAllocation != null) {
+                                removeAccounting(removedAllocation);
+                            }
                             log.debug("L1 evicted fragment id={} tokens={} cause={}",
                                     v.getId(), v.getTokenCount(), cause);
                             evictionListener.accept(v, mapCause(cause));
@@ -65,16 +73,19 @@ public class CaffeineHotStore implements L1HotStore, L1HotStoreAdmin {
 
     @Override
     public void put(MemoryFragment fragment, boolean recordAccess) {
-        MemoryFragment existing = cache.getIfPresent(fragment.getId());
         if (recordAccess) {
             fragment.recordAccess();
         }
-        if (existing == fragment) {
-            return;
-        }
-        long delta = fragment.getTokenCount() - (existing == null ? 0L : existing.getTokenCount());
-        currentTokens.addAndGet(delta);
-        cache.put(fragment.getId(), fragment);
+        cache.asMap().compute(fragment.getId(), (id, existing) -> {
+            AccountedAllocation previousAllocation = accountedAllocations.get(id);
+            if (previousAllocation == null && existing != null) {
+                previousAllocation = AccountedAllocation.of(existing);
+            }
+            AccountedAllocation nextAllocation = AccountedAllocation.of(fragment);
+            replaceAccounting(previousAllocation, nextAllocation);
+            accountedAllocations.put(id, nextAllocation);
+            return fragment;
+        });
     }
 
     @Override
@@ -104,12 +115,37 @@ public class CaffeineHotStore implements L1HotStore, L1HotStoreAdmin {
     }
 
     @Override
-    public void remove(String id) {
-        MemoryFragment existing = cache.getIfPresent(id);
-        if (existing != null) {
-            currentTokens.addAndGet(-existing.getTokenCount());
+    public long namespaceTokenCount(String namespace) {
+        if (namespace == null || namespace.isBlank()) {
+            return 0L;
         }
-        cache.invalidate(id);
+        NamespaceAllocation allocation = namespaceAllocations.get(namespace);
+        return allocation == null ? 0L : allocation.tokens();
+    }
+
+    @Override
+    public int namespaceFragmentCount(String namespace) {
+        if (namespace == null || namespace.isBlank()) {
+            return 0;
+        }
+        NamespaceAllocation allocation = namespaceAllocations.get(namespace);
+        return allocation == null ? 0 : allocation.fragments();
+    }
+
+    @Override
+    public int activeNamespaceCount() {
+        return namespaceAllocations.size();
+    }
+
+    @Override
+    public void remove(String id) {
+        cache.asMap().compute(id, (key, existing) -> {
+            AccountedAllocation removedAllocation = accountedAllocations.remove(key);
+            if (removedAllocation != null) {
+                removeAccounting(removedAllocation);
+            }
+            return null;
+        });
     }
 
     @Override
@@ -132,6 +168,50 @@ public class CaffeineHotStore implements L1HotStore, L1HotStoreAdmin {
         log.info("L1 cleared namespace={} removedCount={}", namespace, keys.size());
     }
 
+    private void replaceAccounting(
+            AccountedAllocation previousAllocation,
+            AccountedAllocation nextAllocation) {
+        long previousTokens = previousAllocation == null ? 0L : previousAllocation.tokens();
+        currentTokens.addAndGet(nextAllocation.tokens() - previousTokens);
+
+        if (previousAllocation == null) {
+            adjustNamespaceAllocation(nextAllocation.namespace(), nextAllocation.tokens(), 1);
+            return;
+        }
+        if (Objects.equals(previousAllocation.namespace(), nextAllocation.namespace())) {
+            adjustNamespaceAllocation(
+                    nextAllocation.namespace(),
+                    nextAllocation.tokens() - previousAllocation.tokens(),
+                    0);
+            return;
+        }
+        adjustNamespaceAllocation(previousAllocation.namespace(), -previousAllocation.tokens(), -1);
+        adjustNamespaceAllocation(nextAllocation.namespace(), nextAllocation.tokens(), 1);
+    }
+
+    private void removeAccounting(AccountedAllocation allocation) {
+        currentTokens.addAndGet(-allocation.tokens());
+        adjustNamespaceAllocation(allocation.namespace(), -allocation.tokens(), -1);
+    }
+
+    private void adjustNamespaceAllocation(String namespace, long tokenDelta, int fragmentDelta) {
+        if (namespace == null || namespace.isBlank()) {
+            return;
+        }
+        namespaceAllocations.compute(namespace, (key, current) -> {
+            long currentTokens = current == null ? 0L : current.tokens();
+            int currentFragments = current == null ? 0 : current.fragments();
+            long nextTokens = currentTokens + tokenDelta;
+            int nextFragments = currentFragments + fragmentDelta;
+            if (nextFragments < 0 || (nextFragments == 0 && nextTokens != 0L)) {
+                throw new IllegalStateException(
+                        "Invalid L1 namespace accounting namespace=%s tokens=%d fragments=%d"
+                                .formatted(namespace, nextTokens, nextFragments));
+            }
+            return nextFragments == 0 ? null : new NamespaceAllocation(nextTokens, nextFragments);
+        });
+    }
+
     private EvictionCause mapCause(RemovalCause cause) {
         return switch (cause) {
             case SIZE -> EvictionCause.SIZE;
@@ -140,5 +220,14 @@ public class CaffeineHotStore implements L1HotStore, L1HotStoreAdmin {
             case REPLACED -> EvictionCause.REPLACED;
             case COLLECTED -> EvictionCause.COLLECTED;
         };
+    }
+
+    private record AccountedAllocation(String namespace, long tokens) {
+        private static AccountedAllocation of(MemoryFragment fragment) {
+            return new AccountedAllocation(fragment.getNamespace(), fragment.getTokenCount());
+        }
+    }
+
+    private record NamespaceAllocation(long tokens, int fragments) {
     }
 }

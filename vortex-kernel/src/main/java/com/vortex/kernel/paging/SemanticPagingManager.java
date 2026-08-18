@@ -5,6 +5,7 @@ import com.vortex.common.model.PageState;
 import com.vortex.common.model.SemanticPage;
 import com.vortex.common.model.TaskState;
 import com.vortex.kernel.embedding.EmbeddingService;
+import com.vortex.kernel.hmc.TieredEvictionCoordinator;
 import com.vortex.kernel.snapshot.SnapshotService;
 import com.vortex.storage.api.L1HotStore;
 import com.vortex.storage.api.L2WarmStore;
@@ -19,7 +20,6 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Central coordinator for the semantic paging subsystem.
@@ -42,7 +42,7 @@ public class SemanticPagingManager {
     private final EmbeddingService embeddingService;
     private final ApplicationEventPublisher eventPublisher;
     private final SnapshotService snapshotService;
-    private final ReentrantLock admissionLock = new ReentrantLock();
+    private final TieredEvictionCoordinator evictionCoordinator;
 
     private final boolean enabled;
     private final int pageSize;
@@ -61,6 +61,7 @@ public class SemanticPagingManager {
             @Qualifier("bgeSmallEmbeddingService") EmbeddingService embeddingService,
             ApplicationEventPublisher eventPublisher,
             SnapshotService snapshotService,
+            TieredEvictionCoordinator evictionCoordinator,
             @Value("${vortex.kernel.paging.enabled:true}") boolean enabled,
             @Value("${vortex.kernel.paging.page-size:10}") int pageSize,
             @Value("${vortex.kernel.paging.initial-build.max-fragments:1000}") int initialBuildMaxFragments) {
@@ -73,6 +74,7 @@ public class SemanticPagingManager {
         this.embeddingService = embeddingService;
         this.eventPublisher = eventPublisher;
         this.snapshotService = snapshotService;
+        this.evictionCoordinator = evictionCoordinator;
         this.enabled = enabled;
         this.pageSize = pageSize;
         this.initialBuildMaxFragments = initialBuildMaxFragments;
@@ -160,18 +162,10 @@ public class SemanticPagingManager {
     public void admitPage(SemanticPage page, List<MemoryFragment> fragments) {
         if (!enabled || page == null || fragments == null || fragments.isEmpty()) return;
 
-        admissionLock.lock();
-        try {
-            for (MemoryFragment fragment : fragments) {
-                fragment.recordAccess();
-                l1.put(fragment);
-            }
-            page.recordAccess();
-            pageTable.markResident(page.getPageId());
-            log.debug("Page admitted to L1: pageId={} fragments={}", page.getPageId(), fragments.size());
-        } finally {
-            admissionLock.unlock();
-        }
+        evictionCoordinator.admitPage(page, fragments);
+        page.recordAccess();
+        pageTable.markResident(page.getPageId());
+        log.debug("Page admitted to L1: pageId={} fragments={}", page.getPageId(), fragments.size());
     }
 
     // ========================================================================

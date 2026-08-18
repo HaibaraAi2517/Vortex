@@ -11,21 +11,28 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 
 @Slf4j
 @Component
 public class FragmentPersistenceManager {
 
     private static final int DEFAULT_MAX_CONCURRENT_PERSISTENCE = 16;
+    private static final int DEFAULT_ASYNC_BATCH_SIZE = 16;
 
     private final L2WarmStore l2;
     private final L3ColdStore l3;
@@ -34,6 +41,7 @@ public class FragmentPersistenceManager {
     private final MemorySloTracker sloTracker;
     private final boolean replayOnStartup;
     private final Executor asyncExecutor;
+    private final AtomicLong pendingAsyncWork = new AtomicLong();
 
     @Autowired
     public FragmentPersistenceManager(
@@ -73,12 +81,77 @@ public class FragmentPersistenceManager {
 
     public void persistAsync(MemoryFragment fragment, String reason) {
         FragmentPersistenceTask task = buildTask(fragment, reason);
-        CompletableFuture.runAsync(() -> persistOrEnqueue(task), asyncExecutor)
-                .exceptionally(ex -> {
-                    log.error("Async persistence scheduling failed for id={} reason={}: {}",
-                            fragment.getId(), reason, ex.getMessage());
-                    return null;
-                });
+        pendingAsyncWork.incrementAndGet();
+        try {
+            CompletableFuture.runAsync(() -> {
+                        try {
+                            persistOrEnqueue(task);
+                        } finally {
+                            pendingAsyncWork.decrementAndGet();
+                        }
+                    }, asyncExecutor)
+                    .exceptionally(ex -> {
+                        log.error("Async persistence execution failed for id={} reason={}: {}",
+                                fragment.getId(), reason, ex.getMessage());
+                        return null;
+                    });
+        } catch (RejectedExecutionException rejected) {
+            pendingAsyncWork.decrementAndGet();
+            deferRejectedTask(task, rejected);
+        }
+    }
+
+    public void persistAsyncBatch(Collection<MemoryFragment> fragments, String reason) {
+        if (fragments == null || fragments.isEmpty()) {
+            return;
+        }
+        List<FragmentPersistenceTask> tasks = fragments.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(fragment -> buildTask(fragment, reason))
+                .toList();
+        if (tasks.size() == 1) {
+            persistAsync(tasks.getFirst().getFragment(), reason);
+            return;
+        }
+        for (int start = 0; start < tasks.size(); start += DEFAULT_ASYNC_BATCH_SIZE) {
+            List<FragmentPersistenceTask> batch = List.copyOf(
+                    tasks.subList(start, Math.min(tasks.size(), start + DEFAULT_ASYNC_BATCH_SIZE)));
+            pendingAsyncWork.incrementAndGet();
+            try {
+                CompletableFuture.runAsync(() -> {
+                            try {
+                                batch.forEach(this::persistOrEnqueue);
+                            } finally {
+                                pendingAsyncWork.decrementAndGet();
+                            }
+                        }, asyncExecutor)
+                        .exceptionally(ex -> {
+                            log.error(
+                                    "Async persistence batch execution failed size={} reason={}: {}",
+                                    batch.size(),
+                                    reason,
+                                    ex.getMessage());
+                            return null;
+                        });
+            } catch (RejectedExecutionException rejected) {
+                pendingAsyncWork.decrementAndGet();
+                batch.forEach(task -> deferRejectedTask(task, rejected));
+            }
+        }
+    }
+
+    public boolean awaitQuiescence(Duration timeout) {
+        long timeoutNanos = timeout == null
+                ? TimeUnit.SECONDS.toNanos(30)
+                : Math.max(0L, timeout.toNanos());
+        long deadline = System.nanoTime() + timeoutNanos;
+        while (pendingAsyncWork.get() > 0L) {
+            if (System.nanoTime() >= deadline || Thread.currentThread().isInterrupted()) {
+                return false;
+            }
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
+        }
+        return true;
     }
 
     public void persistBlocking(MemoryFragment fragment, String reason) {
@@ -235,6 +308,34 @@ public class FragmentPersistenceManager {
         }
     }
 
+    private void deferRejectedTask(FragmentPersistenceTask task, RejectedExecutionException rejected) {
+        try {
+            deadLetterQueue.enqueue(task);
+            log.warn(
+                    "Persistence executor saturated; task deferred to DLQ id={} reason={}",
+                    task.getFragment().getId(),
+                    task.getReason());
+        } catch (RuntimeException enqueueFailure) {
+            sloTracker.recordPersistenceResult(false);
+            MemoryDurabilityLogSupport.logCritical(
+                    log,
+                    MemoryHealthCodes.MEMORY_PERSISTENCE_SUCCESS_RATE_LOW,
+                    MemoryDurabilityLogSupport.CHAIN_MEMORY_PERSISTENCE,
+                    MemoryDurabilityLogSupport.PHASE_DLQ_ENQUEUE,
+                    null,
+                    null,
+                    task.getFragment().getId(),
+                    task.getIdempotencyKey(),
+                    null,
+                    "DLQ_ENQUEUE_FAILED",
+                    "Persistence executor rejected a task and the DLQ fallback failed.",
+                    enqueueFailure,
+                    Map.of(
+                            "reason", task.getReason(),
+                            "rejection", rejected.getMessage() == null ? "executor saturated" : rejected.getMessage()));
+        }
+    }
+
     private void persistTask(FragmentPersistenceTask task) {
         if (processedTaskStore.contains(task.getIdempotencyKey())) {
             log.debug("Skipping already processed persistence task idempotencyKey={} fragmentId={}",
@@ -299,6 +400,6 @@ public class FragmentPersistenceManager {
                 TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(concurrency * 4),
                 Executors.defaultThreadFactory(),
-                new ThreadPoolExecutor.CallerRunsPolicy());
+                new ThreadPoolExecutor.AbortPolicy());
     }
 }
