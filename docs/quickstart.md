@@ -3,17 +3,10 @@
 This quickstart is the container-first path for trying Vortex without any LLM
 API key. It starts Vortex plus Milvus, MinIO, Redis, and etcd.
 
-Validation status for `v0.1.1` on 2026-08-01:
-
-- The exact README PowerShell Quickstart command completed successfully.
-- Docker built `vortex-app-0.1.1-exec.jar` and started Vortex, Milvus, MinIO,
-  Redis, and etcd.
-- `/actuator/health` returned `UP`.
-- The demo stored and recalled one durable memory fragment.
-- A worker was killed after checkpointing, then the task recovered with
-  `nodeCount=1` and continued to the next checkpoint.
-- `mvn -B clean verify` passed `548` tests with zero failures, errors, or skips.
-- JaCoCo reported `74.26%` aggregate line coverage across the five code modules.
+The Quickstart is intended for a trusted local machine. It binds only the Vortex
+API to `127.0.0.1`; Redis, Milvus, MinIO, and their management ports remain on the
+Compose network. Business APIs, Swagger, metrics, and detailed management
+endpoints require a Bearer token.
 
 ## Prerequisites
 
@@ -37,20 +30,32 @@ START_QUICKSTART=true bash examples/quickstart-agent/run.sh
 ```
 
 These commands build and start the stack, wait for Vortex health, then run the
-memory recall and worker-recovery demo.
+memory recall and worker-recovery demo. When starting the stack, the scripts
+generate process-local MinIO, Redis, and Bearer credentials if they are not
+already set.
 
 ## Start The Stack Only
 
+Create a local secret file and replace every placeholder first:
+
 ```powershell
-docker compose -f docker-compose.quickstart.yml up --build -d
+Copy-Item .env.example .env.local
+docker compose --env-file .env.local -f docker-compose.quickstart.yml up --build -d --wait
 ```
 
 Wait until the `vortex` service is ready, then open:
 
-- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- Swagger UI: `http://localhost:8080/swagger-ui.html` with the configured Bearer token
 - Health: `http://localhost:8080/actuator/health`
-- Prometheus: `http://localhost:8080/actuator/prometheus`
-- MinIO console: `http://localhost:9001` with `minioadmin` / `minioadmin`
+- Prometheus: `http://localhost:8080/actuator/prometheus` with the configured Bearer token
+
+MinIO, Redis, Milvus, and the MinIO/Milvus management ports are intentionally not
+published by Quickstart.
+
+The default Compose project is `vortex-quickstart`, separate from the development
+stack. To run another Quickstart concurrently, set both a unique
+`COMPOSE_PROJECT_NAME` and a different `VORTEX_HTTP_PORT`; container-internal
+ports do not change.
 
 ## Run The Agent Demo
 
@@ -72,10 +77,11 @@ Store one memory:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/memory/store \
+  -H "Authorization: Bearer $VORTEX_SECURITY_BEARER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "content": "Vortex uses L1 Caffeine, L2 Milvus, and L3 MinIO for tiered agent memory.",
-    "namespace": "quickstart",
+    "namespace": "quickstart-demo",
     "tags": ["architecture", "memory"]
   }'
 ```
@@ -84,10 +90,11 @@ Recall it:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/memory/recall \
+  -H "Authorization: Bearer $VORTEX_SECURITY_BEARER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "query": "Which storage layers does Vortex use?",
-    "namespace": "quickstart",
+    "namespace": "quickstart-demo",
     "topK": 3,
     "tokenBudget": 512
   }'
@@ -99,20 +106,24 @@ Create a task:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/tasks \
+  -H "Authorization: Bearer $VORTEX_SECURITY_BEARER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"description":"Quickstart task","namespace":"quickstart"}'
+  -d '{"description":"Quickstart task","namespace":"quickstart-demo"}'
 ```
 
 Use the returned `taskId` to add a node, create a checkpoint, and recover:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/tasks/<taskId>/nodes \
+  -H "Authorization: Bearer $VORTEX_SECURITY_BEARER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"type":"THOUGHT","content":"The task reached step one."}'
 
-curl -X POST http://localhost:8080/api/v1/tasks/<taskId>/checkpoint
+curl -X POST http://localhost:8080/api/v1/tasks/<taskId>/checkpoint \
+  -H "Authorization: Bearer $VORTEX_SECURITY_BEARER_TOKEN"
 
 curl -X POST http://localhost:8080/api/v1/tasks/<taskId>/recover \
+  -H "Authorization: Bearer $VORTEX_SECURITY_BEARER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"checkpointId":"<checkpointId>"}'
 ```
@@ -138,13 +149,13 @@ These scripts use the tracked local BGE model and the existing `docker-compose.y
 Stop services:
 
 ```powershell
-docker compose -f docker-compose.quickstart.yml down
+docker compose --env-file .env.local -f docker-compose.quickstart.yml down
 ```
 
 Remove quickstart volumes:
 
 ```powershell
-docker compose -f docker-compose.quickstart.yml down -v
+docker compose --env-file .env.local -f docker-compose.quickstart.yml down -v
 ```
 
 ## No API Key Required

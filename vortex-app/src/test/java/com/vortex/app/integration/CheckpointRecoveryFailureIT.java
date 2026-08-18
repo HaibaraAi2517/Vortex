@@ -46,11 +46,16 @@ class CheckpointRecoveryFailureIT {
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {
         registry.add("vortex.storage.l1.max-tokens", () -> 24);
-        registry.add("vortex.storage.l3.minio.endpoint", () -> "http://localhost:9000");
-        registry.add("vortex.storage.l3.minio.access-key", () -> "minioadmin");
-        registry.add("vortex.storage.l3.minio.secret-key", () -> "minioadmin");
-        registry.add("vortex.storage.l2.milvus.host", () -> "localhost");
-        registry.add("vortex.storage.l2.milvus.port", () -> 19530);
+        registry.add("vortex.storage.l3.minio.endpoint", () -> IsolatedIntegrationTestSupport.property(
+                "vortex.it.minio-endpoint", "http://localhost:9000"));
+        registry.add("vortex.storage.l3.minio.access-key", () -> IsolatedIntegrationTestSupport.property(
+                "vortex.it.minio-access-key", "minioadmin"));
+        registry.add("vortex.storage.l3.minio.secret-key", () -> IsolatedIntegrationTestSupport.property(
+                "vortex.it.minio-secret-key", "minioadmin"));
+        registry.add("vortex.storage.l2.milvus.host", () -> IsolatedIntegrationTestSupport.property(
+                "vortex.it.milvus-host", "localhost"));
+        registry.add("vortex.storage.l2.milvus.port", () -> IsolatedIntegrationTestSupport.intProperty(
+                "vortex.it.milvus-port", 19530));
         registry.add("vortex.storage.l2.embedding-dim", () -> 4);
         registry.add("vortex.kernel.embedding.bge.model-path", () -> "unused-in-it");
         registry.add("vortex.kernel.splitter.max-tokens-per-chunk", () -> 512);
@@ -101,7 +106,9 @@ class CheckpointRecoveryFailureIT {
         assertThat(recoverResponse.getBody()).isNotNull();
         assertThat(recoverResponse.getBody()).containsEntry("error", "CHECKPOINT_RECOVERY_FAILED");
         assertThat(recoverResponse.getBody()).containsEntry("reason", "CHECKPOINT_METADATA_LOAD_FAILED");
-        assertThat(recoverResponse.getBody()).containsEntry("taskId", taskId);
+        assertThat(recoverResponse.getBody()).containsEntry("detail", "Checkpoint recovery failed");
+        assertThat(recoverResponse.getBody()).containsKey("correlationId");
+        assertThat(recoverResponse.getBody()).doesNotContainKeys("taskId", "checkpointId");
     }
 
     @Test
@@ -119,7 +126,9 @@ class CheckpointRecoveryFailureIT {
         assertThat(getTaskResponse.getBody()).isNotNull();
         assertThat(getTaskResponse.getBody()).containsEntry("error", "CHECKPOINT_RECOVERY_FAILED");
         assertThat(getTaskResponse.getBody()).containsEntry("reason", "CHECKPOINT_METADATA_LOAD_FAILED");
-        assertThat(getTaskResponse.getBody()).containsEntry("taskId", taskId);
+        assertThat(getTaskResponse.getBody()).containsEntry("detail", "Checkpoint recovery failed");
+        assertThat(getTaskResponse.getBody()).containsKey("correlationId");
+        assertThat(getTaskResponse.getBody()).doesNotContainKeys("taskId", "checkpointId");
     }
 
     private String createTask(String namespace) {

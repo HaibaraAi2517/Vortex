@@ -1,7 +1,14 @@
 param(
   [ValidateSet("demo", "worker")]
   [string]$Mode = "demo",
-  [string]$BaseUrl = $(if ($env:VORTEX_BASE_URL) { $env:VORTEX_BASE_URL } else { "http://localhost:8080" }),
+  [string]$BaseUrl = $(if ($env:VORTEX_BASE_URL) {
+      $env:VORTEX_BASE_URL
+    } elseif ($env:VORTEX_HTTP_PORT) {
+      "http://127.0.0.1:$($env:VORTEX_HTTP_PORT)"
+    } else {
+      "http://127.0.0.1:8080"
+    }),
+  [string]$ApiToken = $env:VORTEX_SECURITY_BEARER_TOKEN,
   [string]$Namespace = "",
   [string]$StateFile = "",
   [switch]$StartQuickstart
@@ -9,10 +16,38 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function New-RandomHex {
+  param([int]$Bytes = 32)
+  $buffer = New-Object byte[] $Bytes
+  $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  try {
+    $rng.GetBytes($buffer)
+  } finally {
+    $rng.Dispose()
+  }
+  return -join ($buffer | ForEach-Object { $_.ToString("x2") })
+}
+
 function Write-Section {
   param([Parameter(Mandatory = $true)][string]$Text)
   Write-Host ""
   Write-Host "== $Text =="
+}
+
+function Assert-LoopbackPortAvailable {
+  param([Parameter(Mandatory = $true)][int]$Port)
+
+  if ($Port -lt 1 -or $Port -gt 65535) {
+    throw "VORTEX_HTTP_PORT must be between 1 and 65535."
+  }
+  $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
+  try {
+    $listener.Start()
+  } catch {
+    throw "Vortex host port $Port is unavailable on 127.0.0.1. Set VORTEX_HTTP_PORT to a free port before building Quickstart."
+  } finally {
+    $listener.Stop()
+  }
 }
 
 function Invoke-VortexJson {
@@ -24,12 +59,16 @@ function Invoke-VortexJson {
   )
 
   $uri = "$BaseUrl$Path"
+  $headers = @{}
+  if (-not [string]::IsNullOrWhiteSpace($ApiToken)) {
+    $headers.Authorization = "Bearer $ApiToken"
+  }
   if ($null -eq $Body) {
-    return Invoke-RestMethod -Uri $uri -Method $Method -TimeoutSec $TimeoutSeconds
+    return Invoke-RestMethod -Uri $uri -Method $Method -Headers $headers -TimeoutSec $TimeoutSeconds
   }
 
   $json = $Body | ConvertTo-Json -Depth 10
-  return Invoke-RestMethod -Uri $uri -Method $Method -ContentType "application/json" -Body $json -TimeoutSec $TimeoutSeconds
+  return Invoke-RestMethod -Uri $uri -Method $Method -Headers $headers -ContentType "application/json" -Body $json -TimeoutSec $TimeoutSeconds
 }
 
 function Wait-Vortex {
@@ -144,6 +183,28 @@ if ([string]::IsNullOrWhiteSpace($Namespace)) {
 
 if ($StartQuickstart) {
   Write-Section "Starting quickstart stack"
+  $httpPort = if ($env:VORTEX_HTTP_PORT) { [int]$env:VORTEX_HTTP_PORT } else { 8080 }
+  Assert-LoopbackPortAvailable -Port $httpPort
+  $env:VORTEX_HTTP_PORT = $httpPort
+  if (-not $env:VORTEX_BASE_URL) {
+    $BaseUrl = "http://127.0.0.1:$httpPort"
+  }
+  if ([string]::IsNullOrWhiteSpace($ApiToken)) {
+    $ApiToken = New-RandomHex -Bytes 32
+  }
+  $env:VORTEX_SECURITY_BEARER_TOKEN = $ApiToken
+  if ([string]::IsNullOrWhiteSpace($env:MINIO_ROOT_USER)) {
+    $env:MINIO_ROOT_USER = "vortex-local"
+  }
+  if ([string]::IsNullOrWhiteSpace($env:MINIO_ROOT_PASSWORD)) {
+    $env:MINIO_ROOT_PASSWORD = New-RandomHex -Bytes 24
+  }
+  if ([string]::IsNullOrWhiteSpace($env:REDIS_PASSWORD)) {
+    $env:REDIS_PASSWORD = New-RandomHex -Bytes 24
+  }
+  if ([string]::IsNullOrWhiteSpace($env:VORTEX_SECURITY_NAMESPACE_PATTERNS)) {
+    $env:VORTEX_SECURITY_NAMESPACE_PATTERNS = "quickstart-*"
+  }
   Push-Location $repoRoot
   try {
     docker compose -f docker-compose.quickstart.yml up --build -d
@@ -157,8 +218,13 @@ if ($StartQuickstart) {
 
 Wait-Vortex -TimeoutSeconds 180
 
+if ([string]::IsNullOrWhiteSpace($ApiToken)) {
+  throw "Set VORTEX_SECURITY_BEARER_TOKEN or pass -ApiToken before calling secured Vortex APIs."
+}
+
 Write-Host "Vortex base URL: $BaseUrl"
 Write-Host "Demo namespace: $Namespace"
+Write-Host "API authentication: Bearer token loaded."
 
 Write-Section "1. Store memory and run VectorOnly recall"
 $memory = "Demo session facts for ${Namespace}: project codename is Aurora Ledger; launch goal is a stable architecture review; preferred stack is Java 21 with Milvus and MinIO."
@@ -213,6 +279,7 @@ $workerArgs = @(
   "-File", $PSCommandPath,
   "-Mode", "worker",
   "-BaseUrl", $BaseUrl,
+  "-ApiToken", $ApiToken,
   "-Namespace", $Namespace,
   "-StateFile", $stateFile
 )

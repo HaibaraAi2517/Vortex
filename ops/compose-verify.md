@@ -4,33 +4,40 @@
 
 Verify the compose-backed runtime in three layers:
 
-1. default automated regression via Maven
+1. default unit/package verification via Maven
 2. manual startup plus observability endpoint checks
 3. optional API walkthrough
 
 ## Steps
 
-### Recommended: default automated regression
+### Default verification without Docker lifecycle changes
 
 Run:
 
 ```bash
-mvn verify -pl vortex-app -am
+mvn -B verify
 ```
 
-This will automatically:
+This runs the normal reactor verification without starting, stopping, or removing
+any Compose project.
 
-- bring `docker-compose.yml` dependencies up
-- wait for them to become healthy
-- run the default app integration tests, including memory health / catalog / Prometheus consistency checks
-- tear the stack down again
+### Isolated Compose-backed integration verification
+
+```powershell
+./ops/run-integration-tests.ps1
+```
+
+The script creates a unique `vortex-it-*` Compose project, uses random host ports
+and credentials, validates resource ownership labels, and removes only resources
+created for that run. Two invocations can run concurrently without sharing
+project names, ports, volumes, collections, object prefixes, WAL, or processed keys.
 
 ### Manual runtime verification
 
-1. Start dependencies and wait for health:
+1. Copy `.env.example` to an ignored `.env.local`, replace the secrets, then start dependencies:
 
 ```bash
-bash ops/compose-up.sh
+docker compose --env-file .env.local up -d --wait
 ```
 
 2. Start the application:
@@ -42,9 +49,9 @@ mvn spring-boot:run -pl vortex-app
 3. Check the observability surfaces:
 
 ```bash
-curl http://localhost:8080/api/v1/memory/health
-curl http://localhost:8080/api/v1/memory/health/catalog
-curl http://localhost:8080/actuator/prometheus
+curl -H "Authorization: Bearer $VORTEX_SECURITY_BEARER_TOKEN" http://localhost:8080/api/v1/memory/health
+curl -H "Authorization: Bearer $VORTEX_SECURITY_BEARER_TOKEN" http://localhost:8080/api/v1/memory/health/catalog
+curl -H "Authorization: Bearer $VORTEX_SECURITY_BEARER_TOKEN" http://localhost:8080/actuator/prometheus
 ```
 
 Expected checks:

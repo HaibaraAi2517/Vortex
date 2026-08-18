@@ -1,3 +1,5 @@
+name: ${COMPOSE_PROJECT_NAME:-vortex-quickstart}
+
 services:
   etcd:
     image: quay.io/coreos/etcd:v3.5.5
@@ -23,11 +25,8 @@ services:
     image: minio/minio:RELEASE.2024-07-04T14-25-45Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
     volumes:
       - quickstart-minio-data:/data
     healthcheck:
@@ -42,9 +41,8 @@ services:
     environment:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
-    ports:
-      - "19530:19530"
-      - "9091:9091"
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
     volumes:
       - quickstart-milvus-data:/var/lib/milvus
     depends_on:
@@ -60,36 +58,53 @@ services:
 
   redis:
     image: redis:7.2-alpine
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
     volumes:
       - quickstart-redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
       interval: 30s
       timeout: 10s
       retries: 3
 
   vortex:
+    image: ${VORTEX_IMAGE:-vortex:local}
     build:
       context: .
       dockerfile: Dockerfile
     environment:
+      SERVER_ADDRESS: 0.0.0.0
       MILVUS_HOST: milvus
       MILVUS_PORT: "19530"
       VORTEX_STORAGE_L2_MILVUS_COLLECTION: vortex_memory_quickstart
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: vortex
       MINIO_KEY_PREFIX: quickstart/
       REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
       VORTEX_EXECUTION_ID_BACKEND: REDIS
+      VORTEX_SECURITY_ENABLED: "true"
+      VORTEX_SECURITY_BEARER_TOKEN: ${VORTEX_SECURITY_BEARER_TOKEN:?Set VORTEX_SECURITY_BEARER_TOKEN}
+      VORTEX_SECURITY_NAMESPACE_PATTERNS: ${VORTEX_SECURITY_NAMESPACE_PATTERNS:-quickstart-*}
       BGE_MODEL_PATH: /app/models/bge-small-zh
       VORTEX_SCHEDULER_ENABLED: "false"
+      VORTEX_RELEASE_VERSION: ${VORTEX_RELEASE_VERSION:-0.1.1}
+      VORTEX_WAL_DIR: /var/lib/vortex/wal
+      VORTEX_PERSISTENCE_DLQ_PATH: /var/lib/vortex/persistence/dlq.jsonl
+      VORTEX_PERSISTENCE_PROCESSED_KEYS_PATH: /var/lib/vortex/persistence/processed-keys.txt
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${VORTEX_HTTP_PORT:-8080}:8080"
+    volumes:
+      - quickstart-vortex-data:/var/lib/vortex
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 36
     depends_on:
       milvus:
         condition: service_healthy
@@ -103,3 +118,4 @@ volumes:
   quickstart-milvus-data:
   quickstart-minio-data:
   quickstart-redis-data:
+  quickstart-vortex-data:

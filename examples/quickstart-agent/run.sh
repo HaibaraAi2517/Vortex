@@ -3,7 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BASE_URL="${BASE_URL:-http://localhost:8080}"
+VORTEX_HTTP_PORT="${VORTEX_HTTP_PORT:-8080}"
+BASE_URL="${BASE_URL:-http://127.0.0.1:$VORTEX_HTTP_PORT}"
 MODE="${1:-demo}"
 
 wait_vortex() {
@@ -23,7 +24,11 @@ wait_vortex() {
 post_json() {
   local path="$1"
   local body="$2"
-  curl -sf -X POST "$BASE_URL$path" -H 'Content-Type: application/json' -d "$body"
+  : "${VORTEX_SECURITY_BEARER_TOKEN:?Set VORTEX_SECURITY_BEARER_TOKEN}"
+  curl -sf -X POST "$BASE_URL$path" \
+    -H "Authorization: Bearer $VORTEX_SECURITY_BEARER_TOKEN" \
+    -H 'Content-Type: application/json' \
+    -d "$body"
 }
 
 json_field() {
@@ -75,10 +80,36 @@ fi
 if [ "${START_QUICKSTART:-false}" = "true" ]; then
   echo
   echo "== Starting quickstart stack =="
+  export VORTEX_HTTP_PORT
+  python3 - "$VORTEX_HTTP_PORT" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+if not 1 <= port <= 65535:
+    raise SystemExit("ERROR: VORTEX_HTTP_PORT must be between 1 and 65535")
+probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    probe.bind(("127.0.0.1", port))
+except OSError as error:
+    raise SystemExit(
+        f"ERROR: Vortex host port {port} is unavailable on 127.0.0.1; "
+        "set VORTEX_HTTP_PORT to a free port before building Quickstart"
+    ) from error
+finally:
+    probe.close()
+PY
+  export MINIO_ROOT_USER="${MINIO_ROOT_USER:-vortex-local}"
+  export MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-$(openssl rand -hex 24)}"
+  export REDIS_PASSWORD="${REDIS_PASSWORD:-$(openssl rand -hex 24)}"
+  export VORTEX_SECURITY_BEARER_TOKEN="${VORTEX_SECURITY_BEARER_TOKEN:-$(openssl rand -hex 32)}"
+  export VORTEX_SECURITY_NAMESPACE_PATTERNS="${VORTEX_SECURITY_NAMESPACE_PATTERNS:-quickstart-*}"
   (cd "$PROJECT_ROOT" && docker compose -f docker-compose.quickstart.yml up --build -d)
 fi
 
 wait_vortex 180
+
+: "${VORTEX_SECURITY_BEARER_TOKEN:?Set VORTEX_SECURITY_BEARER_TOKEN before calling secured Vortex APIs}"
 
 NAMESPACE="${NAMESPACE:-quickstart-agent-$(date +%Y%m%d%H%M%S)-$$-$RANDOM}"
 STATE_FILE="${TMPDIR:-/tmp}/vortex-quickstart-agent-$NAMESPACE.json"

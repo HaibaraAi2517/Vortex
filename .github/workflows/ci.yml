@@ -23,11 +23,12 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Unit tests
-        run: mvn -B test -pl vortex-common,vortex-kernel,vortex-storage,vortex-langchain4j -am
+      - name: Unit tests and package verification
+        run: mvn -B verify
 
-      - name: App integration verify
-        run: mvn -B verify -pl vortex-app -am
+      - name: Isolated app integration verify
+        shell: pwsh
+        run: ./ops/run-integration-tests.ps1
 
       - name: Baseline governance check
         shell: pwsh

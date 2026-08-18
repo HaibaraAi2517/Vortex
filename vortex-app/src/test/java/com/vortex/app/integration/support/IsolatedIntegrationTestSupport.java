@@ -36,6 +36,14 @@ public final class IsolatedIntegrationTestSupport {
     private IsolatedIntegrationTestSupport() {
     }
 
+    public static String property(String name, String defaultValue) {
+        return System.getProperty(name, defaultValue);
+    }
+
+    public static int intProperty(String name, int defaultValue) {
+        return Integer.parseInt(System.getProperty(name, Integer.toString(defaultValue)));
+    }
+
     public static final class Initializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
         @Override

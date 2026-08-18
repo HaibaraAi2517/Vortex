@@ -48,11 +48,16 @@ class CheckpointRetentionIT {
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {
         registry.add("vortex.storage.l1.max-tokens", () -> 24);
-        registry.add("vortex.storage.l3.minio.endpoint", () -> "http://localhost:9000");
-        registry.add("vortex.storage.l3.minio.access-key", () -> "minioadmin");
-        registry.add("vortex.storage.l3.minio.secret-key", () -> "minioadmin");
-        registry.add("vortex.storage.l2.milvus.host", () -> "localhost");
-        registry.add("vortex.storage.l2.milvus.port", () -> 19530);
+        registry.add("vortex.storage.l3.minio.endpoint", () -> IsolatedIntegrationTestSupport.property(
+                "vortex.it.minio-endpoint", "http://localhost:9000"));
+        registry.add("vortex.storage.l3.minio.access-key", () -> IsolatedIntegrationTestSupport.property(
+                "vortex.it.minio-access-key", "minioadmin"));
+        registry.add("vortex.storage.l3.minio.secret-key", () -> IsolatedIntegrationTestSupport.property(
+                "vortex.it.minio-secret-key", "minioadmin"));
+        registry.add("vortex.storage.l2.milvus.host", () -> IsolatedIntegrationTestSupport.property(
+                "vortex.it.milvus-host", "localhost"));
+        registry.add("vortex.storage.l2.milvus.port", () -> IsolatedIntegrationTestSupport.intProperty(
+                "vortex.it.milvus-port", 19530));
         registry.add("vortex.storage.l2.embedding-dim", () -> 4);
         registry.add("vortex.kernel.embedding.bge.model-path", () -> "unused-in-it");
         registry.add("vortex.kernel.splitter.max-tokens-per-chunk", () -> 512);
@@ -150,7 +155,7 @@ class CheckpointRetentionIT {
     }
 
     @Test
-    void recoverReturnsConflictWhenDeltaChainIsBroken() {
+    void recoverReturnsServerErrorWhenDeltaChainIsBroken() {
         String namespace = TEST_NAMESPACE_PREFIX + UUID.randomUUID();
         String taskId = createTask(namespace);
 
@@ -172,11 +177,13 @@ class CheckpointRetentionIT {
         assertThat(recoverResponse.getBody()).isNotNull();
         assertThat(recoverResponse.getBody()).containsEntry("error", "CHECKPOINT_RECOVERY_FAILED");
         assertThat(recoverResponse.getBody()).containsEntry("reason", "DELTA_CHAIN_BROKEN");
-        assertThat(recoverResponse.getBody()).containsEntry("taskId", taskId);
+        assertThat(recoverResponse.getBody()).containsEntry("detail", "Checkpoint recovery failed");
+        assertThat(recoverResponse.getBody()).containsKey("correlationId");
+        assertThat(recoverResponse.getBody()).doesNotContainKeys("taskId", "checkpointId");
     }
 
     @Test
-    void recoverReturnsConflictWhenDeltaPayloadIsInvalid_andMetricsAreExposed() {
+    void recoverReturnsServerErrorWhenDeltaPayloadIsInvalid_andMetricsAreExposed() {
         String namespace = TEST_NAMESPACE_PREFIX + UUID.randomUUID();
         String taskId = createTask(namespace);
 
@@ -199,7 +206,9 @@ class CheckpointRetentionIT {
         assertThat(recoverResponse.getBody()).isNotNull();
         assertThat(recoverResponse.getBody()).containsEntry("error", "CHECKPOINT_RECOVERY_FAILED");
         assertThat(recoverResponse.getBody()).containsEntry("reason", "DELTA_PAYLOAD_INVALID");
-        assertThat(recoverResponse.getBody()).containsEntry("taskId", taskId);
+        assertThat(recoverResponse.getBody()).containsEntry("detail", "Checkpoint recovery failed");
+        assertThat(recoverResponse.getBody()).containsKey("correlationId");
+        assertThat(recoverResponse.getBody()).doesNotContainKeys("taskId", "checkpointId");
 
         ResponseEntity<Map> metricResponse = restTemplate.getForEntity(
                 "/actuator/metrics/vortex.checkpoint.recovery.total?tag=outcome:failure&tag=reason:DELTA_PAYLOAD_INVALID",

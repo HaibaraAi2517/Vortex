@@ -12,6 +12,7 @@ import com.vortex.app.integration.support.IsolatedIntegrationTestSupport;
 import com.vortex.kernel.embedding.EmbeddingService;
 import com.vortex.kernel.embedding.TokenCounter;
 import com.vortex.kernel.hmc.AdaptiveWeightLearner;
+import com.vortex.kernel.hmc.HierarchicalMemoryController;
 import com.vortex.kernel.snapshot.SnapshotService;
 import com.vortex.storage.api.L1HotStore;
 import com.vortex.storage.api.L2WarmStore;
@@ -68,11 +69,16 @@ public class DockerComposeIT {
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {
         registry.add("vortex.storage.l1.max-tokens", () -> 24);
-        registry.add("vortex.storage.l3.minio.endpoint", () -> "http://localhost:9000");
-        registry.add("vortex.storage.l3.minio.access-key", () -> "minioadmin");
-        registry.add("vortex.storage.l3.minio.secret-key", () -> "minioadmin");
-        registry.add("vortex.storage.l2.milvus.host", () -> "localhost");
-        registry.add("vortex.storage.l2.milvus.port", () -> 19530);
+        registry.add("vortex.storage.l3.minio.endpoint", () -> IsolatedIntegrationTestSupport.property(
+                "vortex.it.minio-endpoint", "http://localhost:9000"));
+        registry.add("vortex.storage.l3.minio.access-key", () -> IsolatedIntegrationTestSupport.property(
+                "vortex.it.minio-access-key", "minioadmin"));
+        registry.add("vortex.storage.l3.minio.secret-key", () -> IsolatedIntegrationTestSupport.property(
+                "vortex.it.minio-secret-key", "minioadmin"));
+        registry.add("vortex.storage.l2.milvus.host", () -> IsolatedIntegrationTestSupport.property(
+                "vortex.it.milvus-host", "localhost"));
+        registry.add("vortex.storage.l2.milvus.port", () -> IsolatedIntegrationTestSupport.intProperty(
+                "vortex.it.milvus-port", 19530));
         registry.add("vortex.storage.l2.embedding-dim", () -> 4);
         registry.add("vortex.kernel.embedding.bge.model-path", () -> "unused-in-it");
         registry.add("vortex.kernel.splitter.max-tokens-per-chunk", () -> 512);
@@ -99,6 +105,9 @@ public class DockerComposeIT {
 
     @Autowired
     private AdaptiveWeightLearner adaptiveWeightLearner;
+
+    @Autowired
+    private HierarchicalMemoryController hmc;
 
     private String namespace;
 
@@ -541,10 +550,7 @@ public class DockerComposeIT {
     }
 
     private void storeFragment(MemoryFragment fragment) {
-        ResponseEntity<Map> response = restTemplate.postForEntity(
-                "/api/v1/memory/store/fragment", fragment, Map.class);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).containsEntry("id", fragment.getId());
+        hmc.storeFragment(fragment);
     }
 
     private void assertDagContains(String taskId, String... contents) {

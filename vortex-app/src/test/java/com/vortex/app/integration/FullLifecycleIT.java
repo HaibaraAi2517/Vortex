@@ -10,6 +10,7 @@ import com.vortex.common.model.MemoryFragment;
 import com.vortex.kernel.embedding.EmbeddingService;
 import com.vortex.kernel.embedding.TokenCounter;
 import com.vortex.kernel.hmc.AdaptiveWeightLearner;
+import com.vortex.kernel.hmc.HierarchicalMemoryController;
 import com.vortex.kernel.snapshot.SnapshotService;
 import com.vortex.storage.api.L1HotStore;
 import com.vortex.storage.api.L2WarmStore;
@@ -118,6 +119,9 @@ public class FullLifecycleIT {
 
     @Autowired
     private AdaptiveWeightLearner adaptiveWeightLearner;
+
+    @Autowired
+    private HierarchicalMemoryController hmc;
 
     private String namespace;
 
@@ -466,12 +470,7 @@ public class FullLifecycleIT {
     }
 
     private void storeFragment(MemoryFragment fragment) {
-        ResponseEntity<Map> response = restTemplate.postForEntity(
-                "/api/v1/memory/store/fragment",
-                fragment,
-                Map.class);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).containsEntry("id", fragment.getId());
+        hmc.storeFragment(fragment);
     }
 
     private void assertDagContains(String taskId, String... contents) {
