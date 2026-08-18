@@ -137,7 +137,9 @@ public class RecallBenchmarkRunner {
                 RecallAblationMode.VECTOR_ONLY,
                 RecallAblationMode.VECTOR_RERANK,
                 RecallAblationMode.HYBRID,
-                RecallAblationMode.HYBRID_RERANK);
+                RecallAblationMode.HYBRID_RERANK,
+                RecallAblationMode.HYBRID_RRF,
+                RecallAblationMode.HYBRID_RRF_MMR);
     }
 
     private List<RecallAblationMode> ablationModesFromEvalModes(Collection<LlmMemoryEvalMode> modes) {
@@ -189,7 +191,7 @@ public class RecallBenchmarkRunner {
                 if (fragment.getPinTtlMillis() != null) {
                     storedFragment.pinForMillis(fragment.getPinTtlMillis());
                 }
-                hmc.storeFragment(storedFragment);
+                hmc.storeFragmentDurablyForEvaluation(storedFragment);
                 storedFragmentIds.add(actualFragmentId);
                 actualToLogicalIds.put(actualFragmentId, fragment.getFragmentId());
             }
@@ -213,14 +215,16 @@ public class RecallBenchmarkRunner {
         List<String> expectedFragments = safeList(evalCase.getExpectedFragments());
         int primaryTopK = primaryTopK(evaluationKs);
         try {
+            hmc.resetRecallSignalsForEvaluation(actualToLogicalIds.keySet());
             clearL1(namespace);
-            RecallResult recallResult = hmc.recall(RecallQuery.builder()
+            RecallResult recallResult = hmc.recallReadOnlyForEvaluation(RecallQuery.builder()
                     .query(evalCase.getQuestion())
                     .namespace(namespace)
                     .topK(maxTopK)
                     .tokenBudget(properties.getRecallTokenBudget())
                     .scenario(properties.getLearningScenario())
                     .retrievalMode(mode.retrievalMode())
+                    .rankingStrategy(mode.rankingStrategy())
                     .rerankEnabled(mode.rerankEnabled())
                     .rerankerType(mode.rerankerType())
                     .tags(recallTags(evalCase))

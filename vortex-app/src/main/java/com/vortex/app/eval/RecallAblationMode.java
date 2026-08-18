@@ -1,5 +1,6 @@
 package com.vortex.app.eval;
 
+import com.vortex.common.dto.RecallRankingStrategy;
 import com.vortex.common.dto.RetrievalMode;
 import com.vortex.common.dto.RerankerType;
 
@@ -22,6 +23,18 @@ public enum RecallAblationMode {
             RetrievalMode.HYBRID,
             true,
             RerankerType.LINEAR_SCORE_FUSION),
+    HYBRID_RRF(
+            "Hybrid+RRF",
+            RetrievalMode.HYBRID,
+            false,
+            RerankerType.NONE,
+            RecallRankingStrategy.RRF),
+    HYBRID_RRF_MMR(
+            "Hybrid+RRF+MMR",
+            RetrievalMode.HYBRID,
+            false,
+            RerankerType.NONE,
+            RecallRankingStrategy.RRF_MMR),
     HYBRID_CROSS_ENCODER(
             "Hybrid+CrossEncoderReranker",
             RetrievalMode.HYBRID,
@@ -32,16 +45,32 @@ public enum RecallAblationMode {
     private final RetrievalMode retrievalMode;
     private final boolean rerankEnabled;
     private final RerankerType rerankerType;
+    private final RecallRankingStrategy rankingStrategy;
 
     RecallAblationMode(
             String reportName,
             RetrievalMode retrievalMode,
             boolean rerankEnabled,
             RerankerType rerankerType) {
+        this(
+                reportName,
+                retrievalMode,
+                rerankEnabled,
+                rerankerType,
+                RecallRankingStrategy.LEGACY);
+    }
+
+    RecallAblationMode(
+            String reportName,
+            RetrievalMode retrievalMode,
+            boolean rerankEnabled,
+            RerankerType rerankerType,
+            RecallRankingStrategy rankingStrategy) {
         this.reportName = reportName;
         this.retrievalMode = retrievalMode;
         this.rerankEnabled = rerankEnabled;
         this.rerankerType = rerankerType;
+        this.rankingStrategy = rankingStrategy;
     }
 
     public String reportName() {
@@ -58,5 +87,9 @@ public enum RecallAblationMode {
 
     public RerankerType rerankerType() {
         return rerankerType;
+    }
+
+    public RecallRankingStrategy rankingStrategy() {
+        return rankingStrategy;
     }
 }

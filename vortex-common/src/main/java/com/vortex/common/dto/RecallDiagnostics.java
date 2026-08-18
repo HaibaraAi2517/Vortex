@@ -23,6 +23,9 @@ public class RecallDiagnostics {
     private int l1TokenBudgetRejectedCount;
 
     private String retrievalMode;
+    private String rankingStrategy;
+    private double keywordFusionWeight;
+    private String keywordTriggerReason;
     private boolean rerankEnabled;
     private int keywordCandidateCount;
     private int keywordAcceptedCount;

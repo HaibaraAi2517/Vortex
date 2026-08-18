@@ -3,6 +3,7 @@ package com.vortex.app.eval;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vortex.common.dto.RecallDiagnostics;
 import com.vortex.common.dto.RecallQuery;
+import com.vortex.common.dto.RecallRankingStrategy;
 import com.vortex.common.dto.RecallResult;
 import com.vortex.common.dto.RerankEffectStatus;
 import com.vortex.common.dto.RerankerType;
@@ -27,7 +28,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class RecallBenchmarkRunnerTest {
@@ -78,14 +82,15 @@ class RecallBenchmarkRunnerTest {
             l1.put(fragment);
             l2.upsert(fragment);
             return null;
-        }).when(hmc).storeFragment(any(MemoryFragment.class));
+        }).when(hmc).storeFragmentDurablyForEvaluation(any(MemoryFragment.class));
         doAnswer(invocation -> {
             String fragmentId = invocation.getArgument(0);
             l1.remove(fragmentId);
             l2.delete(fragmentId);
             return true;
         }).when(hmc).deleteFragment(any(String.class));
-        when(hmc.recall(any(RecallQuery.class))).thenAnswer(invocation -> recall(invocation.getArgument(0)));
+        when(hmc.recallReadOnlyForEvaluation(any(RecallQuery.class)))
+                .thenAnswer(invocation -> recall(invocation.getArgument(0)));
     }
 
     @Test
@@ -175,6 +180,22 @@ class RecallBenchmarkRunnerTest {
                         RerankerType.NONE,
                         RerankerType.LINEAR_SCORE_FUSION,
                         RerankerType.CROSS_ENCODER);
+    }
+
+    @Test
+    void runAblationSupportsRrfAndRrfMmrComparisonModes() {
+        RecallBenchmarkReport report = runner.runAblation(List.of(keywordLiftCase()), List.of(
+                RecallAblationMode.HYBRID_RRF,
+                RecallAblationMode.HYBRID_RRF_MMR));
+
+        assertThat(report.getModes()).containsExactly("Hybrid+RRF", "Hybrid+RRF+MMR");
+        assertThat(report.getResults())
+                .extracting(result -> result.getRecallDiagnostics().getRankingStrategy())
+                .containsExactly(
+                        RecallRankingStrategy.RRF.name(),
+                        RecallRankingStrategy.RRF_MMR.name());
+        verify(hmc, times(2)).recallReadOnlyForEvaluation(any(RecallQuery.class));
+        verify(hmc, never()).recall(any(RecallQuery.class));
     }
 
     @Test
@@ -330,6 +351,7 @@ class RecallBenchmarkRunnerTest {
                 .recallSessionId("recall-" + query.getRetrievalMode())
                 .diagnostics(RecallDiagnostics.builder()
                         .retrievalMode(query.getRetrievalMode().name())
+                        .rankingStrategy(query.getRankingStrategy().name())
                         .rerankEnabled(query.isRerankEnabled())
                         .requiredTags(query.getTags())
                         .keywordCandidateCount(query.getRetrievalMode() == RetrievalMode.VECTOR_ONLY ? 0 : returned.size())

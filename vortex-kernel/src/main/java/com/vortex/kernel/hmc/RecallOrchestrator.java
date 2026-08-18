@@ -3,6 +3,7 @@ package com.vortex.kernel.hmc;
 import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.dto.RecallDiagnostics;
 import com.vortex.common.dto.RecallQuery;
+import com.vortex.common.dto.RecallRankingStrategy;
 import com.vortex.common.dto.RecallResult;
 import com.vortex.common.dto.RerankEffectStatus;
 import com.vortex.common.dto.RerankerType;
@@ -42,6 +43,13 @@ public class RecallOrchestrator {
     private final L3ColdStore l3;
     private final KeywordRecallIndex keywordRecallIndex = new KeywordRecallIndex();
     private final HybridRecallReranker hybridRecallReranker = new HybridRecallReranker();
+    private final RecallAccessFrequencyTracker recallAccessFrequencyTracker = new RecallAccessFrequencyTracker();
+    private final RecallScoringPolicy recallScoringPolicy =
+            new RecallScoringPolicy(recallAccessFrequencyTracker);
+    private final V2RecallRanker v2RecallRanker =
+            new V2RecallRanker(recallScoringPolicy, new ReciprocalRankFusion());
+    private final MmrCandidateSelector mmrCandidateSelector = new MmrCandidateSelector();
+    private final ExactQueryFeatureDetector exactQueryFeatureDetector = new ExactQueryFeatureDetector();
     private final CrossEncoderReranker crossEncoderReranker;
     private final EmbeddingService l1EmbeddingService;
     private final EmbeddingService l2EmbeddingService;
@@ -141,17 +149,49 @@ public class RecallOrchestrator {
      * 3. Prefetch L2 results back into L1 for subsequent calls.
      */
     public RecallResult recall(RecallQuery query) {
+        return recall(query, false);
+    }
+
+    RecallResult recallReadOnlyForEvaluation(RecallQuery query) {
+        return recall(query, true);
+    }
+
+    private RecallResult recall(RecallQuery query, boolean readOnlyEvaluation) {
         long startedAt = System.nanoTime();
         List<String> requiredTags = normalizeTags(query.getTags());
         RetrievalMode retrievalMode = query.getRetrievalMode() == null
                 ? RetrievalMode.HYBRID
                 : query.getRetrievalMode();
+        RecallRankingStrategy rankingStrategy = query.getRankingStrategy() == null
+                ? RecallRankingStrategy.RRF
+                : query.getRankingStrategy();
         boolean vectorEnabled = retrievalMode != RetrievalMode.KEYWORD_ONLY;
-        boolean keywordEnabled = retrievalMode != RetrievalMode.VECTOR_ONLY;
+        boolean keywordRequested = retrievalMode != RetrievalMode.VECTOR_ONLY;
+        ExactQueryFeatureDetector.KeywordSignal keywordSignal =
+                exactQueryFeatureDetector.analyze(query.getQuery());
+        boolean keywordEnabled = keywordRequested
+                && (rankingStrategy == RecallRankingStrategy.LEGACY
+                || retrievalMode == RetrievalMode.KEYWORD_ONLY
+                || keywordSignal.enabled());
+        double keywordFusionWeight = !keywordEnabled
+                ? 0.0d
+                : rankingStrategy == RecallRankingStrategy.LEGACY
+                        || retrievalMode == RetrievalMode.KEYWORD_ONLY
+                        ? 1.0d
+                        : keywordSignal.fusionWeight();
+        String keywordTriggerReason = !keywordEnabled
+                ? "NONE"
+                : rankingStrategy == RecallRankingStrategy.LEGACY
+                        ? "LEGACY_REQUESTED"
+                        : retrievalMode == RetrievalMode.KEYWORD_ONLY
+                                ? "KEYWORD_ONLY"
+                                : keywordSignal.reason();
         boolean rerankEnabled = query.isRerankEnabled();
         RerankerType rerankerType = resolveRerankerType(query);
         RecallDiagnosticsAccumulator diagnostics = new RecallDiagnosticsAccumulator(requiredTags);
         diagnostics.setRetrievalMode(retrievalMode.name());
+        diagnostics.setRankingStrategy(rankingStrategy.name());
+        diagnostics.setKeywordFusion(keywordFusionWeight, keywordTriggerReason);
         diagnostics.setRerankConfiguration(rerankEnabled, rerankerType);
         MemoryScenario scenario = query.getScenario() == null ? MemoryScenario.CHAT : query.getScenario();
         AdaptiveWeightLearner.ProfileSelection profileSelection = adaptiveWeightLearner.selectProfiles(scenario);
@@ -187,7 +227,9 @@ public class RecallOrchestrator {
                     tierById,
                     attemptedL2Ids,
                     diagnostics);
-            if (retrievalMode == RetrievalMode.HYBRID && candidatesById.size() < query.getTopK()) {
+            if (retrievalMode == RetrievalMode.HYBRID
+                    && keywordEnabled
+                    && candidatesById.size() < query.getTopK()) {
                 int fallbackLimit = Math.max(l2SearchLimit, query.getTopK() * 8);
                 collectL2Candidates(
                         l2.listByNamespace(query.getNamespace(), fallbackLimit),
@@ -213,11 +255,19 @@ public class RecallOrchestrator {
         }
 
         List<MemoryFragment> evaluationPool = new ArrayList<>(candidatesById.values());
-        List<ScoredCandidate> activeRanked = rankForRecall(evaluationPool, l1QueryEmbedding, profileSelection.active());
-        List<ScoredCandidate> shadowRanked = rankForRecall(evaluationPool, l1QueryEmbedding, profileSelection.shadow());
-        List<ScoredCandidate> baselineRanked = rankForRecall(evaluationPool, l1QueryEmbedding, baselineProfile);
-        if (vectorEnabled) {
-            activeRanked.forEach(candidate -> semanticScoresById.put(candidate.fragment().getId(), candidate.score()));
+        List<ScoredCandidate> activeRanked;
+        List<ScoredCandidate> shadowRanked;
+        List<ScoredCandidate> baselineRanked;
+        activeRanked = rankForRecall(evaluationPool, l1QueryEmbedding, profileSelection.active());
+        shadowRanked = rankForRecall(evaluationPool, l1QueryEmbedding, profileSelection.shadow());
+        baselineRanked = rankForRecall(evaluationPool, l1QueryEmbedding, baselineProfile);
+        if (vectorEnabled && (rankingStrategy == RecallRankingStrategy.LEGACY || !keywordEnabled)) {
+            activeRanked.forEach(candidate ->
+                    semanticScoresById.put(candidate.fragment().getId(), candidate.score()));
+        } else if (vectorEnabled) {
+            evaluationPool.forEach(fragment -> semanticScoresById.put(
+                    fragment.getId(),
+                    recallScoringPolicy.semanticRelevance(fragment, l1QueryEmbedding)));
         }
         diagnostics.setVectorCandidateCount(vectorEnabled ? semanticScoresById.size() : 0);
         diagnostics.setVectorAcceptedCount(vectorEnabled
@@ -230,10 +280,24 @@ public class RecallOrchestrator {
                 semanticScoresById,
                 keywordScoresById,
                 keywordEnabled,
+                keywordFusionWeight,
                 rerankerType,
                 requiredTags,
-                query.getTopK());
+                query.getTopK(),
+                rankingStrategy,
+                activeRanked);
         List<HybridRecallReranker.HybridCandidate> reranked = rerankExecution.candidates();
+        if (rankingStrategy == RecallRankingStrategy.RRF_MMR) {
+            reranked = mmrCandidateSelector.select(reranked, query.getTopK());
+        }
+        if (rankingStrategy != RecallRankingStrategy.LEGACY) {
+            List<ScoredCandidate> v2Ranked = reranked.stream()
+                    .map(candidate -> new ScoredCandidate(candidate.fragment(), candidate.score()))
+                    .toList();
+            activeRanked = v2Ranked;
+            shadowRanked = v2Ranked;
+            baselineRanked = v2Ranked;
+        }
         diagnostics.recordRerankExecution(rerankExecution);
 
         List<RecallResult.ScoredFragment> results = new ArrayList<>();
@@ -252,12 +316,14 @@ public class RecallOrchestrator {
                 continue;
             }
             String tier = tierById.getOrDefault(fragment.getId(), "L1");
-            MemoryFragment recalled = "L1".equals(tier)
-                    ? refreshL1Fragment(fragment)
-                    : prepareL2RecallCandidate(fragment);
+            MemoryFragment recalled = readOnlyEvaluation
+                    ? fragment
+                    : "L1".equals(tier)
+                            ? refreshL1Fragment(fragment)
+                            : prepareL2RecallCandidate(fragment);
             if ("L1".equals(tier)) {
                 diagnostics.incrementL1SelectedCount();
-            } else if (pagingManager != null) {
+            } else if (!readOnlyEvaluation && pagingManager != null) {
                 pagingManager.handlePageFault(fragment.getId(), query.getNamespace());
             }
             results.add(RecallResult.ScoredFragment.builder()
@@ -275,40 +341,46 @@ public class RecallOrchestrator {
                 .map(RecallResult.ScoredFragment::getFragment)
                 .map(MemoryFragment::getId)
                 .toList();
-        List<String> activeEvictionRanked = evictionCoordinator.rankEvictionForEvaluation(evaluationPool, l1QueryEmbedding, profileSelection.active());
-        List<String> shadowEvictionRanked = evictionCoordinator.rankEvictionForEvaluation(evaluationPool, l1QueryEmbedding, profileSelection.shadow());
-        List<String> baselineEvictionRanked = evictionCoordinator.rankEvictionForEvaluation(evaluationPool, l1QueryEmbedding, baselineProfile);
+        String recallSessionId = null;
+        if (!readOnlyEvaluation) {
+            List<String> activeEvictionRanked = evictionCoordinator.rankEvictionForEvaluation(
+                    evaluationPool, l1QueryEmbedding, profileSelection.active());
+            List<String> shadowEvictionRanked = evictionCoordinator.rankEvictionForEvaluation(
+                    evaluationPool, l1QueryEmbedding, profileSelection.shadow());
+            List<String> baselineEvictionRanked = evictionCoordinator.rankEvictionForEvaluation(
+                    evaluationPool, l1QueryEmbedding, baselineProfile);
 
-        String recallSessionId = adaptiveWeightLearner.recordRecallSession(RecallSessionRecord.builder()
-                .namespace(query.getNamespace())
-                .scenario(scenario)
-                .activeProfileName(profileSelection.active().getProfileName())
-                .shadowProfileName(profileSelection.shadow().getProfileName())
-                .activeArmIndex(extractArmIndex(profileSelection.active().getProfileName()))
-                .shadowArmIndex(extractArmIndex(profileSelection.shadow().getProfileName()))
-                .activeSelectionProbability(extractSelectionProbability(profileSelection.active().getProfileName()))
-                .shadowSelectionProbability(extractSelectionProbability(profileSelection.shadow().getProfileName()))
-                .rankedFragmentIds(activeRanked.stream().map(sc -> sc.fragment().getId()).toList())
-                .shadowRankedFragmentIds(shadowRanked.stream().map(sc -> sc.fragment().getId()).toList())
-                .baselineRankedFragmentIds(baselineRanked.stream().map(sc -> sc.fragment().getId()).toList())
-                .returnedFragmentIds(returnedFragmentIds)
-                .activeEvictionRankedFragmentIds(activeEvictionRanked)
-                .shadowEvictionRankedFragmentIds(shadowEvictionRanked)
-                .baselineEvictionRankedFragmentIds(baselineEvictionRanked)
-                .createdAt(java.time.Instant.now())
-                .build());
-        EvictionRegretTracker.RegretSnapshot regretSnapshot = regretTracker.snapshot();
-        sloTracker.recordRegretRate(regretSnapshot.regretRate());
-        ShadowEvaluationTracker.ShadowEvaluationSnapshot learningSnapshot =
-                adaptiveWeightLearner.snapshot(scenario).shadowEvaluation();
-        sloTracker.recordLearningLift(
-                learningSnapshot.relativeLift(),
-                learningSnapshot.baselineRelativeLift(),
-                learningSnapshot.baselineWinRate());
-        sloTracker.recordRecallLatency(System.nanoTime() - startedAt);
+            recallSessionId = adaptiveWeightLearner.recordRecallSession(RecallSessionRecord.builder()
+                    .namespace(query.getNamespace())
+                    .scenario(scenario)
+                    .activeProfileName(profileSelection.active().getProfileName())
+                    .shadowProfileName(profileSelection.shadow().getProfileName())
+                    .activeArmIndex(extractArmIndex(profileSelection.active().getProfileName()))
+                    .shadowArmIndex(extractArmIndex(profileSelection.shadow().getProfileName()))
+                    .activeSelectionProbability(extractSelectionProbability(profileSelection.active().getProfileName()))
+                    .shadowSelectionProbability(extractSelectionProbability(profileSelection.shadow().getProfileName()))
+                    .rankedFragmentIds(activeRanked.stream().map(sc -> sc.fragment().getId()).toList())
+                    .shadowRankedFragmentIds(shadowRanked.stream().map(sc -> sc.fragment().getId()).toList())
+                    .baselineRankedFragmentIds(baselineRanked.stream().map(sc -> sc.fragment().getId()).toList())
+                    .returnedFragmentIds(returnedFragmentIds)
+                    .activeEvictionRankedFragmentIds(activeEvictionRanked)
+                    .shadowEvictionRankedFragmentIds(shadowEvictionRanked)
+                    .baselineEvictionRankedFragmentIds(baselineEvictionRanked)
+                    .createdAt(java.time.Instant.now())
+                    .build());
+            EvictionRegretTracker.RegretSnapshot regretSnapshot = regretTracker.snapshot();
+            sloTracker.recordRegretRate(regretSnapshot.regretRate());
+            ShadowEvaluationTracker.ShadowEvaluationSnapshot learningSnapshot =
+                    adaptiveWeightLearner.snapshot(scenario).shadowEvaluation();
+            sloTracker.recordLearningLift(
+                    learningSnapshot.relativeLift(),
+                    learningSnapshot.baselineRelativeLift(),
+                    learningSnapshot.baselineWinRate());
+            sloTracker.recordRecallLatency(System.nanoTime() - startedAt);
 
-        if (pagingManager != null) {
-            pagingManager.onRecall(l1QueryEmbedding);
+            if (pagingManager != null) {
+                pagingManager.onRecall(l1QueryEmbedding);
+            }
         }
 
         return RecallResult.builder()
@@ -413,9 +485,12 @@ public class RecallOrchestrator {
             Map<String, Double> semanticScoresById,
             Map<String, Double> keywordScoresById,
             boolean keywordEnabled,
+            double keywordFusionWeight,
             RerankerType rerankerType,
             List<String> requiredTags,
-            int topK) {
+            int topK,
+            RecallRankingStrategy rankingStrategy,
+            List<ScoredCandidate> stableAnchor) {
         if (rerankerType == RerankerType.LINEAR_SCORE_FUSION) {
             HybridRecallReranker.RerankResult result = hybridRecallReranker.rerankWithDiagnostics(
                     candidatesById,
@@ -436,6 +511,28 @@ public class RecallOrchestrator {
                     crossEncoderCandidatePoolLimit,
                     topK);
             return new RerankExecution(result.candidates(), null, result.analysis());
+        }
+        if (rankingStrategy != RecallRankingStrategy.LEGACY) {
+            if (keywordFusionWeight <= 0.0d) {
+                return new RerankExecution(
+                        stableAnchor.stream()
+                                .map(candidate -> new HybridRecallReranker.HybridCandidate(
+                                        candidate.fragment(),
+                                        candidate.score(),
+                                        candidate.score(),
+                                        0.0d))
+                                .toList(),
+                        HybridRecallReranker.RerankAnalysis.notExecuted(),
+                        null);
+            }
+            return new RerankExecution(
+                    v2RecallRanker.rank(
+                            candidatesById,
+                            semanticScoresById,
+                            keywordScoresById,
+                            keywordFusionWeight),
+                    HybridRecallReranker.RerankAnalysis.notExecuted(),
+                    null);
         }
         return new RerankExecution(
                 hybridRecallReranker.rankWithoutRerank(
@@ -462,6 +559,10 @@ public class RecallOrchestrator {
         return requested;
     }
 
+    public void resetRecallSignals(Collection<String> fragmentIds) {
+        recallAccessFrequencyTracker.removeAll(fragmentIds);
+    }
+
     // ---- Ranking helpers ----
 
     private MemoryFragment refreshL1Fragment(MemoryFragment fragment) {
@@ -472,6 +573,7 @@ public class RecallOrchestrator {
         if (pagingManager != null) {
             pagingManager.onFragmentAccess(refreshed.getId());
         }
+        recallAccessFrequencyTracker.recordRecall(refreshed.getId());
         return refreshed;
     }
 
@@ -484,6 +586,7 @@ public class RecallOrchestrator {
         if (pagingManager != null) {
             pagingManager.onFragmentAccess(candidate.getId());
         }
+        recallAccessFrequencyTracker.recordRecall(candidate.getId());
         return candidate;
     }
 
@@ -508,13 +611,7 @@ public class RecallOrchestrator {
             AdaptiveWeightProfile profile,
             Map<String, RedundancyAnalyzer.RedundancyStats> redundancyStats) {
         RedundancyAnalyzer.RedundancyStats stats = redundancyStats.getOrDefault(fragment.getId(), new RedundancyAnalyzer.RedundancyStats(0.0, 0.0));
-        return fragment.describeEvictionScore(
-                queryEmbedding,
-                profile.getAlpha(),
-                profile.getBeta(),
-                profile.getGamma(),
-                stats.redundancyPenalty(),
-                stats.noveltyBonus()).totalScore();
+        return recallScoringPolicy.legacyScore(fragment, queryEmbedding, profile, stats);
     }
 
     public static double cosineSimilarity(float[] a, float[] b) {
@@ -683,6 +780,9 @@ public class RecallOrchestrator {
     private static final class RecallDiagnosticsAccumulator {
         private final List<String> requiredTags;
         private String retrievalMode;
+        private String rankingStrategy;
+        private double keywordFusionWeight;
+        private String keywordTriggerReason;
         private boolean rerankEnabled;
         private int l1CandidateCount;
         private int l1TagMatchedCount;
@@ -740,6 +840,15 @@ public class RecallOrchestrator {
 
         private void setRetrievalMode(String retrievalMode) {
             this.retrievalMode = retrievalMode;
+        }
+
+        private void setRankingStrategy(String rankingStrategy) {
+            this.rankingStrategy = rankingStrategy;
+        }
+
+        private void setKeywordFusion(double keywordFusionWeight, String keywordTriggerReason) {
+            this.keywordFusionWeight = keywordFusionWeight;
+            this.keywordTriggerReason = keywordTriggerReason;
         }
 
         private void setRerankConfiguration(
@@ -979,6 +1088,9 @@ public class RecallOrchestrator {
                     .l1SelectedCount(l1SelectedCount)
                     .l1TokenBudgetRejectedCount(l1TokenBudgetRejectedCount)
                     .retrievalMode(retrievalMode)
+                    .rankingStrategy(rankingStrategy)
+                    .keywordFusionWeight(keywordFusionWeight)
+                    .keywordTriggerReason(keywordTriggerReason)
                     .rerankEnabled(rerankEnabled)
                     .keywordCandidateCount(keywordCandidateCount)
                     .keywordAcceptedCount(keywordAcceptedCount)

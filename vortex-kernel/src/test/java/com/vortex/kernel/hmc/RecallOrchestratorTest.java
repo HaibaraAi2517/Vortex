@@ -2,6 +2,7 @@ package com.vortex.kernel.hmc;
 
 import com.vortex.common.dto.MemoryScenario;
 import com.vortex.common.dto.RecallQuery;
+import com.vortex.common.dto.RecallRankingStrategy;
 import com.vortex.common.dto.RecallResult;
 import com.vortex.common.dto.RerankEffectStatus;
 import com.vortex.common.dto.RerankerType;
@@ -146,6 +147,58 @@ class RecallOrchestratorTest {
                 .contains("l1-a", "l1-b");
     }
 
+    @Test
+    void defaultRecallUsesGuardedHybridRrfRanking() {
+        l1.put(fragment("default", "ns", "default fragment", List.of(), 4));
+
+        RecallResult result = orchestrator.recall(RecallQuery.builder()
+                .query("plain language query")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .build());
+
+        assertThat(result.getDiagnostics().getRetrievalMode())
+                .isEqualTo(RetrievalMode.HYBRID.name());
+        assertThat(result.getDiagnostics().getRankingStrategy())
+                .isEqualTo(RecallRankingStrategy.RRF.name());
+        assertThat(result.getDiagnostics().getKeywordCandidateCount()).isZero();
+    }
+
+    @Test
+    void v2HybridEnablesKeywordBranchOnlyForExactQueryFeatures() {
+        MemoryFragment candidate = fragment(
+                "VTX-42",
+                "ns",
+                "Issue VTX-42 is owned by noah@example.com",
+                List.of(),
+                4);
+        l2.seedSearchResults(List.of(candidate));
+        l2.seedNamespaceResults(List.of(candidate));
+
+        RecallResult naturalLanguage = orchestrator.recall(RecallQuery.builder()
+                .query("Who owns the current issue")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .retrievalMode(RetrievalMode.HYBRID)
+                .rankingStrategy(RecallRankingStrategy.RRF)
+                .build());
+        RecallResult exactFeature = orchestrator.recall(RecallQuery.builder()
+                .query("Who owns VTX-42")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .retrievalMode(RetrievalMode.HYBRID)
+                .rankingStrategy(RecallRankingStrategy.RRF)
+                .build());
+
+        assertThat(naturalLanguage.getDiagnostics().getKeywordCandidateCount()).isZero();
+        assertThat(exactFeature.getDiagnostics().getKeywordCandidateCount()).isPositive();
+        assertThat(exactFeature.getDiagnostics().getRankingStrategy())
+                .isEqualTo(RecallRankingStrategy.RRF.name());
+    }
+
     // ========================================================================
     // recall: L2 fallback
     // ========================================================================
@@ -170,6 +223,23 @@ class RecallOrchestratorTest {
         assertThat(result.getFragments().size()).isGreaterThanOrEqualTo(2);
     }
 
+    @Test
+    void readOnlyEvaluationRecallDoesNotReinforceL2Candidates() {
+        MemoryFragment l2Hit = fragment("l2-read-only", "ns", "read only candidate", List.of(), 4);
+        l2.seedSearchResults(List.of(l2Hit));
+
+        RecallResult result = orchestrator.recallReadOnlyForEvaluation(RecallQuery.builder()
+                .query("read only candidate")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .build());
+
+        assertThat(result.getFragments()).hasSize(1);
+        assertThat(result.getRecallSessionId()).isNull();
+        assertThat(l1.peek("l2-read-only")).isEmpty();
+    }
+
     // ========================================================================
     // recall: L2 fallback robustness
     // ========================================================================
@@ -187,6 +257,7 @@ class RecallOrchestratorTest {
                 .tokenBudget(100)
                 .tags(List.of("role:user"))
                 .retrievalMode(RetrievalMode.HYBRID)
+                .rankingStrategy(RecallRankingStrategy.LEGACY)
                 .build());
 
         assertThat(result.getFragments()).hasSize(1);
@@ -290,7 +361,7 @@ class RecallOrchestratorTest {
         l2.seedNamespaceResults(List.of(exact));
 
         RecallResult result = orchestrator.recall(RecallQuery.builder()
-                .query("Which Pegasus owner email should be used?")
+                .query("Is avery-deploy@example.com the Pegasus owner email?")
                 .namespace("ns")
                 .topK(1)
                 .tokenBudget(100)
@@ -342,7 +413,7 @@ class RecallOrchestratorTest {
     }
 
     @Test
-    void defaultRecallUsesVectorOnlyWithoutRerank() {
+    void defaultRecallDoesNotExpandCandidatesWithoutExactSignal() {
         MemoryFragment exact = fragment("kw-vector-only", "ns", "Pegasus owner is avery-deploy@example.com", List.of("role:user"), 4);
         l2.seedSearchResults(List.of());
         l2.seedNamespaceResults(List.of(exact));
@@ -356,11 +427,41 @@ class RecallOrchestratorTest {
                 .build());
 
         assertThat(result.getFragments()).isEmpty();
-        assertThat(result.getDiagnostics().getRetrievalMode()).isEqualTo(RetrievalMode.VECTOR_ONLY.name());
+        assertThat(result.getDiagnostics().getRetrievalMode()).isEqualTo(RetrievalMode.HYBRID.name());
+        assertThat(result.getDiagnostics().getRankingStrategy()).isEqualTo(RecallRankingStrategy.RRF.name());
         assertThat(result.getDiagnostics().getKeywordCandidateCount()).isZero();
         assertThat(result.getDiagnostics().getRerankerType()).isEqualTo(RerankerType.NONE);
         assertThat(result.getDiagnostics().getRerankEffectStatus())
                 .isEqualTo(RerankEffectStatus.NOT_EXECUTED);
+    }
+
+    @Test
+    void defaultRecallUsesRrfWhenExactSignalAddsValue() {
+        MemoryFragment exact = fragment(
+                "default-rrf-exact",
+                "ns",
+                "Pegasus owner is avery-deploy@example.com",
+                List.of("role:user"),
+                4);
+        l2.seedSearchResults(List.of());
+        l2.seedNamespaceResults(List.of(exact));
+
+        RecallResult result = orchestrator.recall(RecallQuery.builder()
+                .query("Is avery-deploy@example.com the Pegasus owner?")
+                .namespace("ns")
+                .topK(1)
+                .tokenBudget(100)
+                .tags(List.of("role:user"))
+                .build());
+
+        assertThat(result.getFragments()).hasSize(1);
+        assertThat(result.getFragments().getFirst().getFragment().getId())
+                .isEqualTo("default-rrf-exact");
+        assertThat(result.getDiagnostics().getRetrievalMode()).isEqualTo(RetrievalMode.HYBRID.name());
+        assertThat(result.getDiagnostics().getRankingStrategy())
+                .isEqualTo(RecallRankingStrategy.RRF.name());
+        assertThat(result.getDiagnostics().getKeywordTriggerReason()).isEqualTo("EMAIL");
+        assertThat(result.getDiagnostics().getKeywordFusionWeight()).isEqualTo(0.15d);
     }
 
     @Test
@@ -904,7 +1005,7 @@ class RecallOrchestratorTest {
         private final List<String> pageFaultNamespaces = new ArrayList<>();
 
         private RecordingSemanticPagingManager() {
-            super(null, null, null, null, null, null, null, null, null, true, 10, 1000);
+            super(null, null, null, null, null, null, null, null, null, null, true, 10, 1000);
         }
 
         @Override
