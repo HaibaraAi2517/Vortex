@@ -15,13 +15,16 @@
 retrieve the right context, and resume after crashes. Built with Java 21,
 Spring Boot, Milvus, MinIO, Redis, and Caffeine.**
 
-`v0.1.1` is the stable, evidence-backed portfolio release. Vortex is an
-infrastructure kernel rather than a hosted SaaS: the repository keeps code,
-deterministic benchmarks, failure-injection evidence, and reproduction paths
-together.
+`v0.1.1` is the latest tagged release with a complete evidence package. Vortex
+is an infrastructure kernel rather than a hosted SaaS: the repository keeps
+code, deterministic benchmarks, failure-injection evidence, and reproduction
+paths together. Current branches or local worktrees may contain behavior changes
+after that tag and do not automatically inherit its test, coverage, or benchmark
+claims.
 
-Release verification: `548` tests with zero failures, `13/13` Docker integration
-cases, and `74.26%` aggregate line coverage. See the
+Verification for the `v0.1.1` tag: `548` tests with zero failures, `13/13`
+Docker integration cases, and `74.26%` aggregate line coverage. These numbers
+describe that tag only. See the
 [v0.1.1 release notes](docs/releases/v0.1.1.md).
 
 <p align="center">
@@ -31,6 +34,24 @@ cases, and `74.26%` aggregate line coverage. See the
   <a href="docs/benchmark.md"><b>Benchmarks</b></a> ·
   <a href="docs/architecture.md"><b>Detailed Architecture</b></a>
 </p>
+
+## Before You Use Vortex
+
+- Vortex currently targets source review, local demos, and integration trials
+  on trusted isolated networks. It is not a production service that should be
+  exposed directly to the public Internet.
+- A direct host-run application listens on `127.0.0.1` and keeps security
+  disabled by default for local development compatibility. Quickstart requires
+  a 32-character-or-longer Bearer token, a namespace allowlist, API rate limits,
+  and audit events. This is a trusted-environment trial boundary, not production
+  OIDC, RBAC, or multi-tenant authentication.
+- The repository currently provides source builds and Docker Compose paths. It
+  does not publish directly consumable Maven artifacts or a prebuilt Docker
+  image.
+- Quickstart publishes only the Vortex API at
+  `127.0.0.1:${VORTEX_HTTP_PORT:-8080}`. Redis, Milvus, MinIO, and management
+  ports remain on the Compose network. The start scripts generate random MinIO,
+  Redis, and Bearer credentials for the process.
 
 ## Demo
 
@@ -61,9 +82,9 @@ flowchart TB
 
     subgraph R[Recall path]
         direction LR
-        K --> VC[Vector candidates - default]
-        K -. optional .-> KW[Keyword candidates]
-        KW --> H[Candidate filters and merge]
+        K --> VC[Vector candidates]
+        K --> KW[Keyword candidates]
+        KW --> H[Default RRF fusion and ranking]
         VC --> H
         H --> B[Optional linear or gated Cross-Encoder rerank]
         B --> T[Token budget]
@@ -84,9 +105,11 @@ run behind a bounded pipeline; recall and recovery remain separate kernel paths.
 This boundary is the central latency, consistency, and failure-recovery decision
 in the project.
 
-The public recall contract defaults to `VECTOR_ONLY` with reranking disabled.
-`HYBRID`, linear score fusion, and the gated Cross-Encoder remain explicit
-opt-in paths.
+The current public recall contract defaults to `HYBRID + RRF`, with the
+additional reranker disabled. `VECTOR_ONLY`, `KEYWORD_ONLY`, MMR, linear score
+fusion, and the gated Cross-Encoder remain explicit request options. The
+`v0.1.1` public evidence used `VectorOnly` as its baseline and does not directly
+validate the quality or latency of the current default.
 
 ## Quick Start
 
@@ -96,6 +119,21 @@ Prerequisites:
 - At least 6 GB available memory
 - Windows command: Windows PowerShell 5.1 or later
 - Linux/macOS command: `bash`, `curl`, and `python3`
+- Run Quickstart only on a trusted local machine; it uses loopback port `8080`
+  by default
+
+On Windows, check active listeners and excluded port ranges first:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue
+netsh interface ipv4 show excludedportrange protocol=tcp
+```
+
+If `8080` conflicts, set `VORTEX_HTTP_PORT` to another available port. This
+changes only the host mapping, not Vortex's internal `8080` port or any storage
+service port. Quickstart still runs when host ports `6379`, `19530`, `9000`,
+`9001`, or `9091` are occupied because those ports are not published.
+Set a unique `COMPOSE_PROJECT_NAME` as well when running a second Quickstart.
 
 One command builds the stack, waits for health, stores and recalls memory, kills
 a worker after checkpointing, and resumes the task:
@@ -132,7 +170,7 @@ guarantees.
 | Area | Result | Evidence |
 | --- | --- | --- |
 | LongMemEval recall | On the official LongMemEval oracle, a 120-case case-isolated evaluation completed five modes and `600` paired runs with `0` errors. `VectorOnly` reached fragment Recall@5 `0.8094` and exceeded `KeywordOnly` by `+0.1856`, paired 95% CI `[+0.1086, +0.2632]`. | [LongMemEval evaluation report](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md) |
-| Cross-Encoder gate | A pinned ONNX Cross-Encoder DEV candidate changed ordering in `120/120` cases but failed five frozen quality and latency rules. `VectorOnly` remains the public request default and model-promotion baseline; validation and reserve were not run. | [Cross-Encoder DEV decision](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
+| Cross-Encoder gate | A pinned ONNX Cross-Encoder DEV candidate changed ordering in `120/120` cases but failed five frozen quality and latency rules. `VectorOnly` was the model-promotion baseline for that evidence version; validation and reserve were not run. | [Cross-Encoder DEV decision](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
 | Main-path latency | With synchronous pre-extraction chunking and local embedding for L1 write-through, then final processing in a bounded background pipeline, measured P99 fell from `818.82 ms` to `268.65 ms` (`-67.19%`) over 100 cases per mode. L1 visibility at return and eventual L2/L3 readiness were both `100%`. | [Write-through latency evidence](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md) |
 | Runtime recovery | The deterministic fault-injection matrix passed `32/32` covered cases across service restart, tool failure, LLM exception, state integrity, and concurrency categories. | [Runtime recovery evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md) |
 
@@ -169,16 +207,19 @@ owns chunking, local embedding, and L1 admission.
 **Problem.** A shared evaluation namespace caused cross-case leakage, and a
 reranker can appear useful simply because it changes ordering.
 
-**Decision.** The contaminated result was discarded, LongMemEval was rerun with
-case isolation, and model promotion was placed behind five frozen quality and
-latency gates. The pinned ONNX Cross-Encoder changed `120/120` rankings but
-failed the gate. The public request default therefore remains `VectorOnly`
-with reranking disabled; Hybrid, linear fusion, and Cross-Encoder paths require
-an explicit request.
+**Decision.** For `v0.1.1`, the contaminated result was discarded, LongMemEval
+was rerun with case isolation, and model promotion was placed behind five frozen
+quality and latency gates. The pinned ONNX Cross-Encoder changed `120/120`
+rankings but failed the gate, so it was not promoted as the default reranker.
+Current code additionally introduces `HYBRID + RRF` as the default candidate
+fusion path while keeping the extra reranker disabled. That default requires
+new evidence produced from the matching code state.
 
-**Trade-off.** Vortex gives up speculative Cross-Encoder gain and keeps a
-simpler, lower-latency default while retaining Hybrid and linear fusion as
-explicit scenario-level options. The isolated 120-case run reached fragment
+**Trade-off.** Vortex gives up speculative Cross-Encoder gain and retains
+`VectorOnly` as a rollback and comparison baseline. The current Hybrid/RRF
+default broadens keyword and vector candidate coverage, but also adds ranking
+complexity and a new validation obligation. The `v0.1.1` isolated 120-case run
+reached fragment
 Recall@5 `0.8094`, `+0.1856` over `KeywordOnly`, with paired 95% CI
 `[+0.1086, +0.2632]`. See the
 [LongMemEval report](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md)
@@ -201,8 +242,14 @@ reservation, and response replay for idempotency.
 
 **Trade-off.** This adds serialization, WAL write amplification, and stricter
 state-transition contracts. It provides deterministic single-runtime recovery,
-not distributed consensus or cross-region exactly-once. The fault-injection
-matrix passed `32/32` covered cases across five failure categories. See the
+not distributed consensus or cross-region exactly-once. The default Execution
+ID backend is process memory; Quickstart explicitly switches it to Redis.
+In-flight reservations do not expire on the business TTL; retention starts only
+after `COMPLETED` or `UNKNOWN`, preventing side-effect replay when a long action
+crosses its TTL. Abandoned `IN_PROGRESS` records require manual review.
+Quickstart persists WAL, DLQ, processed keys, and application state under the
+`/var/lib/vortex` volume. The fault-injection matrix passed `32/32` covered cases
+across five failure categories. See the
 [runtime recovery evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md).
 
 **Implementation.** [SnapshotService](vortex-kernel/src/main/java/com/vortex/kernel/snapshot/SnapshotService.java)
@@ -222,7 +269,8 @@ guards externally visible execution.
 | Operations | Health catalog, SLO snapshots, Prometheus metrics, deterministic benchmarks, and governance checks |
 
 The public REST surface is available through Swagger UI at
-`http://localhost:8080/swagger-ui.html` after Quickstart. Detailed endpoints
+`http://localhost:8080/swagger-ui.html` after Quickstart; enter the configured
+Bearer token through Swagger's `Authorize` dialog. Detailed endpoints
 and configuration remain in [docs/quickstart.md](docs/quickstart.md) and
 [docs/architecture.md](docs/architecture.md). CI and benchmark reproduction
 commands are linked from [docs/benchmark.md](docs/benchmark.md).
@@ -232,18 +280,41 @@ commands are linked from [docs/benchmark.md](docs/benchmark.md).
 For positioning against plain vector RAG and hand-rolled memory layers, see
 [docs/comparison.md](docs/comparison.md). The stable portfolio release is
 [`v0.1.1`](docs/releases/v0.1.1.md); earlier release notes remain archived.
+The Chinese-language
+[external adoption and release readiness manual](ops/runbooks/vortex-external-adoption-readiness-manual.md)
+contains the remediation steps and release acceptance criteria.
 
 Vortex does not claim:
 
-- Production-grade auth, RBAC, tenant isolation, rate limits, or audit logs.
+- Production OIDC/mTLS, fine-grained RBAC, independent tenant identities, or
+  distributed rate-limit and audit aggregation. Quickstart currently provides
+  one shared Bearer token, a namespace allowlist, in-process rate limiting, and
+  structured audit events.
 - Long-duration high-concurrency production capacity results.
 - Distributed consensus, multi-node scheduling, or cross-region replication.
 - Full external process-manager crash-loop orchestration.
 - Full Agent runtime integration with real LLM generation inside the latency benchmark.
 
+The current usage boundary is:
+
+| Scenario | Status |
+| --- | --- |
+| Source reading, portfolio review, and local demo | Supported |
+| REST trials on a trusted isolated network | Conditionally supported with Quickstart token, namespace, and loopback-port boundaries |
+| Direct Maven/Gradle dependency | Artifacts are not published yet |
+| Public, multi-tenant, or production deployment | Not supported |
+
 ## License
 
 Vortex code and documentation are licensed under the [Apache License 2.0](LICENSE).
+Model and dependency attribution is recorded in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Deployment, backup/restore, and
+migration procedures are in the
+[deployment operations runbook](ops/runbooks/vortex-deployment-operations.md),
+and candidate validation is in the
+[release checklist](ops/runbooks/vortex-release-checklist.md).
 
 Third-party model files, datasets, and external service names remain subject to
-their upstream licenses and terms.
+their upstream licenses and terms. The repository-level Apache-2.0 license does
+not automatically cover those assets. Verify model and dataset provenance,
+licenses, and attribution requirements before redistribution or commercial use.

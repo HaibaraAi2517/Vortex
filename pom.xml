@@ -10,6 +10,29 @@
     <packaging>pom</packaging>
     <name>Vortex :: Parent</name>
     <description>Vortex — AI Agent Memory &amp; State Management Kernel</description>
+    <url>https://github.com/HaibaraAi2517/Vortex</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>Vortex maintainers</name>
+            <url>https://github.com/HaibaraAi2517/Vortex/graphs/contributors</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/HaibaraAi2517/Vortex.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/HaibaraAi2517/Vortex.git</developerConnection>
+        <url>https://github.com/HaibaraAi2517/Vortex</url>
+        <tag>HEAD</tag>
+    </scm>
 
     <modules>
         <module>vortex-common</module>
@@ -175,4 +198,33 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>dist</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.cyclonedx</groupId>
+                        <artifactId>cyclonedx-maven-plugin</artifactId>
+                        <version>2.8.2</version>
+                        <inherited>false</inherited>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>makeAggregateBom</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <outputName>vortex-bom</outputName>
+                            <outputFormat>json</outputFormat>
+                            <includeBomSerialNumber>true</includeBomSerialNumber>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

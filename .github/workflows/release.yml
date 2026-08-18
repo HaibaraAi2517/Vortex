@@ -2,75 +2,206 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*.*.*'
-    paths:
-      - '.github/workflows/release.yml'
-      - 'docs/releases/v*.md'
   workflow_dispatch:
     inputs:
       tag:
-        description: Stable tag to publish; defaults to the latest merged tag
-        required: false
+        description: Existing stable tag to publish
+        required: true
         type: string
 
 permissions:
   contents: write
+  packages: write
+  id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout
+      - name: Checkout release tag
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
 
-      - name: Resolve release tag
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Resolve and validate release identity
         id: release
         shell: bash
         env:
           REQUESTED_TAG: ${{ inputs.tag }}
         run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            tag="${GITHUB_REF_NAME}"
-          elif [[ -n "${REQUESTED_TAG}" ]]; then
-            tag="${REQUESTED_TAG}"
-          else
-            tag="$(git tag --merged HEAD --sort=-version:refname --list 'v[0-9]*' | head -n 1)"
-          fi
-
+          set -euo pipefail
+          tag="${REQUESTED_TAG:-${GITHUB_REF_NAME}}"
           if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "No stable semantic-version tag was resolved." >&2
+            echo "Tag must be a stable semantic version: ${tag}" >&2
+            exit 1
+          fi
+          git rev-parse --verify "refs/tags/${tag}"
+          if [[ "$(git rev-list -n 1 "${tag}")" != "$(git rev-parse HEAD)" ]]; then
+            echo "Checkout does not match tag ${tag}." >&2
             exit 1
           fi
 
+          version="${tag#v}"
+          pom_version="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
+          if [[ "${pom_version}" != "${version}" ]]; then
+            echo "POM version ${pom_version} does not match tag ${tag}." >&2
+            exit 1
+          fi
           notes_file="docs/releases/${tag}.md"
-          if [[ ! -f "${notes_file}" ]]; then
-            echo "Release notes not found: ${notes_file}" >&2
+          test -f "${notes_file}"
+
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/vortex"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+
+      - name: Refuse an existing GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists; immutable versions are not overwritten." >&2
             exit 1
           fi
 
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
-          echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
+      - name: Verify and build distribution
+        run: mvn -B clean verify -Pdist
 
-      - name: Publish GitHub Release
+      - name: Run isolated integration tests
+        shell: pwsh
+        run: ./ops/run-integration-tests.ps1
+
+      - name: Stage JVM distribution
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "vortex-app/target/vortex-app-${VERSION}-exec.jar" "dist/vortex-app-${VERSION}.jar"
+          cp target/vortex-bom.json dist/vortex-java.cyclonedx.json
+          cp LICENSE THIRD_PARTY_NOTICES.md docker-compose.quickstart.yml .env.example dist/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Refuse an existing versioned image
+        shell: bash
+        env:
+          IMAGE: ${{ steps.release.outputs.image }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect "${IMAGE}:${VERSION}" >/dev/null 2>&1; then
+            echo "Image ${IMAGE}:${VERSION} already exists; immutable versions are not overwritten." >&2
+            exit 1
+          fi
+
+      - name: Build and push immutable OCI image
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.release.outputs.image }}:${{ steps.release.outputs.version }}
+            ${{ steps.release.outputs.image }}:${{ github.sha }}
+          build-args: |
+            VERSION=${{ steps.release.outputs.version }}
+            VCS_REF=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.release.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Generate image SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.release.outputs.image }}@${{ steps.image.outputs.digest }}
+          format: spdx-json
+          output-file: dist/vortex-image.spdx.json
+          upload-artifact: false
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.2
+
+      - name: Sign image by digest
+        env:
+          IMAGE: ${{ steps.release.outputs.image }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - name: Smoke test pulled image
+        shell: bash
+        env:
+          VORTEX_IMAGE: ${{ steps.release.outputs.image }}@${{ steps.image.outputs.digest }}
+          VORTEX_RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          export MINIO_ROOT_USER="vortex-smoke"
+          export MINIO_ROOT_PASSWORD="$(openssl rand -hex 24)"
+          export REDIS_PASSWORD="$(openssl rand -hex 24)"
+          export VORTEX_SECURITY_BEARER_TOKEN="$(openssl rand -hex 32)"
+          export VORTEX_SECURITY_NAMESPACE_PATTERNS="smoke-*"
+          export VORTEX_HTTP_PORT=18080
+          project="vortex-release-smoke-${GITHUB_RUN_ID}"
+          cleanup() {
+            docker compose -p "${project}" -f docker-compose.quickstart.yml down --volumes --remove-orphans || true
+          }
+          trap cleanup EXIT
+          docker pull "${VORTEX_IMAGE}"
+          docker compose -p "${project}" -f docker-compose.quickstart.yml up -d --no-build --wait
+          curl --fail --silent --show-error http://127.0.0.1:18080/actuator/health
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${VORTEX_SECURITY_BEARER_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"description":"Release smoke task","namespace":"smoke-release"}' \
+            http://127.0.0.1:18080/api/v1/tasks
+
+      - name: Create checksums and release manifest
+        shell: bash
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          IMAGE: ${{ steps.release.outputs.image }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          printf 'tag=%s\ncommit=%s\nimage=%s@%s\n' "${TAG}" "${GITHUB_SHA}" "${IMAGE}" "${DIGEST}" > dist/release-manifest.txt
+          (cd dist && sha256sum * > SHA256SUMS)
+
+      - name: Publish immutable GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           NOTES_FILE: ${{ steps.release.outputs.notes_file }}
         run: |
-          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "GitHub Release ${RELEASE_TAG} already exists."
-            exit 0
-          fi
-
-          gh release create "${RELEASE_TAG}" \
+          set -euo pipefail
+          gh release create "${RELEASE_TAG}" dist/* \
             --verify-tag \
             --title "Vortex ${RELEASE_TAG}" \
             --notes-file "${NOTES_FILE}"
