@@ -130,7 +130,9 @@ class HierarchicalMemoryControllerTest {
 
         HierarchicalMemoryController hmc = createHmc(l1, l2, l3, localEmbedding, text -> Math.max(1, text.length()), 64);
 
+        long sharedLastAccessTime = System.currentTimeMillis() - 1_000L;
         MemoryFragment l1Match = fragment("l1-match", "ns", "query hit", List.of("role:user"), 4);
+        l1Match.setLastAccessTime(sharedLastAccessTime);
         MemoryFragment l1Miss = fragment("l1-miss", "ns", "query miss", List.of("role:system"), 4);
         l1.put(l1Match);
         l1.put(l1Miss);
@@ -143,7 +145,9 @@ class HierarchicalMemoryControllerTest {
                 fragment("l2-miss", "ns", "wrong tag", List.of(), 4)
         ));
 
-        l3.archiveFragment(fragment("l2-match", "ns", "l2 full", List.of("role:user"), 4));
+        MemoryFragment l2Match = fragment("l2-match", "ns", "l2 full", List.of("role:user"), 4);
+        l2Match.setLastAccessTime(sharedLastAccessTime);
+        l3.archiveFragment(l2Match);
         l3.archiveFragment(fragment("l2-miss", "ns", "l2 other", List.of("role:system"), 4));
 
         RecallResult result = hmc.recall(RecallQuery.builder()
