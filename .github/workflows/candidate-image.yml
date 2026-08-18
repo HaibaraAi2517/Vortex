@@ -1,0 +1,122 @@
+name: Candidate Image
+
+on:
+  pull_request:
+    branches:
+      - main
+
+env:
+  CANDIDATE_IMAGE: ghcr.io/haibaraai2517/vortex
+
+jobs:
+  publish-candidate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+      image: ${{ env.CANDIDATE_IMAGE }}
+
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push candidate image
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.CANDIDATE_IMAGE }}:candidate-${{ github.event.pull_request.head.sha }}
+          build-args: |
+            VERSION=0.1.1-candidate
+            VCS_REF=${{ github.event.pull_request.head.sha }}
+          labels: |
+            org.opencontainers.image.version=0.1.1-candidate
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.2
+
+      - name: Sign candidate image by digest
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: cosign sign --yes "${CANDIDATE_IMAGE}@${DIGEST}"
+
+  verify-pulled-candidate:
+    needs: publish-candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      packages: read
+    env:
+      COMPOSE_PROJECT_NAME: vortex-candidate-pull-${{ github.run_id }}
+      VORTEX_IMAGE: ${{ needs.publish-candidate.outputs.image }}@${{ needs.publish-candidate.outputs.digest }}
+      VORTEX_HTTP_PORT: "18084"
+      VORTEX_RELEASE_VERSION: "0.1.1-candidate"
+      VORTEX_SECURITY_BEARER_TOKEN: candidate-pull-${{ github.run_id }}-token
+      VORTEX_SECURITY_NAMESPACE_PATTERNS: quickstart-*
+      MINIO_ROOT_USER: vortex-candidate-pull
+      MINIO_ROOT_PASSWORD: candidate-pull-${{ github.run_id }}-minio
+      REDIS_PASSWORD: candidate-pull-${{ github.run_id }}-redis
+
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pull candidate image by digest
+        run: docker pull "${VORTEX_IMAGE}"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.2
+
+      - name: Verify keyless signature
+        run: |
+          cosign verify "${VORTEX_IMAGE}" \
+            --certificate-identity-regexp '^https://github.com/HaibaraAi2517/Vortex/.github/workflows/candidate-image\.yml@refs/pull/[0-9]+/merge$' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+
+      - name: Start pulled candidate
+        run: docker compose -f docker-compose.quickstart.yml up -d --no-build --wait
+
+      - name: Run Quickstart agent against pulled candidate
+        env:
+          BASE_URL: http://127.0.0.1:18084
+          NAMESPACE: quickstart-candidate-${{ github.run_id }}
+        run: bash examples/quickstart-agent/run.sh
+
+      - name: Verify unauthenticated Swagger is denied
+        run: |
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18084/swagger-ui/index.html)"
+          test "${status}" = "401"
+
+      - name: Clean up pulled candidate
+        if: always()
+        run: docker compose -f docker-compose.quickstart.yml down --volumes --remove-orphans
