@@ -1,0 +1,97 @@
+name: Quickstart Matrix
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-quickstart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      COMPOSE_PROJECT_NAME: vortex-quickstart-linux-${{ github.run_id }}
+      VORTEX_IMAGE: vortex:quickstart-${{ github.sha }}
+      VORTEX_HTTP_PORT: "18082"
+      VORTEX_RELEASE_VERSION: "0.1.1"
+      VORTEX_SECURITY_BEARER_TOKEN: quickstart-linux-${{ github.run_id }}-token
+      VORTEX_SECURITY_NAMESPACE_PATTERNS: quickstart-*
+      MINIO_ROOT_USER: vortex-quickstart-linux
+      MINIO_ROOT_PASSWORD: quickstart-linux-${{ github.run_id }}-minio
+      REDIS_PASSWORD: quickstart-linux-${{ github.run_id }}-redis
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start isolated Quickstart
+        run: docker compose -f docker-compose.quickstart.yml up --build -d --wait
+
+      - name: Run Quickstart agent
+        env:
+          BASE_URL: http://127.0.0.1:18082
+          NAMESPACE: quickstart-linux-${{ github.run_id }}
+        run: bash examples/quickstart-agent/run.sh
+
+      - name: Verify unauthenticated Swagger is denied
+        run: |
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18082/swagger-ui/index.html)"
+          test "${status}" = "401"
+
+      - name: Clean up Quickstart
+        if: always()
+        run: docker compose -f docker-compose.quickstart.yml down --volumes --remove-orphans
+
+  macos-quickstart:
+    runs-on: macos-15-intel
+    timeout-minutes: 55
+    env:
+      COMPOSE_PROJECT_NAME: vortex-quickstart-macos-${{ github.run_id }}
+      VORTEX_IMAGE: vortex:quickstart-${{ github.sha }}
+      VORTEX_HTTP_PORT: "18083"
+      VORTEX_RELEASE_VERSION: "0.1.1"
+      VORTEX_SECURITY_BEARER_TOKEN: quickstart-macos-${{ github.run_id }}-token
+      VORTEX_SECURITY_NAMESPACE_PATTERNS: quickstart-*
+      MINIO_ROOT_USER: vortex-quickstart-macos
+      MINIO_ROOT_PASSWORD: quickstart-macos-${{ github.run_id }}-minio
+      REDIS_PASSWORD: quickstart-macos-${{ github.run_id }}-redis
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Docker and Colima
+        run: |
+          brew install colima docker docker-compose
+          mkdir -p "${HOME}/.docker/cli-plugins"
+          ln -sfn "$(brew --prefix)/opt/docker-compose/bin/docker-compose" "${HOME}/.docker/cli-plugins/docker-compose"
+
+      - name: Start Colima
+        run: |
+          colima start --cpu 3 --memory 10 --disk 40 --vm-type vz --mount-type virtiofs
+          docker version
+          docker compose version
+
+      - name: Start isolated Quickstart
+        run: docker compose -f docker-compose.quickstart.yml up --build -d --wait
+
+      - name: Run Quickstart agent
+        env:
+          BASE_URL: http://127.0.0.1:18083
+          NAMESPACE: quickstart-macos-${{ github.run_id }}
+        run: bash examples/quickstart-agent/run.sh
+
+      - name: Verify unauthenticated Swagger is denied
+        run: |
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18083/swagger-ui/index.html)"
+          test "${status}" = "401"
+
+      - name: Clean up Quickstart
+        if: always()
+        run: docker compose -f docker-compose.quickstart.yml down --volumes --remove-orphans
+
+      - name: Stop Colima
+        if: always()
+        run: colima stop || true
