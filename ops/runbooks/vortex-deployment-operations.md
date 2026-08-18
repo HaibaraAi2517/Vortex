@@ -36,6 +36,9 @@ Its one-shot `vortex-data-init` service runs as root only long enough to create
 the state directories and migrate their ownership to uid/gid `10001:10001`
 before the non-root Vortex container starts. Keep this initializer enabled when
 upgrading volumes created by pre-hardening images that ran as root.
+The semantic page table is derived state and uses a versioned object key. When
+its serialized format changes, allocate a new key and rebuild from Milvus;
+never overwrite the only key an older rollback image expects to deserialize.
 Do not replace a container with anonymous volumes or an empty host directory.
 Execution-ID `IN_PROGRESS` reservations intentionally have no automatic TTL;
 the configured retention TTL starts after `COMPLETED` or `UNKNOWN`. Investigate

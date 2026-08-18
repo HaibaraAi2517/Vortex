@@ -109,6 +109,7 @@ services:
       VORTEX_WAL_DIR: /var/lib/vortex/wal
       VORTEX_PERSISTENCE_DLQ_PATH: /var/lib/vortex/persistence/dlq.jsonl
       VORTEX_PERSISTENCE_PROCESSED_KEYS_PATH: /var/lib/vortex/persistence/processed-keys.txt
+      VORTEX_KERNEL_PAGING_PAGE_TABLE_KEY: ${VORTEX_KERNEL_PAGING_PAGE_TABLE_KEY:-system/semantic-page-table-v2.bin}
     ports:
       - "127.0.0.1:${VORTEX_HTTP_PORT:-8080}:8080"
     volumes:

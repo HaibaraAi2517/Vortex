@@ -152,6 +152,11 @@ one-shot `vortex-data-init` service repairs that volume to uid/gid
 `10001:10001`. Keep this initializer enabled when upgrading from older images
 that ran as root and created root-owned WAL files.
 
+Quickstart also stores the rebuildable semantic page table under the versioned
+key `system/semantic-page-table-v2.bin`. Older releases retain their original
+key, so rolling back does not make the old Kryo reader consume newer derived
+cache data. Memory fragments and checkpoints remain in their existing stores.
+
 ## Stop And Clean Up
 
 Stop services:
