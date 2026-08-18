@@ -144,6 +144,14 @@ without any external LLM API key:
 
 These scripts use the tracked local BGE model and the existing `docker-compose.yml` infrastructure stack.
 
+## Persistent State Ownership
+
+Quickstart stores the Vortex WAL, persistence DLQ, and processed-key state in a
+named volume mounted at `/var/lib/vortex`. Before the application starts, the
+one-shot `vortex-data-init` service repairs that volume to uid/gid
+`10001:10001`. Keep this initializer enabled when upgrading from older images
+that ran as root and created root-owned WAL files.
+
 ## Stop And Clean Up
 
 Stop services:

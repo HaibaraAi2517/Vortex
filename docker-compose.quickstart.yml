@@ -69,6 +69,19 @@ services:
       timeout: 10s
       retries: 3
 
+  vortex-data-init:
+    image: redis:7.2-alpine
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - >-
+        mkdir -p /var/lib/vortex/wal /var/lib/vortex/persistence &&
+        chown -R 10001:10001 /var/lib/vortex
+    volumes:
+      - quickstart-vortex-data:/var/lib/vortex
+    restart: "no"
+
   vortex:
     image: ${VORTEX_IMAGE:-vortex:local}
     build:
@@ -106,6 +119,8 @@ services:
       timeout: 5s
       retries: 36
     depends_on:
+      vortex-data-init:
+        condition: service_completed_successfully
       milvus:
         condition: service_healthy
       minio:

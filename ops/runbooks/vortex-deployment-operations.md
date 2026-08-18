@@ -32,6 +32,10 @@ credential and namespace scope per integration boundary.
 | Vector collections | Milvus data plus etcd metadata | Required |
 
 Quickstart mounts `/var/lib/vortex` and named volumes for every external store.
+Its one-shot `vortex-data-init` service runs as root only long enough to create
+the state directories and migrate their ownership to uid/gid `10001:10001`
+before the non-root Vortex container starts. Keep this initializer enabled when
+upgrading volumes created by pre-hardening images that ran as root.
 Do not replace a container with anonymous volumes or an empty host directory.
 Execution-ID `IN_PROGRESS` reservations intentionally have no automatic TTL;
 the configured retention TTL starts after `COMPLETED` or `UNKNOWN`. Investigate
