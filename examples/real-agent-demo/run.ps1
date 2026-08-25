@@ -165,6 +165,7 @@ $env:MODEL_NAME = $ModelName
 $env:DEMO_RUN_ID = $runId
 $env:DEMO_STATE_FILE = $stateFile
 $env:DEMO_REPOSITORY_ROOT = $repoRoot
+$env:DEMO_INTERACTIVE = if ($NonInteractive) { "false" } else { "true" }
 $env:DEMO_MODE = "phase1"
 
 Write-Section "Phase 1: real model, tools, memory, and checkpoint"
@@ -190,11 +191,21 @@ try {
   }
 
   Write-Section "Crash injection"
-  Write-Host ("Checkpoint is durable. Terminating phase-one process tree PID {0}." -f $phaseOne.Id)
+  Write-Host ("Checkpoint is durable. Phase-one process tree PID {0} will be terminated." -f $phaseOne.Id)
+  foreach ($remaining in 3, 2, 1) {
+    Write-Host ("Hard crash in {0}..." -f $remaining)
+    Start-Sleep -Seconds 1
+  }
   Stop-ProcessTree -Process $phaseOne
   Write-Host "Phase-one process was terminated. Its in-process Agent state is gone."
 
   Write-Section "Phase 2: recover and continue in a new process"
+  $interactiveMessage = if ($NonInteractive) {
+    "Interactive console is disabled for this non-interactive run."
+  } else {
+    "After recovery, type questions at the YOU > prompt. Use /help to list commands."
+  }
+  Write-Host $interactiveMessage
   $env:DEMO_MODE = "phase2"
   & $mavenCommand.Source -q -f $pomPath exec:java
   if ($LASTEXITCODE -ne 0) {

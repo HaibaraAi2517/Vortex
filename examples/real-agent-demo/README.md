@@ -4,13 +4,16 @@ This example runs a real OpenAI-compatible chat model through LangChain4j,
 requires the model to call read-only tools, injects durable Vortex memory, then
 creates a Vortex task checkpoint. The orchestrator kills the phase-one process
 tree and starts a new JVM that recovers the checkpoint and continues the task.
+After recovery, the demo opens a live console where every user question is
+answered by the recovered Agent and persisted as another checkpoint.
 
-It demonstrates four separate behaviors:
+It demonstrates five separate behaviors:
 
 1. A fresh model conversation does not know private demo facts.
 2. Vortex recalls those facts and injects them before model generation.
 3. The model calls real read-only tools for Git, Vortex health, and recovered task state.
 4. A new process recovers the checkpointed task and appends phase two instead of repeating phase one.
+5. The user can continue talking to the recovered Agent while task nodes and checkpoint IDs visibly increase.
 
 ## Prerequisites
 
@@ -43,9 +46,11 @@ writing it to disk. It then:
 
 1. Generates temporary Vortex credentials.
 2. Builds and starts Vortex from the current source checkout.
-3. Runs the complete real-model crash recovery demo.
-4. Stops the Quickstart containers.
-5. Restores the PowerShell process environment to its original values.
+3. Runs the real-model memory and tool comparison.
+4. Kills the first Agent JVM and visibly recovers its checkpoint in a new JVM.
+5. Opens an interactive `YOU >` prompt for live questions.
+6. Stops the Quickstart containers after `/exit`.
+7. Restores the PowerShell process environment to its original values.
 
 `-BuildCurrentSource` is retained as a compatibility flag; the launcher now
 always builds the current source because the published GHCR image may be
@@ -110,7 +115,8 @@ Override the provider with `MODEL_BASE_URL` and `MODEL_NAME` as needed.
 
 ## Expected Evidence
 
-The output includes these checkpoints:
+The output is divided into five large numbered sections. It includes this
+evidence before opening the live prompt:
 
 ```text
 WITHOUT VORTEX MEMORY:
@@ -125,8 +131,43 @@ RECOVERED: taskId=..., checkpointId=..., nodeCount=1
 TOOL CALL: inspectRecoveredTask
 TOOL CALL: inspectRepository
 FINAL TASK: status=COMPLETED, nodeCount=2, resumedCheckpointId=..., finalCheckpointId=...
-DEMO COMPLETE: real model + real tools + Vortex memory + checkpoint recovery.
+[SUCCESS] DEMO COMPLETE: real model + tools + memory + crash recovery + live interaction.
 ```
+
+## Live Interaction
+
+After checkpoint recovery, the new Agent process displays:
+
+```text
+==============================================================================
+ [5/5] Interact with the recovered Agent
+==============================================================================
+YOU >
+```
+
+Enter a normal question to talk to the recovered Agent. Useful examples:
+
+```text
+What is the release codename and approval owner?
+Prove that this is a recovered task instead of a fresh task.
+Inspect the repository and tell me the current commit.
+```
+
+Every normal question produces a visible `RECOVERED AGENT` answer, appends a
+new Vortex task node, and prints a `CHECKPOINT PERSISTED` panel containing the
+new checkpoint ID and node count.
+
+The console also supports:
+
+| Command | Result |
+| --- | --- |
+| `/status` | Read the current Vortex task status, node count, and checkpoint ID |
+| `/memory` | Inspect the durable private facts directly |
+| `/help` | Show commands and a suggested question |
+| `/exit` | Complete the task and stop the one-click demo |
+
+Use `-NonInteractive` with `run.ps1` for automation. That mode still runs and
+verifies the complete crash recovery flow but does not wait at `YOU >`.
 
 The provider-neutral `run.ps1` script intentionally leaves the Quickstart stack
 running. Stop it from the repository root when inspection is complete. The
@@ -147,6 +188,7 @@ docker compose -f docker-compose.quickstart.yml down
 | `VORTEX_BASE_URL` | `http://127.0.0.1:8080` | Vortex REST base URL |
 | `VORTEX_SECURITY_BEARER_TOKEN` | required unless the script starts Quickstart | Vortex API credential |
 | `VORTEX_NAMESPACE` | generated `quickstart-real-agent-*` value | Isolated demo namespace |
+| `DEMO_INTERACTIVE` | `true` in an interactive launcher | Enable the recovered Agent live console |
 
 No credential is written to the repository or the checkpoint handoff file.
 The handoff file contains only a run ID, namespace, task ID, checkpoint ID, and

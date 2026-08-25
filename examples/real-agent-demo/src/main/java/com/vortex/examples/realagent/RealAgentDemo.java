@@ -1,11 +1,15 @@
 package com.vortex.examples.realagent;
 
+import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.UserMessage;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -15,6 +19,7 @@ import java.util.UUID;
 
 public final class RealAgentDemo {
 
+    private static final int TOTAL_STEPS = 5;
     private static final String PRIVATE_FACTS = "Private release facts for this demo: deployment codename is Aurora Ledger; "
             + "freeze time is 2026-09-18 16:00 Asia/Shanghai; approval owner is Lin-7. "
             + "After a crash, continue from the durable checkpoint and do not repeat completed phase-one work.";
@@ -35,12 +40,7 @@ public final class RealAgentDemo {
                 .maxRetries(1)
                 .build();
 
-        System.out.println("Vortex base URL: " + config.vortexBaseUrl());
-        System.out.println("Model base URL: " + config.modelBaseUrl());
-        System.out.println("Model name: " + config.modelName());
-        System.out.println("Demo mode: " + config.mode());
-        System.out.println();
-
+        DemoConsole.banner(config.modelName(), config.vortexBaseUrl().toString(), config.mode().name());
         if (config.mode() == Mode.PHASE1) {
             runPhaseOne(config, client, chatModel);
         } else {
@@ -52,21 +52,21 @@ public final class RealAgentDemo {
         String runId = config.runId();
         String namespace = config.namespace();
 
-        System.out.println("=== PHASE 1: real model, Vortex memory, and tools ===");
-        System.out.println("Namespace: " + namespace);
+        DemoConsole.section(1, TOTAL_STEPS, "Store private facts in Vortex durable memory");
+        DemoConsole.event("VORTEX", "Namespace: " + namespace);
         int stored = client.store(PRIVATE_FACTS, namespace, List.of("real-agent-demo", "private-release-facts"));
-        System.out.println("Stored Vortex fragments: " + stored);
+        DemoConsole.event("VORTEX", "Stored fragments: " + stored);
 
+        DemoConsole.section(2, TOTAL_STEPS, "Compare the same model without and with Vortex");
+        String question = "What are the private deployment codename, freeze time, and approval owner for this demo?";
         Assistant baseline = AiServices.builder(Assistant.class)
                 .chatModel(chatModel)
                 .systemMessage("Respond in Simplified Chinese. Answer only from information available in this new "
                         + "conversation. If facts are missing, say so.")
                 .build();
-        String baselineAnswer = baseline.chat(
-                "What are the private deployment codename, freeze time, and approval owner for this demo?");
-        System.out.println();
-        System.out.println("WITHOUT VORTEX MEMORY:");
-        System.out.println(baselineAnswer);
+        DemoConsole.event("MODEL", "Calling the real model without Vortex memory...");
+        String baselineAnswer = baseline.chat(question);
+        DemoConsole.block("BEFORE: MODEL WITHOUT VORTEX", baselineAnswer);
 
         VortexClient.TaskView task = client.createTask(
                 "Real model and tool agent crash recovery demo", namespace, executionId(runId, "task-create"));
@@ -74,6 +74,7 @@ public final class RealAgentDemo {
         VortexMemoryTransformer transformer = new VortexMemoryTransformer(client, namespace, 5, 768);
         Assistant agent = agent(chatModel, transformer, tools);
 
+        DemoConsole.event("AGENT", "Calling the same model with Vortex memory and mandatory tools...");
         String answer = agent.chat("Before answering, you MUST call inspectRepository and inspectVortexHealth. "
                 + "Then produce a concise phase-one release report containing the private deployment codename, "
                 + "freeze time, approval owner, repository evidence, and Vortex health. "
@@ -81,11 +82,10 @@ public final class RealAgentDemo {
 
         requireTools(tools, "inspectRepository", "inspectVortexHealth");
         requireMemory(transformer);
-        System.out.println();
-        printRecalledMemory(transformer);
-        System.out.println("REAL AGENT ANSWER:");
-        System.out.println(answer);
+        DemoConsole.memory(transformer.lastFragments());
+        DemoConsole.block("AFTER: REAL AGENT WITH VORTEX + TOOLS", answer);
 
+        DemoConsole.section(3, TOTAL_STEPS, "Persist task state, then simulate a hard crash");
         VortexClient.NodeView node = client.appendNode(task.taskId(), "ACTION", answer,
                 executionId(runId, "phase-one-node"));
         client.completeNode(task.taskId(), node.nodeId(), "PHASE_ONE_COMPLETE",
@@ -94,10 +94,9 @@ public final class RealAgentDemo {
         new DemoState(runId, namespace, task.taskId(), checkpointId, node.nodeId())
                 .writeAtomically(config.stateFile());
 
-        System.out.println();
-        System.out.println("CHECKPOINT READY: taskId=" + task.taskId()
-                + ", checkpointId=" + checkpointId + ", nodeCount=1");
-        System.out.println("Phase-one process is now waiting to be terminated by the orchestrator.");
+        DemoConsole.checkpoint(checkpointId, 1,
+                "The orchestrator will now kill this JVM. Only durable Vortex state will survive.");
+        DemoConsole.event("PROCESS", "Phase-one JVM is waiting for forced termination...");
         System.out.flush();
         while (true) {
             Thread.sleep(5_000);
@@ -106,19 +105,19 @@ public final class RealAgentDemo {
 
     private static void runPhaseTwo(Config config, VortexClient client, ChatModel chatModel) throws Exception {
         DemoState state = DemoState.read(config.stateFile());
-        System.out.println("=== PHASE 2: recover checkpoint and continue ===");
+        DemoConsole.section(4, TOTAL_STEPS, "Start a new JVM and recover the durable checkpoint");
         VortexClient.TaskView recovered = client.recover(
                 state.taskId(), state.checkpointId(), executionId(state.runId(), "recover"));
         if (recovered.nodeCount() < 1) {
             throw new IllegalStateException("Recovered task does not contain the phase-one node.");
         }
-        System.out.println("RECOVERED: taskId=" + recovered.taskId()
-                + ", checkpointId=" + state.checkpointId()
-                + ", nodeCount=" + recovered.nodeCount());
+        DemoConsole.event("RECOVERY", "New process recovered the old task. Phase one was not repeated.");
+        DemoConsole.task(recovered);
 
         AgentTools tools = new AgentTools(config.repositoryRoot(), client, recovered.taskId());
         VortexMemoryTransformer transformer = new VortexMemoryTransformer(client, state.namespace(), 5, 768);
         Assistant agent = agent(chatModel, transformer, tools);
+        DemoConsole.event("AGENT", "Verifying recovered state with tools and durable memory...");
         String answer = agent.chat("This process started after the phase-one process was killed. "
                 + "Before answering, you MUST call inspectRecoveredTask and inspectRepository. "
                 + "Use Vortex durable memory and recovered task evidence to produce a concise continuation report. "
@@ -127,26 +126,96 @@ public final class RealAgentDemo {
 
         requireTools(tools, "inspectRecoveredTask", "inspectRepository");
         requireMemory(transformer);
-        System.out.println();
-        printRecalledMemory(transformer);
-        System.out.println("RECOVERED AGENT ANSWER:");
-        System.out.println(answer);
+        DemoConsole.memory(transformer.lastFragments());
+        DemoConsole.block("RECOVERED AGENT ANSWER", answer);
 
-        VortexClient.NodeView finalNode = client.appendNode(recovered.taskId(), "ACTION", answer,
+        VortexClient.NodeView recoveryNode = client.appendNode(recovered.taskId(), "ACTION", answer,
                 executionId(state.runId(), "phase-two-node"));
-        client.completeNode(recovered.taskId(), finalNode.nodeId(), "RECOVERY_COMPLETE",
+        client.completeNode(recovered.taskId(), recoveryNode.nodeId(), "RECOVERY_COMPLETE",
                 executionId(state.runId(), "phase-two-node-complete"));
-        String resumedCheckpoint = client.checkpoint(
+        String latestCheckpoint = client.checkpoint(
                 recovered.taskId(), executionId(state.runId(), "phase-two-checkpoint"));
+        VortexClient.TaskView afterRecovery = client.getTask(recovered.taskId());
+        DemoConsole.checkpoint(latestCheckpoint, afterRecovery.nodeCount(),
+                "The new JVM continued from the recovered task and appended a new node.");
+
+        DemoConsole.section(5, TOTAL_STEPS, "Interact with the recovered Agent");
+        if (config.interactive()) {
+            latestCheckpoint = runInteractiveConsole(
+                    client, state, recovered.taskId(), agent, transformer, latestCheckpoint);
+        } else {
+            DemoConsole.event("DEMO", "Interactive mode is disabled for this non-interactive run.");
+        }
+
         client.completeTask(recovered.taskId(), executionId(state.runId(), "task-complete"));
         VortexClient.TaskView completed = client.getTask(recovered.taskId());
+        DemoConsole.task(completed);
+        DemoConsole.success("DEMO COMPLETE: real model + tools + memory + crash recovery + live interaction.");
+        DemoConsole.event("FINAL", "Last interactive checkpoint: " + latestCheckpoint);
+    }
 
-        System.out.println();
-        System.out.println("FINAL TASK: status=" + completed.status()
-                + ", nodeCount=" + completed.nodeCount()
-                + ", resumedCheckpointId=" + resumedCheckpoint
-                + ", finalCheckpointId=" + completed.latestCheckpointId());
-        System.out.println("DEMO COMPLETE: real model + real tools + Vortex memory + checkpoint recovery.");
+    private static String runInteractiveConsole(
+            VortexClient client,
+            DemoState state,
+            String taskId,
+            Assistant agent,
+            VortexMemoryTransformer transformer,
+            String latestCheckpoint) throws Exception {
+        DemoConsole.interactiveHelp();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+        int turn = 1;
+        while (true) {
+            DemoConsole.prompt();
+            String input = reader.readLine();
+            if (input == null) {
+                DemoConsole.event("INPUT", "Console input closed; finishing the task.");
+                return latestCheckpoint;
+            }
+            input = input.strip();
+            if (input.isEmpty()) {
+                continue;
+            }
+
+            String command = input.toLowerCase(Locale.ROOT);
+            if ("/exit".equals(command)) {
+                DemoConsole.event("INPUT", "Exiting the live console and completing the Vortex task.");
+                return latestCheckpoint;
+            }
+            if ("/help".equals(command)) {
+                DemoConsole.interactiveHelp();
+                continue;
+            }
+            if ("/status".equals(command)) {
+                DemoConsole.task(client.getTask(taskId));
+                continue;
+            }
+            if ("/memory".equals(command)) {
+                DemoConsole.memory(client.recall(
+                        "private deployment codename freeze time approval owner crash recovery",
+                        state.namespace(), 5, 768));
+                continue;
+            }
+
+            DemoConsole.event("USER", input);
+            String answer = agent.chat("Answer the user's live question in Simplified Chinese. "
+                    + "Use the available tools when the question asks for repository, Vortex health, or recovered task "
+                    + "evidence. Use recalled durable memory when relevant. User question: " + input);
+            DemoConsole.memory(transformer.lastFragments());
+            DemoConsole.block("RECOVERED AGENT", answer);
+
+            String turnKey = "interactive-" + turn;
+            VortexClient.NodeView node = client.appendNode(taskId, "ACTION",
+                    "USER: " + input + System.lineSeparator() + "AGENT: " + answer,
+                    executionId(state.runId(), turnKey + "-node"));
+            client.completeNode(taskId, node.nodeId(), "INTERACTIVE_TURN_COMPLETE",
+                    executionId(state.runId(), turnKey + "-node-complete"));
+            latestCheckpoint = client.checkpoint(taskId,
+                    executionId(state.runId(), turnKey + "-checkpoint"));
+            VortexClient.TaskView task = client.getTask(taskId);
+            DemoConsole.checkpoint(latestCheckpoint, task.nodeCount(),
+                    "Interactive turn " + turn + " is durable and recoverable.");
+            turn++;
+        }
     }
 
     private static Assistant agent(
@@ -155,9 +224,10 @@ public final class RealAgentDemo {
             AgentTools tools) {
         return AiServices.builder(Assistant.class)
                 .chatModel(chatModel)
-                .systemMessage("Respond in Simplified Chinese. You are a release inspection agent. "
-                        + "Tool calls are mandatory when requested. "
-                        + "Treat Vortex memory as private durable context and quote tool evidence accurately.")
+                .chatMemory(MessageWindowChatMemory.withMaxMessages(20))
+                .systemMessage("Respond in Simplified Chinese. You are a release inspection agent running in an "
+                        + "interactive Vortex recovery demo. Tool calls are mandatory when requested. Treat Vortex "
+                        + "memory as private durable context and quote tool evidence accurately.")
                 .chatRequestTransformer(transformer)
                 .tools(tools)
                 .maxToolCallingRoundTrips(4)
@@ -180,14 +250,6 @@ public final class RealAgentDemo {
                 .anyMatch(content -> content.contains("Aurora Ledger") && content.contains("Lin-7"));
         if (!found) {
             throw new IllegalStateException("Vortex recall did not return the private demo facts.");
-        }
-    }
-
-    private static void printRecalledMemory(VortexMemoryTransformer transformer) {
-        System.out.println("VORTEX RECALL:");
-        for (VortexClient.RecallFragment fragment : transformer.lastFragments()) {
-            System.out.println("- fragmentId=" + fragment.fragmentId() + ", score=" + fragment.score());
-            System.out.println("  " + fragment.content());
         }
     }
 
@@ -216,7 +278,8 @@ public final class RealAgentDemo {
             String runId,
             String namespace,
             Path stateFile,
-            Path repositoryRoot) {
+            Path repositoryRoot,
+            boolean interactive) {
 
         static Config fromEnvironment() {
             Mode mode = Mode.valueOf(requiredEnv("DEMO_MODE").trim().toUpperCase(Locale.ROOT));
@@ -234,7 +297,8 @@ public final class RealAgentDemo {
                     runId,
                     namespace,
                     Path.of(requiredEnv("DEMO_STATE_FILE")),
-                    Path.of(env("DEMO_REPOSITORY_ROOT", ".")).toAbsolutePath().normalize());
+                    Path.of(env("DEMO_REPOSITORY_ROOT", ".")).toAbsolutePath().normalize(),
+                    Boolean.parseBoolean(env("DEMO_INTERACTIVE", "false")));
         }
 
         private static String requiredEnv(String name) {

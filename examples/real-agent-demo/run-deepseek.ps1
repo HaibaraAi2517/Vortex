@@ -23,6 +23,7 @@ $environmentNames = @(
   "DEMO_RUN_ID",
   "DEMO_STATE_FILE",
   "DEMO_REPOSITORY_ROOT",
+  "DEMO_INTERACTIVE",
   "DEMO_MODE"
 )
 $originalEnvironment = @{}
@@ -35,6 +36,7 @@ try {
   Write-Host "Vortex DeepSeek one-click demo"
   Write-Host "The API key will be requested securely and will not be written to disk."
   Write-Host "Vortex will be built from the current source checkout."
+  Write-Host "After checkpoint recovery, the terminal becomes an interactive Agent console."
   Write-Host ""
 
   $quickstartAttempted = $true

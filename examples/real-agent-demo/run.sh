@@ -10,6 +10,14 @@ MODEL_BASE_URL="${MODEL_BASE_URL:-https://api.deepseek.com/v1}"
 MODEL_NAME="${MODEL_NAME:-deepseek-chat}"
 TIMEOUT_SECONDS="${DEMO_TIMEOUT_SECONDS:-300}"
 
+if [[ -z "${DEMO_INTERACTIVE:-}" ]]; then
+  if [[ -t 0 ]]; then
+    DEMO_INTERACTIVE="true"
+  else
+    DEMO_INTERACTIVE="false"
+  fi
+fi
+
 if [[ -z "${MODEL_API_KEY:-}" ]]; then
   echo "ERROR: set MODEL_API_KEY. For a local compatible endpoint, use a placeholder such as ollama." >&2
   exit 1
@@ -57,6 +65,7 @@ export VORTEX_BASE_URL VORTEX_NAMESPACE MODEL_BASE_URL MODEL_API_KEY MODEL_NAME
 export DEMO_RUN_ID="$RUN_ID"
 export DEMO_STATE_FILE="$STATE_FILE"
 export DEMO_REPOSITORY_ROOT="$REPO_ROOT"
+export DEMO_INTERACTIVE
 export DEMO_MODE="phase1"
 
 echo "=== Phase 1: real model, tools, memory, and checkpoint ==="
@@ -84,6 +93,9 @@ wait "$PHASE_ONE_PID" >/dev/null 2>&1 || true
 PHASE_ONE_PID=""
 
 echo "=== Phase 2: recover and continue in a new process ==="
+if [[ "$DEMO_INTERACTIVE" == "true" ]]; then
+  echo "After recovery, type questions at the YOU > prompt. Use /help to list commands."
+fi
 export DEMO_MODE="phase2"
 (cd "$REPO_ROOT" && mvn -q -f "$POM_PATH" exec:java)
 

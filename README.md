@@ -171,13 +171,16 @@ Bearer token，Prometheus 和详细管理端点仍受保护。Spring AI 与 Lang
 
 - [Spring AI ChatClient advisor 示例](examples/spring-ai-integration/README.md)
 - [LangChain4j ChatRequest transformer 示例](examples/langchain4j-integration/README.md)
-- [DeepSeek 零环境变量一键演示：真实模型 + 工具调用 + Checkpoint 恢复](examples/real-agent-demo/README.md)
+- [DeepSeek 交互式一键演示：真实模型 + 工具调用 + Checkpoint 恢复 + 多轮对话](examples/real-agent-demo/README.md)
 
 Windows 下运行 DeepSeek 完整演示无需预先设置环境变量，命令执行后按提示隐藏输入 API Key：
 
 ```powershell
 .\examples\real-agent-demo\run-deepseek.ps1
 ```
+
+演示会清晰对比模型接入 Vortex 前后的回答，现场展示 Tool Call、进程终止和 Checkpoint
+恢复；恢复成功后进入 `YOU >` 交互提示符。每轮对话都会追加 task node 并生成新的可恢复 Checkpoint。
 
 ## 基准测试证据
 

@@ -97,8 +97,8 @@ final class AgentTools {
 
     private String record(String toolName, String result) {
         invocations.add(toolName);
-        System.out.println("TOOL CALL: " + toolName);
-        System.out.println("TOOL RESULT: " + result);
+        DemoConsole.event("TOOL CALL", toolName);
+        DemoConsole.event("TOOL RESULT", result);
         return result;
     }
 }
