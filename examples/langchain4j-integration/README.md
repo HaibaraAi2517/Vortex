@@ -15,7 +15,15 @@ required.
 Start Vortex with the quickstart stack from the repository root:
 
 ```powershell
-docker compose -f docker-compose.quickstart.yml up --build -d
+Copy-Item .env.example .env.local
+# Replace every placeholder in .env.local first.
+docker compose --env-file .env.local -f docker-compose.quickstart.yml pull
+docker compose --env-file .env.local -f docker-compose.quickstart.yml up --no-build -d --wait
+Get-Content .env.local | ForEach-Object {
+  if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
+  }
+}
 ```
 
 Wait for health:
@@ -46,9 +54,11 @@ Replace the fake model with any LangChain4j `ChatModel` implementation and keep
 the Vortex transformer in the `AiServices` builder:
 
 ```java
-VortexMemoryClient vortex = new VortexMemoryClient(URI.create("http://localhost:8080"));
+VortexMemoryClient vortex = new VortexMemoryClient(
+        URI.create("http://localhost:8080"),
+        System.getenv("VORTEX_SECURITY_BEARER_TOKEN"));
 VortexChatRequestTransformer memoryTransformer =
-        new VortexChatRequestTransformer(vortex, "agent-session-1");
+        new VortexChatRequestTransformer(vortex, "quickstart-agent-session-1");
 
 Assistant assistant = AiServices.builder(Assistant.class)
         .chatModel(realChatModel)

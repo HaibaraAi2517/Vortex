@@ -5,7 +5,7 @@
 </p>
 
 [![CI](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml/badge.svg)](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml)
-[![Release: v0.1.1](https://img.shields.io/badge/release-v0.1.1-2EA44F.svg)](docs/releases/v0.1.1.md)
+[![Release: v0.2.0](https://img.shields.io/badge/release-v0.2.0-2EA44F.svg)](docs/releases/v0.2.0.md)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](pom.xml)
 [![Spring Boot 3.3](https://img.shields.io/badge/Spring%20Boot-3.3-6DB33F.svg)](vortex-app/pom.xml)
@@ -15,17 +15,18 @@
 retrieve the right context, and resume after crashes. Built with Java 21,
 Spring Boot, Milvus, MinIO, Redis, and Caffeine.**
 
-`v0.1.1` is the latest tagged release with a complete evidence package. Vortex
+`v0.2.0` is the latest tagged release with a complete evidence package. Vortex
 is an infrastructure kernel rather than a hosted SaaS: the repository keeps
 code, deterministic benchmarks, failure-injection evidence, and reproduction
 paths together. Current branches or local worktrees may contain behavior changes
 after that tag and do not automatically inherit its test, coverage, or benchmark
 claims.
 
-Verification for the `v0.1.1` tag: `548` tests with zero failures, `13/13`
-Docker integration cases, and `74.26%` aggregate line coverage. These numbers
-describe that tag only. See the
-[v0.1.1 release notes](docs/releases/v0.1.1.md).
+The `v0.2.0` release gates cover a clean Maven verify, `13/13` Docker
+integration cases, Windows, Linux, and macOS Quickstart, a pulled signed
+candidate image, and backup/restore plus upgrade/rollback drills. See the
+[v0.2.0 release notes](docs/releases/v0.2.0.md). Older benchmark numbers remain
+scoped to their corresponding tags.
 
 <p align="center">
   <a href="#demo"><b>Demo</b></a> ·
@@ -45,9 +46,9 @@ describe that tag only. See the
   a 32-character-or-longer Bearer token, a namespace allowlist, API rate limits,
   and audit events. This is a trusted-environment trial boundary, not production
   OIDC, RBAC, or multi-tenant authentication.
-- The repository currently provides source builds and Docker Compose paths. It
-  does not publish directly consumable Maven artifacts or a prebuilt Docker
-  image.
+- The REST service is published as the immutable OCI image
+  `ghcr.io/haibaraai2517/vortex:0.2.0`. Java Maven artifacts are not published;
+  embedded use still requires a source build.
 - Quickstart publishes only the Vortex API at
   `127.0.0.1:${VORTEX_HTTP_PORT:-8080}`. Redis, Milvus, MinIO, and management
   ports remain on the Compose network. The start scripts generate random MinIO,
@@ -107,9 +108,10 @@ in the project.
 
 The current public recall contract defaults to `HYBRID + RRF`, with the
 additional reranker disabled. `VECTOR_ONLY`, `KEYWORD_ONLY`, MMR, linear score
-fusion, and the gated Cross-Encoder remain explicit request options. The
-`v0.1.1` public evidence used `VectorOnly` as its baseline and does not directly
-validate the quality or latency of the current default.
+fusion, and the gated Cross-Encoder remain explicit request options. The frozen
+`HYBRID_RRF` candidate passed the read-only DEV and sealed validation gates and
+was promoted; `VectorOnly` remains the rollback and historical comparison path.
+See the [Recall Ranking v2 evaluation](ops/runbooks/vortex-recall-ranking-v2-evaluation-20260802.md).
 
 ## Quick Start
 
@@ -118,7 +120,7 @@ Prerequisites:
 - Docker Desktop or Docker Engine with Compose v2
 - At least 6 GB available memory
 - Windows command: Windows PowerShell 5.1 or later
-- Linux/macOS command: `bash`, `curl`, and `python3`
+- Linux/macOS command: `bash`, `curl`, `python3`, `openssl`, and standard `seq`
 - Run Quickstart only on a trusted local machine; it uses loopback port `8080`
   by default
 
@@ -135,8 +137,8 @@ service port. Quickstart still runs when host ports `6379`, `19530`, `9000`,
 `9001`, or `9091` are occupied because those ports are not published.
 Set a unique `COMPOSE_PROJECT_NAME` as well when running a second Quickstart.
 
-One command builds the stack, waits for health, stores and recalls memory, kills
-a worker after checkpointing, and resumes the task:
+One command builds the current checkout, waits for health, stores and recalls
+memory, kills a worker after checkpointing, and resumes the task:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\run.ps1 -StartQuickstart
@@ -148,17 +150,48 @@ Linux/macOS:
 START_QUICKSTART=true bash examples/quickstart-agent/run.sh
 ```
 
+Those scripts generate random credentials that exist only in that process and
+its Compose child process. For later curl calls, live demos, or Java integration
+examples, create reusable credentials in `.env.local` and load them into the
+host shell:
+
+```powershell
+Copy-Item .env.example .env.local
+# Replace every placeholder in .env.local first.
+Get-Content .env.local | ForEach-Object {
+  if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
+  }
+}
+docker compose --env-file .env.local -f docker-compose.quickstart.yml pull
+docker compose --env-file .env.local -f docker-compose.quickstart.yml up --no-build -d --wait
+```
+
+For direct release adoption, follow the [Quickstart guide](docs/quickstart.md)
+and start the fixed `ghcr.io/haibaraai2517/vortex:0.2.0` image from
+`.env.example` with `--no-build`. The demo commands above intentionally build
+the current source checkout.
+
 A successful run prints `WITH VORTEX: recalled durable memory`, then
 `WITH VORTEX: recovered task ...`, and finishes with
 `No external LLM API key was used.` Stop the stack with:
 
 ```bash
-docker compose -f docker-compose.quickstart.yml down
+docker compose --env-file .env.local -f docker-compose.quickstart.yml down
 ```
 
 The recorded output and expanded HTTP walkthrough live in
 [examples/quickstart-agent](examples/quickstart-agent) and
 [docs/quickstart.md](docs/quickstart.md).
+
+Swagger UI and the OpenAPI document load anonymously. Enter the Bearer token in
+`Authorize` before calling business APIs; Prometheus and detailed management
+endpoints remain protected. The Spring AI and LangChain4j examples read
+`VORTEX_SECURITY_BEARER_TOKEN` and use `quickstart-*` namespaces compatible with
+the default Quickstart allowlist:
+
+- [Spring AI ChatClient advisor example](examples/spring-ai-integration/README.md)
+- [LangChain4j ChatRequest transformer example](examples/langchain4j-integration/README.md)
 
 ## Benchmark Evidence
 
@@ -212,8 +245,9 @@ was rerun with case isolation, and model promotion was placed behind five frozen
 quality and latency gates. The pinned ONNX Cross-Encoder changed `120/120`
 rankings but failed the gate, so it was not promoted as the default reranker.
 Current code additionally introduces `HYBRID + RRF` as the default candidate
-fusion path while keeping the extra reranker disabled. That default requires
-new evidence produced from the matching code state.
+fusion path while keeping the extra reranker disabled. The frozen candidate
+passed the read-only DEV and sealed validation gates and was promoted as the
+guarded public default.
 
 **Trade-off.** Vortex gives up speculative Cross-Encoder gain and retains
 `VectorOnly` as a rollback and comparison baseline. The current Hybrid/RRF
@@ -222,8 +256,9 @@ complexity and a new validation obligation. The `v0.1.1` isolated 120-case run
 reached fragment
 Recall@5 `0.8094`, `+0.1856` over `KeywordOnly`, with paired 95% CI
 `[+0.1086, +0.2632]`. See the
-[LongMemEval report](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md)
-and [Cross-Encoder decision](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md).
+[LongMemEval report](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md),
+[Cross-Encoder decision](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md),
+and [Recall Ranking v2 promotion evidence](ops/runbooks/vortex-recall-ranking-v2-evaluation-20260802.md).
 
 **Implementation.** [RecallQuery](vortex-common/src/main/java/com/vortex/common/dto/RecallQuery.java)
 defines the evidence-backed defaults; [RecallOrchestrator](vortex-kernel/src/main/java/com/vortex/kernel/hmc/RecallOrchestrator.java)
@@ -268,9 +303,10 @@ guards externally visible execution.
 | Model integration | Vortex generation/embedding contracts, Spring AI example, and LangChain4j adapters |
 | Operations | Health catalog, SLO snapshots, Prometheus metrics, deterministic benchmarks, and governance checks |
 
-The public REST surface is available through Swagger UI at
-`http://localhost:8080/swagger-ui.html` after Quickstart; enter the configured
-Bearer token through Swagger's `Authorize` dialog. Detailed endpoints
+The public REST surface is documented by the anonymously accessible Swagger UI
+at `http://localhost:8080/swagger-ui.html` after Quickstart; enter the configured
+Bearer token through Swagger's `Authorize` dialog before calling business APIs.
+Prometheus and detailed management endpoints remain authenticated. Detailed endpoints
 and configuration remain in [docs/quickstart.md](docs/quickstart.md) and
 [docs/architecture.md](docs/architecture.md). CI and benchmark reproduction
 commands are linked from [docs/benchmark.md](docs/benchmark.md).
@@ -279,7 +315,7 @@ commands are linked from [docs/benchmark.md](docs/benchmark.md).
 
 For positioning against plain vector RAG and hand-rolled memory layers, see
 [docs/comparison.md](docs/comparison.md). The stable portfolio release is
-[`v0.1.1`](docs/releases/v0.1.1.md); earlier release notes remain archived.
+[`v0.2.0`](docs/releases/v0.2.0.md); earlier release notes remain archived.
 The Chinese-language
 [external adoption and release readiness manual](ops/runbooks/vortex-external-adoption-readiness-manual.md)
 contains the remediation steps and release acceptance criteria.
@@ -300,7 +336,7 @@ The current usage boundary is:
 | Scenario | Status |
 | --- | --- |
 | Source reading, portfolio review, and local demo | Supported |
-| REST trials on a trusted isolated network | Conditionally supported with Quickstart token, namespace, and loopback-port boundaries |
+| REST trials on a trusted isolated network | Conditionally supported with the immutable OCI image, Quickstart token, namespace, and loopback-port boundaries |
 | Direct Maven/Gradle dependency | Artifacts are not published yet |
 | Public, multi-tenant, or production deployment | Not supported |
 

@@ -596,16 +596,21 @@ class SnapshotServiceTest {
     @Test
     void retentionReloadsCheckpointHistoryAfterDeletion() {
         service = newService(fakeL3, 10, 2);
+        Instant sharedCreatedAt = Instant.parse("2026-08-21T00:00:00Z");
 
         TaskState task = service.createTask("retention test", "ns");
         service.appendNode(task.getTaskId(), "THOUGHT", "n1");
-        service.checkpoint(task.getTaskId());
+        String firstCheckpointId = service.checkpoint(task.getTaskId());
+        fakeL3.metadata.get(task.getTaskId() + "/" + firstCheckpointId).setCreatedAt(sharedCreatedAt);
 
         service.appendNode(task.getTaskId(), "THOUGHT", "n2");
-        service.checkpoint(task.getTaskId());
+        String secondCheckpointId = service.checkpoint(task.getTaskId());
+        fakeL3.metadata.get(task.getTaskId() + "/" + secondCheckpointId).setCreatedAt(sharedCreatedAt);
 
         service.appendNode(task.getTaskId(), "THOUGHT", "n3");
-        service.checkpoint(task.getTaskId());
+        String thirdCheckpointId = service.checkpoint(task.getTaskId());
+        fakeL3.metadata.get(task.getTaskId() + "/" + thirdCheckpointId).setCreatedAt(sharedCreatedAt);
+        checkpointManager.reloadTask(task.getTaskId());
 
         List<CheckpointMetadata> listedByService = service.listCheckpoints(task.getTaskId());
         List<CheckpointMetadata> listedByStore = fakeL3.listCheckpointMetadata(task.getTaskId());
@@ -615,6 +620,7 @@ class SnapshotServiceTest {
         assertThat(listedByService)
                 .extracting(CheckpointMetadata::getCheckpointId)
                 .containsExactlyElementsOf(listedByStore.stream()
+                        .sorted(CheckpointMetadata.chronologicalOrder())
                         .map(CheckpointMetadata::getCheckpointId)
                         .toList());
 

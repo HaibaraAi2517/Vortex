@@ -5,13 +5,24 @@ Docker 环境，不依赖外部 LLM API Key。
 
 ## 会前预热
 
-首次构建和拉取镜像不计入现场演示时间。面试前从仓库根目录运行：
+首次拉取镜像不计入现场演示时间。面试前从仓库根目录创建持久凭据文件，替换其中
+所有占位符，并把变量加载到当前 PowerShell 进程：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\run.ps1 -StartQuickstart
+Copy-Item .env.example .env.local
+# Replace every placeholder in .env.local first.
+Get-Content .env.local | ForEach-Object {
+  if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
+  }
+}
+docker compose --env-file .env.local -f docker-compose.quickstart.yml pull
+docker compose --env-file .env.local -f docker-compose.quickstart.yml up --no-build -d --wait
+powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\run.ps1
 ```
 
-确认脚本完成后保留 Quickstart stack。现场演示直接运行：
+这里使用 `.env.local` 是因为 `-StartQuickstart` 生成的是子进程内凭据，后续独立的
+现场演示进程无法自动取回。确认脚本完成后保留 Quickstart stack。现场演示直接运行：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\demo\run-live-demo.ps1
@@ -30,7 +41,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\demo\run-live-demo.ps1 -Ru
 结束后清理环境：
 
 ```powershell
-docker compose -f docker-compose.quickstart.yml down
+docker compose --env-file .env.local -f docker-compose.quickstart.yml down
 ```
 
 ## 5 分钟讲解顺序
@@ -38,10 +49,10 @@ docker compose -f docker-compose.quickstart.yml down
 | 时间 | 屏幕内容 | 要说明的工程问题 |
 | --- | --- | --- |
 | 0:00-0:40 | README 顶部架构图 | Vortex 是 Agent Memory 与任务恢复内核，不是托管 SaaS；写入、召回、恢复是三条独立路径。 |
-| 0:40-2:10 | `NO MEMORY` 与 `WITH VORTEX` 输出 | 相同追问在无历史上下文时无法回答；默认 `VectorOnly` 路径从持久记忆中召回事实，且默认关闭重排。 |
+| 0:40-2:10 | `NO MEMORY` 与 `WITH VORTEX` 输出 | 相同追问在无历史上下文时无法回答；演示显式选择 `VectorOnly` 以保持历史对照稳定，当前公共默认值是 `HYBRID + RRF`。 |
 | 2:10-3:40 | Worker 被终止、`nodeCount=1` 恢复 | 进程内状态丢失后，新 Worker 从 Checkpoint 和 WAL 恢复并继续执行，而不是从第一步重跑。 |
-| 3:40-4:30 | 三个核心技术决策 | 同步 L1、异步 L2/L3；证据支持的 VectorOnly 默认值；Snapshot + WAL + Execution ID 的恢复边界。 |
-| 4:30-5:00 | 发布验证与项目边界 | `548` 个测试、Docker integration `13/13`、行覆盖率 `74.26%`；不声称生产级多租户或分布式 exactly-once。 |
+| 3:40-4:30 | 三个核心技术决策 | 同步 L1、异步 L2/L3；受门禁保护的 `HYBRID + RRF` 默认值与 VectorOnly 回退；Snapshot + WAL + Execution ID 的恢复边界。 |
+| 4:30-5:00 | 发布验证与项目边界 | `v0.2.0` clean Maven verify、Docker integration `13/13`、跨平台 Quickstart 与备份恢复演练；不声称生产级多租户或分布式 exactly-once。 |
 
 现场必须出现的关键输出：
 
@@ -56,14 +67,14 @@ LIVE DEMO PASS: 1/1 runs completed within 300 seconds each.
 
 ## 五个高概率追问
 
-### 1. 为什么默认 VectorOnly，而不是 Hybrid 或 Cross-Encoder？
+### 1. 为什么公共默认是 Hybrid + RRF，演示却使用 VectorOnly？
 
-case-isolated LongMemEval 的 120-case 评测中，VectorOnly fragment Recall@5
+早期 case-isolated LongMemEval 120-case 证据中，VectorOnly fragment Recall@5
 为 `0.8094`，相对 KeywordOnly 提升 `+0.1856`，paired 95% CI 为
-`[+0.1086, +0.2632]`。当前 Keyword 路径仍是 namespace 扫描加本地 IDF，
-不是可扩展倒排索引。Cross-Encoder 虽改变 `120/120` 个排序，但未通过冻结的
-质量与延迟门禁。因此默认选择证据最充分、延迟更低的 VectorOnly，其他路径保留
-为显式选项。
+`[+0.1086, +0.2632]`，所以它仍是历史对照和回退路径。随后冻结的
+`HYBRID_RRF` 候选通过 read-only DEV 与 sealed validation 门禁，当前公共 Recall
+契约因此默认使用受保护的 `HYBRID + RRF`，并继续关闭额外 Cross-Encoder。
+演示显式发送 `VECTOR_ONLY`，只是为了复现稳定、易解释的旧基线，不代表产品默认值。
 
 ### 2. 为什么同步写 L1，异步写 L2/L3？
 
@@ -88,17 +99,19 @@ Snapshot 保存恢复点，WAL 记录可重放的状态变化，Execution ID 对
 
 ### 5. 如果进入生产，最先补什么？
 
-先补认证、授权和 tenant namespace 强隔离，因为记忆系统首先要保证不同主体之间
-不会越权读写；随后增加 audit log、rate limit 与配额，再做长时间高并发容量测试
-和多节点调度。这个顺序先解决数据边界，再解决资源边界和规模问题。
+当前可信环境入口已经具备共享 Bearer token、namespace allowlist、请求大小限制、
+进程内 rate limit 与审计事件。进入生产前首先要把共享凭据升级为 OIDC/mTLS 的
+独立身份，并增加细粒度 RBAC 与强租户隔离；随后补分布式限流和审计汇聚，再做
+长时间高并发容量测试与多节点调度。
 
 ## 可核验入口
 
 - [README 架构与三个决策](../README.md)
 - [Benchmark 范围与证据](benchmark.md)
-- [v0.1.1 发布验证](releases/v0.1.1.md)
+- [v0.2.0 发布验证](releases/v0.2.0.md)
 - [Quickstart 细节](quickstart.md)
 - [Recall 架构决策](../ops/runbooks/vortex-recall-architecture-decision-20260728.md)
+- [Recall Ranking v2 晋级证据](../ops/runbooks/vortex-recall-ranking-v2-evaluation-20260802.md)
 
 面试时只引用上述文档已经给出范围和复现路径的数字。对于未实现能力，直接说明
 边界以及下一步验证方法，不用推测性表述补齐故事。

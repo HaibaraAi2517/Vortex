@@ -21,7 +21,7 @@ RUN mvn -B -DskipTests package -pl vortex-app -am
 
 FROM eclipse-temurin:21-jre
 
-ARG VERSION=0.1.1
+ARG VERSION=0.2.0
 ARG VCS_REF=unknown
 
 LABEL org.opencontainers.image.title="Vortex" \

@@ -1,5 +1,6 @@
 param(
   [string]$BaseUrl = $(if ($env:VORTEX_BASE_URL) { $env:VORTEX_BASE_URL } else { "http://localhost:8080" }),
+  [string]$ApiToken = $env:VORTEX_SECURITY_BEARER_TOKEN,
   [ValidateRange(1, 10)]
   [int]$Runs = 1,
   [ValidateRange(30, 300)]
@@ -16,7 +17,7 @@ $powerShellExe = if ($PSVersionTable.PSEdition -eq "Core") { "pwsh" } else { "po
 try {
   $health = Invoke-RestMethod -Uri "$BaseUrl/actuator/health" -Method Get -TimeoutSec 10
 } catch {
-  throw "Vortex is not ready at $BaseUrl. Prewarm with examples\quickstart-agent\run.ps1 -StartQuickstart."
+  throw "Vortex is not ready at $BaseUrl. Start the .env.local Quickstart stack first."
 }
 
 if ($health.status -ne "UP") {
@@ -30,7 +31,7 @@ Write-Host "Run limit: $MaxRunSeconds seconds per run"
 $results = @()
 for ($run = 1; $run -le $Runs; $run++) {
   $runId = [Guid]::NewGuid().ToString("N").Substring(0, 8)
-  $namespace = "live-demo-" + (Get-Date -Format "yyyyMMddHHmmss") + "-$run-$runId"
+  $namespace = "quickstart-live-demo-" + (Get-Date -Format "yyyyMMddHHmmss") + "-$run-$runId"
   $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
   Write-Host ""
@@ -41,6 +42,7 @@ for ($run = 1; $run -le $Runs; $run++) {
     -ExecutionPolicy Bypass `
     -File $scenarioScript `
     -BaseUrl $BaseUrl `
+    -ApiToken $ApiToken `
     -Namespace $namespace
 
   $exitCode = $LASTEXITCODE

@@ -13,7 +13,15 @@ integration without calling an external LLM provider. No API key is required.
 Start Vortex with the quickstart stack from the repository root:
 
 ```powershell
-docker compose -f docker-compose.quickstart.yml up --build -d
+Copy-Item .env.example .env.local
+# Replace every placeholder in .env.local first.
+docker compose --env-file .env.local -f docker-compose.quickstart.yml pull
+docker compose --env-file .env.local -f docker-compose.quickstart.yml up --no-build -d --wait
+Get-Content .env.local | ForEach-Object {
+  if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
+  }
+}
 ```
 
 Wait for health:
@@ -44,8 +52,10 @@ Wire the advisor into a normal Spring AI `ChatClient` that uses your chosen
 `ChatModel`:
 
 ```java
-VortexMemoryClient vortex = new VortexMemoryClient(URI.create("http://localhost:8080"));
-VortexMemoryAdvisor memoryAdvisor = new VortexMemoryAdvisor(vortex, "agent-session-1");
+VortexMemoryClient vortex = new VortexMemoryClient(
+        URI.create("http://localhost:8080"),
+        System.getenv("VORTEX_SECURITY_BEARER_TOKEN"));
+VortexMemoryAdvisor memoryAdvisor = new VortexMemoryAdvisor(vortex, "quickstart-agent-session-1");
 
 ChatClient chatClient = ChatClient.builder(chatModel)
         .defaultAdvisors(memoryAdvisor)
@@ -53,7 +63,9 @@ ChatClient chatClient = ChatClient.builder(chatModel)
 
 String answer = chatClient.prompt()
         .user("What launch facts should I keep in mind?")
-        .advisors(advisors -> advisors.param(VortexMemoryAdvisor.CONTEXT_NAMESPACE, "agent-session-1"))
+        .advisors(advisors -> advisors.param(
+                VortexMemoryAdvisor.CONTEXT_NAMESPACE,
+                "quickstart-agent-session-1"))
         .call()
         .content();
 ```

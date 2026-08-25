@@ -16,11 +16,17 @@ import java.util.Map;
 public final class VortexMemoryClient {
 
     private final URI baseUri;
+    private final String bearerToken;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
     public VortexMemoryClient(URI baseUri) {
+        this(baseUri, null);
+    }
+
+    public VortexMemoryClient(URI baseUri, String bearerToken) {
         this.baseUri = baseUri;
+        this.bearerToken = bearerToken;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
@@ -54,7 +60,13 @@ public final class VortexMemoryClient {
             if (content == null || content.isBlank()) {
                 continue;
             }
-            String fragmentId = textOrNull(fragment.path("fragmentId"));
+            String fragmentId = textOrNull(fragment.path("id"));
+            if (fragmentId == null) {
+                fragmentId = textOrNull(fragment.path("fragmentId"));
+            }
+            if (fragmentId == null) {
+                fragmentId = textOrNull(item.path("id"));
+            }
             if (fragmentId == null) {
                 fragmentId = textOrNull(item.path("fragmentId"));
             }
@@ -65,9 +77,13 @@ public final class VortexMemoryClient {
 
     private JsonNode postJson(String path, Map<String, Object> body) throws IOException, InterruptedException {
         String payload = objectMapper.writeValueAsString(body);
-        HttpRequest request = HttpRequest.newBuilder(baseUri.resolve(path))
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(baseUri.resolve(path))
                 .timeout(Duration.ofSeconds(60))
-                .header("Content-Type", "application/json")
+                .header("Content-Type", "application/json");
+        if (bearerToken != null && !bearerToken.isBlank()) {
+            requestBuilder.header("Authorization", "Bearer " + bearerToken);
+        }
+        HttpRequest request = requestBuilder
                 .POST(HttpRequest.BodyPublishers.ofString(payload))
                 .build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());

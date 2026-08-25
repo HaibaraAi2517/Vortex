@@ -18,9 +18,10 @@ public final class LangChain4jVortexMemoryDemo {
 
     public static void main(String[] args) throws Exception {
         URI vortexBaseUrl = URI.create(env("VORTEX_BASE_URL", "http://localhost:8080"));
-        String namespace = env("VORTEX_NAMESPACE", "langchain4j-demo-" + Instant.now().toEpochMilli());
+        String bearerToken = env("VORTEX_SECURITY_BEARER_TOKEN", "");
+        String namespace = env("VORTEX_NAMESPACE", "quickstart-langchain4j-" + Instant.now().toEpochMilli());
 
-        VortexMemoryClient client = new VortexMemoryClient(vortexBaseUrl);
+        VortexMemoryClient client = new VortexMemoryClient(vortexBaseUrl, bearerToken);
         String memory = "LangChain4j integration demo facts: launch codename is Nimbus Ledger; "
                 + "the integration target is AiServices chatRequestTransformer; "
                 + "no external LLM API key is required.";

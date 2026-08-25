@@ -16,14 +16,32 @@ provider.
 ## Prerequisites
 
 Use Windows PowerShell 5.1 or later for `run.ps1`. The Bash path requires
-`bash`, `curl`, and `python3`. Both paths require Docker Compose v2 and at
+`bash`, `curl`, `python3`, `openssl`, and standard `seq`. Both paths require Docker Compose v2 and at
 least 6 GB available memory.
 
 Start the quickstart stack from the repository root:
 
 ```powershell
-docker compose -f docker-compose.quickstart.yml up --build -d
+Copy-Item .env.example .env.local
+docker compose --env-file .env.local -f docker-compose.quickstart.yml pull
+docker compose --env-file .env.local -f docker-compose.quickstart.yml up --no-build -d
 ```
+
+Load `.env.local` into the host process before running the demo. Passing it to
+Compose alone does not set `VORTEX_SECURITY_BEARER_TOKEN` in your shell:
+
+```powershell
+Get-Content .env.local | ForEach-Object {
+  if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
+  }
+}
+```
+
+On Bash, use `set -a; . ./.env.local; set +a`.
+
+Use `--build` instead of `--no-build` when the intent is to test the current
+source checkout rather than the fixed `v0.2.0` image.
 
 Wait until health is `UP`:
 
@@ -54,6 +72,9 @@ To let the script start the quickstart stack first:
 ```bash
 START_QUICKSTART=true bash examples/quickstart-agent/run.sh
 ```
+
+The script explicitly uses `VECTOR_ONLY` with the additional reranker disabled
+for a deterministic demo. The public Recall default is guarded `HYBRID + RRF`.
 
 ## Expected Output
 

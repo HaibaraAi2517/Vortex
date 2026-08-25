@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.UUID;
 
 /**
@@ -17,6 +18,14 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CheckpointMetadata {
+
+    public static Comparator<CheckpointMetadata> chronologicalOrder() {
+        return Comparator.comparingLong(CheckpointMetadata::getSequenceNumber)
+                .thenComparing(CheckpointMetadata::getCreatedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(CheckpointMetadata::getCheckpointId,
+                        Comparator.nullsLast(Comparator.naturalOrder()));
+    }
 
     @Builder.Default
     private String checkpointId = UUID.randomUUID().toString();

@@ -45,10 +45,10 @@ jobs:
           push: true
           tags: ${{ env.CANDIDATE_IMAGE }}:candidate-${{ github.event.pull_request.head.sha }}
           build-args: |
-            VERSION=0.1.1-candidate
+            VERSION=0.2.0-candidate
             VCS_REF=${{ github.event.pull_request.head.sha }}
           labels: |
-            org.opencontainers.image.version=0.1.1-candidate
+            org.opencontainers.image.version=0.2.0-candidate
             org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
@@ -71,7 +71,7 @@ jobs:
       COMPOSE_PROJECT_NAME: vortex-candidate-pull-${{ github.run_id }}
       VORTEX_IMAGE: ${{ needs.publish-candidate.outputs.image }}@${{ needs.publish-candidate.outputs.digest }}
       VORTEX_HTTP_PORT: "18084"
-      VORTEX_RELEASE_VERSION: "0.1.1-candidate"
+      VORTEX_RELEASE_VERSION: "0.2.0-candidate"
       VORTEX_SECURITY_BEARER_TOKEN: candidate-pull-${{ github.run_id }}-token
       VORTEX_SECURITY_NAMESPACE_PATTERNS: quickstart-*
       MINIO_ROOT_USER: vortex-candidate-pull
@@ -112,10 +112,10 @@ jobs:
           NAMESPACE: quickstart-candidate-${{ github.run_id }}
         run: bash examples/quickstart-agent/run.sh
 
-      - name: Verify unauthenticated Swagger is denied
+      - name: Verify unauthenticated Swagger is available
         run: |
           status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18084/swagger-ui/index.html)"
-          test "${status}" = "401"
+          test "${status}" = "200"
 
       - name: Clean up pulled candidate
         if: always()

@@ -299,8 +299,7 @@ public class IncrementalCheckpointManager {
      */
     public List<CheckpointMetadata> reloadTask(String taskId) {
         List<CheckpointMetadata> reloaded = new ArrayList<>(loadCheckpointMetadata(taskId));
-        reloaded.sort(Comparator.comparing(CheckpointMetadata::getCreatedAt,
-                Comparator.nullsLast(Comparator.naturalOrder())));
+        reloaded.sort(CheckpointMetadata.chronologicalOrder());
         List<CheckpointMetadata> history = Collections.synchronizedList(reloaded);
         checkpointsByTask.put(taskId, history);
         return List.copyOf(history);

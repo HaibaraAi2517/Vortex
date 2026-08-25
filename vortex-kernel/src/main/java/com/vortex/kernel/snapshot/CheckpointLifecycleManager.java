@@ -9,7 +9,6 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -54,9 +53,9 @@ public class CheckpointLifecycleManager {
         List<CheckpointMetadata> toDelete = new ArrayList<>();
         Instant now = Instant.now();
 
-        // Sort by creation time (oldest first)
+        // WAL sequence is the authoritative order when timestamps share a clock tick.
         List<CheckpointMetadata> sorted = new ArrayList<>(checkpoints);
-        sorted.sort(Comparator.comparing(CheckpointMetadata::getCreatedAt));
+        sorted.sort(CheckpointMetadata.chronologicalOrder());
 
         // Policy 1: max age
         for (CheckpointMetadata meta : sorted) {

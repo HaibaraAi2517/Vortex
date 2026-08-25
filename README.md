@@ -5,7 +5,7 @@
 </p>
 
 [![CI](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml/badge.svg)](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml)
-[![Release: v0.1.1](https://img.shields.io/badge/release-v0.1.1-2EA44F.svg)](docs/releases/v0.1.1.md)
+[![Release: v0.2.0](https://img.shields.io/badge/release-v0.2.0-2EA44F.svg)](docs/releases/v0.2.0.md)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](pom.xml)
 [![Spring Boot 3.3](https://img.shields.io/badge/Spring%20Boot-3.3-6DB33F.svg)](vortex-app/pom.xml)
@@ -13,14 +13,14 @@
 
 **面向长时运行 AI Agent 的 Memory 与 RAG runtime：跨会话记住上下文，召回正确事实，并在崩溃后恢复任务。基于 Java 21、Spring Boot、Milvus、MinIO、Redis 和 Caffeine 构建。**
 
-`v0.1.1` 是最近一个带完整发布证据的标签版本。Vortex 不是托管 SaaS，而是一个
+`v0.2.0` 是最近一个带完整发布证据的标签版本。Vortex 不是托管 SaaS，而是一个
 Agent Memory 与任务恢复内核；仓库把实现代码、确定性基准、故障注入证据和
 复现路径放在一起，便于直接核验。当前分支或本地工作区可能已经包含标签之后的
-行为变更，不能自动继承 `v0.1.1` 的测试、覆盖率和 benchmark 结论。
+行为变更，不能自动继承 `v0.2.0` 的测试、覆盖率和 benchmark 结论。
 
-`v0.1.1` 标签验证：`548` 个测试零失败、Docker integration `13/13` 通过、五个
-代码模块聚合行覆盖率 `74.26%`。这些数字只描述该标签，完整记录见
-[v0.1.1 发布说明](docs/releases/v0.1.1.md)。
+`v0.2.0` 的发布门禁覆盖 clean Maven verify、`13/13` Docker integration、Windows、
+Linux 与 macOS Quickstart、签名候选镜像拉取，以及备份恢复和升级回滚演练。完整记录见
+[v0.2.0 发布说明](docs/releases/v0.2.0.md)。旧版 benchmark 数字仍只描述其对应标签。
 
 <p align="center">
   <a href="#演示"><b>演示</b></a> ·
@@ -37,8 +37,8 @@ Agent Memory 与任务恢复内核；仓库把实现代码、确定性基准、�
 - 直接在宿主机启动应用时默认仅监听 `127.0.0.1`，安全过滤器保持关闭以兼容本地开发。
   Quickstart 则强制使用 32 字符以上的 Bearer token、namespace allowlist、API 限流和
   审计事件；这是一条可信环境试用边界，不是 OIDC、RBAC 或多租户生产认证。
-- 当前仓库只提供源码构建和 Docker Compose 路径，尚未发布可直接依赖的 Maven
-  artifacts 或预构建 Docker image。
+- REST 服务以固定版本 OCI image `ghcr.io/haibaraai2517/vortex:0.2.0` 发布；Java
+  Maven artifacts 尚未发布，嵌入式使用仍需从源码构建。
 - Quickstart 只把 Vortex API 发布到 `127.0.0.1:${VORTEX_HTTP_PORT:-8080}`；Redis、
   Milvus、MinIO 及管理端口仅存在于 Compose 网络。启动脚本会生成本次进程使用的随机
   MinIO、Redis 和 Bearer 凭据。
@@ -94,8 +94,9 @@ flowchart TB
 
 当前公共 Recall 契约默认使用 `HYBRID + RRF`，并保持额外 reranker 关闭。
 `VECTOR_ONLY`、`KEYWORD_ONLY`、MMR、线性分数融合和受门禁控制的 Cross-Encoder
-仍可通过请求参数显式选择。`v0.1.1` 的公开证据以 `VectorOnly` 为基线，不能直接
-用来证明当前默认策略的质量或延迟。
+仍可通过请求参数显式选择。冻结的 `HYBRID_RRF` 候选已经通过 read-only DEV 与
+sealed validation 门禁并晋级；`VectorOnly` 保留为回退和历史对照。完整范围见
+[Recall Ranking v2 评测](ops/runbooks/vortex-recall-ranking-v2-evaluation-20260802.md)。
 
 ## 快速开始
 
@@ -104,7 +105,7 @@ flowchart TB
 - Docker Desktop，或支持 Compose v2 的 Docker Engine
 - 至少 6 GB 可用内存
 - Windows 命令需要 Windows PowerShell 5.1 或更高版本
-- Linux/macOS 命令需要 `bash`、`curl` 和 `python3`
+- Linux/macOS 命令需要 `bash`、`curl`、`python3`、`openssl` 和标准的 `seq`
 - 仅在可信本机环境运行 Quickstart；默认需要宿主机回环端口 `8080`
 
 Windows 可先检查端口占用和系统保留范围：
@@ -132,17 +133,44 @@ Linux/macOS：
 START_QUICKSTART=true bash examples/quickstart-agent/run.sh
 ```
 
+上面的脚本会生成仅在该进程及其 Compose 子进程中有效的随机凭据。需要在后续终端
+继续运行 curl、现场演示或 Java 集成示例时，使用可复用的 `.env.local`：
+
+```powershell
+Copy-Item .env.example .env.local
+# 先替换 .env.local 中的全部占位符。
+Get-Content .env.local | ForEach-Object {
+  if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
+  }
+}
+docker compose --env-file .env.local -f docker-compose.quickstart.yml pull
+docker compose --env-file .env.local -f docker-compose.quickstart.yml up --no-build -d --wait
+```
+
+直接采用正式镜像时，按 [Quickstart 文档](docs/quickstart.md) 使用
+`.env.example` 中固定的 `ghcr.io/haibaraai2517/vortex:0.2.0`，并以
+`--no-build` 启动；上面的 Demo 命令则有意构建当前源码 checkout。
+
 成功输出会先出现 `WITH VORTEX: recalled durable memory`，再出现
 `WITH VORTEX: recovered task ...`，最后打印
 `No external LLM API key was used.`。停止环境：
 
 ```bash
-docker compose -f docker-compose.quickstart.yml down
+docker compose --env-file .env.local -f docker-compose.quickstart.yml down
 ```
 
 录制输出和完整 HTTP 操作见
 [examples/quickstart-agent](examples/quickstart-agent) 与
 [docs/quickstart.md](docs/quickstart.md)。
+
+Swagger UI 与 OpenAPI 文档允许匿名加载；调用业务 API 前需要在 `Authorize` 中输入
+Bearer token，Prometheus 和详细管理端点仍受保护。Spring AI 与 LangChain4j 示例
+会读取 `VORTEX_SECURITY_BEARER_TOKEN`，默认使用兼容 Quickstart allowlist 的
+`quickstart-*` namespace：
+
+- [Spring AI ChatClient advisor 示例](examples/spring-ai-integration/README.md)
+- [LangChain4j ChatRequest transformer 示例](examples/langchain4j-integration/README.md)
 
 ## 基准测试证据
 
@@ -187,8 +215,8 @@ Pipeline。调用方获得 read-your-own-write，同时不等待所有持久层�
 **决策。** `v0.1.1` 废弃污染结果，按 case 隔离重跑 LongMemEval，并用五项冻结的
 质量与延迟规则控制模型晋级。锁定的 ONNX Cross-Encoder 虽改变 `120/120` 个
 排序，但未通过门禁，因此没有晋级为默认 reranker。当前代码进一步引入
-`HYBRID + RRF` 默认候选融合，但仍关闭额外 reranker；该默认值需要使用与当前
-代码一致的新证据单独验证。
+`HYBRID + RRF` 默认候选融合，但仍关闭额外 reranker；冻结候选已通过 read-only
+DEV 与 sealed validation 门禁并晋级为受保护的公共默认值。
 
 **取舍。** 项目暂时放弃推测性的 Cross-Encoder 收益，并保留 `VectorOnly` 作为
 可回退、可对照的基线。当前 Hybrid/RRF 默认值扩大了关键词与向量候选覆盖面，
@@ -196,7 +224,8 @@ Pipeline。调用方获得 read-your-own-write，同时不等待所有持久层�
 120-case 评测中 fragment Recall@5 为 `0.8094`，相对 `KeywordOnly`
 提升 `+0.1856`，paired 95% CI 为 `[+0.1086, +0.2632]`。证据见
 [LongMemEval 报告](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md)
-和 [Cross-Encoder 决策](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md)。
+、[Cross-Encoder 决策](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) 和
+[Recall Ranking v2 晋级证据](ops/runbooks/vortex-recall-ranking-v2-evaluation-20260802.md)。
 
 **实现入口。** [RecallQuery](vortex-common/src/main/java/com/vortex/common/dto/RecallQuery.java)
 定义证据支持的默认值；[RecallOrchestrator](vortex-kernel/src/main/java/com/vortex/kernel/hmc/RecallOrchestrator.java)
@@ -236,8 +265,9 @@ Execution ID 请求哈希、原子占位与响应重放保证幂等。
 | Model integration | Vortex generation/embedding 契约、Spring AI 示例和 LangChain4j adapter |
 | Operations | Health catalog、SLO snapshot、Prometheus metrics、确定性 benchmark 与 governance check |
 
-Quickstart 后可通过 `http://localhost:8080/swagger-ui.html` 查看完整 REST
-接口，并在 Swagger 的 `Authorize` 对话框中输入已配置的 Bearer token。详细 endpoint 和配置继续由 [docs/quickstart.md](docs/quickstart.md) 与
+Quickstart 后可匿名打开 `http://localhost:8080/swagger-ui.html` 查看完整 REST
+接口，并在 Swagger 的 `Authorize` 对话框中输入已配置的 Bearer token 后调用业务 API。
+Prometheus 与详细管理端点仍需认证。详细 endpoint 和配置继续由 [docs/quickstart.md](docs/quickstart.md) 与
 [docs/architecture.md](docs/architecture.md) 承接。CI 与 benchmark 复现命令见
 [docs/benchmark.md](docs/benchmark.md)。
 
@@ -245,7 +275,7 @@ Quickstart 后可通过 `http://localhost:8080/swagger-ui.html` 查看完整 RES
 
 Vortex 与纯向量 RAG、手写 memory layer 的定位差异见
 [docs/comparison.md](docs/comparison.md)。面向项目审阅的稳定版本为
-[`v0.1.1`](docs/releases/v0.1.1.md)，早期 release note 继续保留归档。
+[`v0.2.0`](docs/releases/v0.2.0.md)，早期 release note 继续保留归档。
 第三方采用风险、修复步骤和发布验收标准见
 [外部使用与发布准备手册](ops/runbooks/vortex-external-adoption-readiness-manual.md)。
 
@@ -263,7 +293,7 @@ Vortex 暂不声称已经具备：
 | 场景 | 状态 |
 | --- | --- |
 | 源码阅读、作品集审阅、本机 Demo | 支持 |
-| 可信隔离网络内通过 REST 试验 | 有条件支持；使用 Quickstart 的 token、namespace 与回环端口边界 |
+| 可信隔离网络内通过 REST 试验 | 有条件支持；使用固定版本 OCI image、Quickstart token、namespace 与回环端口边界 |
 | 作为 Maven/Gradle 库直接依赖 | 尚未发布 artifacts |
 | 公网、多租户或生产部署 | 不支持 |
 

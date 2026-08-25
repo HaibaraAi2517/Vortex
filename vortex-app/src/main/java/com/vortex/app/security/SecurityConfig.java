@@ -33,7 +33,11 @@ public class SecurityConfig {
                             .requestMatchers(
                                     "/actuator/health",
                                     "/actuator/health/liveness",
-                                    "/actuator/health/readiness")
+                                    "/actuator/health/readiness",
+                                    "/swagger-ui.html",
+                                    "/swagger-ui/**",
+                                    "/v3/api-docs",
+                                    "/v3/api-docs/**")
                             .permitAll()
                             .anyRequest().authenticated())
                     .addFilterBefore(bearerTokenAuthenticationFilter, AnonymousAuthenticationFilter.class)

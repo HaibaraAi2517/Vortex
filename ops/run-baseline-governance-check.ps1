@@ -55,7 +55,7 @@ function Get-LatestJsonReport {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $repoRoot
 
-$evalCliJar = Join-Path $repoRoot "vortex-app/target/vortex-app-0.1.1-eval-cli.jar"
+$evalCliJar = Join-Path $repoRoot "vortex-app/target/vortex-app-0.2.0-eval-cli.jar"
 $auditDir = Join-Path $repoRoot ($ReportRoot.TrimEnd("/").TrimEnd([char]92) + "/" + $EvidenceStamp)
 $summaryJson = Join-Path $auditDir "baseline-audit-summary.json"
 

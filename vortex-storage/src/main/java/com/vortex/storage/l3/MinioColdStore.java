@@ -347,8 +347,7 @@ public class MinioColdStore implements L3ColdStore {
         }
 
         List<CheckpointMetadata> metadata = new ArrayList<>(metadataById.values());
-        metadata.sort(Comparator.comparing(CheckpointMetadata::getCreatedAt,
-                Comparator.nullsLast(Comparator.naturalOrder())));
+        metadata.sort(CheckpointMetadata.chronologicalOrder());
         return metadata;
     }
 

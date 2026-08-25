@@ -19,7 +19,7 @@ evidence runbook with scope, boundaries, and reproduction commands.
 | Area | Safe wording | Evidence |
 | --- | --- | --- |
 | Recall | On the official LongMemEval oracle dataset, the 120-case case-isolated retrieval evaluation measured `VectorOnly` Recall@5 at `0.8094`, `+0.1856` over `KeywordOnly`, with a paired 95% CI of `[+0.1086, +0.2632]`. | [LongMemEval evaluation](../ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md) |
-| Cross-Encoder | The locked ONNX DEV candidate changed ordering in `120/120` cases, but failed five frozen quality and latency gates. It was rejected, and `VectorOnly` remains the public request default and model-promotion baseline. | [Cross-Encoder DEV decision](../ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
+| Cross-Encoder | The locked ONNX DEV candidate changed ordering in `120/120` cases, but failed five frozen quality and latency gates. It was rejected; `VectorOnly` remains the Cross-Encoder promotion baseline, while the current public request default is guarded `HYBRID + RRF` with the additional reranker disabled. | [Cross-Encoder DEV decision](../ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
 | Main-path latency | In the canonical deterministic write-through benchmark, async processing reduced measured main-path P99 from `818.82 ms` to `268.65 ms` (`-67.19%`). L1 was visible at return and L2/L3 eventually became ready in `100/100` cases. External LLM generation was excluded. | [Write-through latency evidence](../ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md) |
 | Runtime recovery | In the deterministic runtime recovery benchmark, Vortex passed `32/32` covered fault-injection cases across service restart, tool failure, LLM exception, state integrity, and concurrency categories. | [Runtime recovery evidence](../ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md) |
 
@@ -51,6 +51,16 @@ with a 95% bootstrap CI of `[+0.1086, +0.2632]`.
 Boundary: this is oracle fragment retrieval recall, not LLM answer accuracy.
 It does not prove online production recall lift or end-to-end Agent quality.
 
+## Current Recall Default
+
+The current public request contract defaults to guarded `HYBRID + RRF`, with
+the additional reranker disabled. That candidate passed the read-only 120-case
+DEV gate and sealed 120-case validation gate documented in the
+[Recall Ranking v2 evaluation](../ops/runbooks/vortex-recall-ranking-v2-evaluation-20260802.md).
+Explicit `VECTOR_ONLY + LEGACY` remains the rollback and historical comparison
+path. The earlier LongMemEval table above remains valid within its recorded
+code, dataset, and protocol scope; it must not be restated as today's default.
+
 ## Cross-Encoder DEV Decision
 
 The first locked candidate used ONNX Runtime CPU with the
@@ -69,7 +79,8 @@ pre-frozen decision gate:
 
 The candidate failed five gates: Recall delta, Recall CI lower bound, NDCG CI
 lower bound, added P95 latency, and added P99 latency. `VectorOnly` therefore
-remains the default. Validation and reserve partitions were not opened.
+remains the Cross-Encoder promotion baseline for that evidence. Validation and
+reserve partitions were not opened for that rejected Cross-Encoder candidate.
 
 ## Main-Path Latency
 

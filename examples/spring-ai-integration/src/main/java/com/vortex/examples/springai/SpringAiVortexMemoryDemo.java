@@ -21,9 +21,10 @@ public final class SpringAiVortexMemoryDemo {
 
     public static void main(String[] args) throws Exception {
         URI vortexBaseUrl = URI.create(env("VORTEX_BASE_URL", "http://localhost:8080"));
-        String namespace = env("VORTEX_NAMESPACE", "spring-ai-demo-" + Instant.now().toEpochMilli());
+        String bearerToken = env("VORTEX_SECURITY_BEARER_TOKEN", "");
+        String namespace = env("VORTEX_NAMESPACE", "quickstart-spring-ai-" + Instant.now().toEpochMilli());
 
-        VortexMemoryClient client = new VortexMemoryClient(vortexBaseUrl);
+        VortexMemoryClient client = new VortexMemoryClient(vortexBaseUrl, bearerToken);
         String memory = "Spring AI integration demo facts: launch codename is Aurora Ledger; "
                 + "the integration target is Spring AI ChatClient advisor; no external LLM API key is required.";
         int stored = client.store(memory, namespace, List.of("spring-ai", "demo"));

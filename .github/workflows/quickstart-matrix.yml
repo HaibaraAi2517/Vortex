@@ -15,7 +15,7 @@ jobs:
       COMPOSE_PROJECT_NAME: vortex-quickstart-linux-${{ github.run_id }}
       VORTEX_IMAGE: vortex:quickstart-${{ github.sha }}
       VORTEX_HTTP_PORT: "18082"
-      VORTEX_RELEASE_VERSION: "0.1.1"
+      VORTEX_RELEASE_VERSION: "0.2.0"
       VORTEX_SECURITY_BEARER_TOKEN: quickstart-linux-${{ github.run_id }}-token
       VORTEX_SECURITY_NAMESPACE_PATTERNS: quickstart-*
       MINIO_ROOT_USER: vortex-quickstart-linux
@@ -35,10 +35,10 @@ jobs:
           NAMESPACE: quickstart-linux-${{ github.run_id }}
         run: bash examples/quickstart-agent/run.sh
 
-      - name: Verify unauthenticated Swagger is denied
+      - name: Verify unauthenticated Swagger is available
         run: |
           status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18082/swagger-ui/index.html)"
-          test "${status}" = "401"
+          test "${status}" = "200"
 
       - name: Clean up Quickstart
         if: always()
@@ -51,7 +51,7 @@ jobs:
       COMPOSE_PROJECT_NAME: vortex-quickstart-macos-${{ github.run_id }}
       VORTEX_IMAGE: ghcr.io/haibaraai2517/vortex:candidate-${{ github.event.pull_request.head.sha || github.sha }}
       VORTEX_HTTP_PORT: "18083"
-      VORTEX_RELEASE_VERSION: "0.1.1"
+      VORTEX_RELEASE_VERSION: "0.2.0"
       VORTEX_SECURITY_BEARER_TOKEN: quickstart-macos-${{ github.run_id }}-token
       VORTEX_SECURITY_NAMESPACE_PATTERNS: quickstart-*
       MINIO_ROOT_USER: vortex-quickstart-macos
@@ -94,10 +94,10 @@ jobs:
           NAMESPACE: quickstart-macos-${{ github.run_id }}
         run: bash examples/quickstart-agent/run.sh
 
-      - name: Verify unauthenticated Swagger is denied
+      - name: Verify unauthenticated Swagger is available
         run: |
           status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18083/swagger-ui/index.html)"
-          test "${status}" = "401"
+          test "${status}" = "200"
 
       - name: Clean up Quickstart
         if: always()

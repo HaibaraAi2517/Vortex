@@ -54,14 +54,22 @@ class SecurityBoundaryTest {
     private MockMvc mockMvc;
 
     @Test
-    void unauthenticatedBusinessSwaggerAndMetricsRequestsShouldBeRejected() throws Exception {
+    void unauthenticatedBusinessAndMetricsRequestsShouldBeRejected() throws Exception {
         mockMvc.perform(get("/api/v1/test/tenant-a/project"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("AUTHENTICATION_REQUIRED"));
-        mockMvc.perform(get("/swagger-ui.html"))
-                .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/actuator/prometheus"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void swaggerAndOpenApiDocumentsShouldRemainAnonymous() throws Exception {
+        mockMvc.perform(get("/swagger-ui.html"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/swagger-ui/index.html"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -174,6 +182,16 @@ class SecurityBoundaryTest {
         @GetMapping("/swagger-ui.html")
         String swagger() {
             return "swagger";
+        }
+
+        @GetMapping("/swagger-ui/index.html")
+        String swaggerIndex() {
+            return "swagger-index";
+        }
+
+        @GetMapping("/v3/api-docs")
+        String apiDocs() {
+            return "api-docs";
         }
 
         @GetMapping("/actuator/prometheus")

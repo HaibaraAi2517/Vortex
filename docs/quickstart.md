@@ -5,15 +5,17 @@ API key. It starts Vortex plus Milvus, MinIO, Redis, and etcd.
 
 The Quickstart is intended for a trusted local machine. It binds only the Vortex
 API to `127.0.0.1`; Redis, Milvus, MinIO, and their management ports remain on the
-Compose network. Business APIs, Swagger, metrics, and detailed management
-endpoints require a Bearer token.
+Compose network. Swagger UI and its OpenAPI document are anonymous so the
+browser can load the documentation. Business APIs, metrics, and detailed
+management endpoints require a Bearer token; enter that token through Swagger's
+`Authorize` dialog before calling an API.
 
 ## Prerequisites
 
 - Docker Desktop or Docker Engine with Compose
 - At least 6 GB available memory for the app and storage services
 - Windows: Windows PowerShell 5.1 or later
-- Linux/macOS: `bash`, `curl`, and `python3`
+- Linux/macOS: `bash`, `curl`, `python3`, `openssl`, and standard `seq`
 
 ## Run The End-To-End Quickstart
 
@@ -29,8 +31,8 @@ Linux/macOS:
 START_QUICKSTART=true bash examples/quickstart-agent/run.sh
 ```
 
-These commands build and start the stack, wait for Vortex health, then run the
-memory recall and worker-recovery demo. When starting the stack, the scripts
+These commands build the current checkout and start the stack, wait for Vortex
+health, then run the memory recall and worker-recovery demo. When starting the stack, the scripts
 generate process-local MinIO, Redis, and Bearer credentials if they are not
 already set.
 
@@ -40,12 +42,40 @@ Create a local secret file and replace every placeholder first:
 
 ```powershell
 Copy-Item .env.example .env.local
-docker compose --env-file .env.local -f docker-compose.quickstart.yml up --build -d --wait
+docker compose --env-file .env.local -f docker-compose.quickstart.yml pull
+docker compose --env-file .env.local -f docker-compose.quickstart.yml up --no-build -d --wait
 ```
+
+Compose reads `.env.local` for container interpolation, but it does not export
+those values into the current host shell. Load them before running the demo,
+curl commands, or Java integration examples.
+
+PowerShell:
+
+```powershell
+Get-Content .env.local | ForEach-Object {
+  if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
+  }
+}
+```
+
+Bash:
+
+```bash
+set -a
+. ./.env.local
+set +a
+```
+
+This path pulls the fixed `ghcr.io/haibaraai2517/vortex:0.2.0` release image
+declared by `.env.example`; it does not rebuild application code. To validate a
+source checkout instead, run the same `up` command with `--build` in place of
+`--no-build`.
 
 Wait until the `vortex` service is ready, then open:
 
-- Swagger UI: `http://localhost:8080/swagger-ui.html` with the configured Bearer token
+- Swagger UI: `http://localhost:8080/swagger-ui.html`; use `Authorize` before calling an API
 - Health: `http://localhost:8080/actuator/health`
 - Prometheus: `http://localhost:8080/actuator/prometheus` with the configured Bearer token
 
@@ -68,6 +98,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\
 ```bash
 bash examples/quickstart-agent/run.sh
 ```
+
+The demo deliberately requests `VECTOR_ONLY` with the additional reranker
+disabled to keep its historical comparison deterministic. The public Recall
+contract defaults to guarded `HYBRID + RRF`; `VECTOR_ONLY` is an explicit
+rollback and comparison mode, not the product default.
 
 The demo stores a session memory, recalls it for the memory-on path, kills a worker process after checkpointing step 1, and resumes the task from Vortex recovery state.
 

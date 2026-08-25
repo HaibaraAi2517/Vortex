@@ -20,7 +20,7 @@ fi
 if ! curl -sf "$BASE_URL/actuator/health" \
   | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("status") == "UP" else 1)' >/dev/null; then
   echo "ERROR: Vortex is not ready at $BASE_URL." >&2
-  echo "Prewarm with START_QUICKSTART=true bash examples/quickstart-agent/run.sh." >&2
+  echo "Start the .env.local Quickstart stack first." >&2
   exit 1
 fi
 
@@ -29,7 +29,7 @@ echo "Flow: store memory -> VectorOnly recall -> checkpoint -> kill worker -> re
 echo "Run limit: $MAX_RUN_SECONDS seconds per run"
 
 for run in $(seq 1 "$RUNS"); do
-  namespace="live-demo-$(date +%Y%m%d%H%M%S)-$run-$$-$RANDOM"
+  namespace="quickstart-live-demo-$(date +%Y%m%d%H%M%S)-$run-$$-$RANDOM"
   started_at="$(date +%s)"
 
   echo

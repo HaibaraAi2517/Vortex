@@ -57,14 +57,25 @@ Planned work:
 ## Prepare For Real Deployments
 
 Current problem: Vortex exposes useful runtime primitives, but production
-platform features are not complete.
+identity, distributed policy enforcement, and capacity validation are not
+complete.
+
+Done:
+
+- Define a trusted-environment boundary with one shared Bearer token, namespace
+  allowlists, loopback-only Quickstart publishing, request-size limits,
+  in-process rate limiting, and structured audit events.
+- Document deployment, backup, restore, migration, upgrade, and rollback
+  procedures, and exercise the release drills against Milvus, MinIO, Redis, and
+  the Vortex application volume.
 
 Planned work:
 
-- Define authentication and authorization boundaries.
-- Add rate-limit and tenant-isolation design notes before implementation.
+- Add production OIDC and/or mTLS identities instead of a shared token.
+- Add per-tenant identities, fine-grained RBAC, and stronger namespace isolation.
+- Add distributed rate limiting and audit aggregation.
 - Improve operational dashboards and SLO documentation.
-- Clarify backup, restore, and migration procedures for Milvus and MinIO.
+- Validate capacity and failure behavior on long-running, traffic-shaped workloads.
 
 ## Improve Contributor Experience
 

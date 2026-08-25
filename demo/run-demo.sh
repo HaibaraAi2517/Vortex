@@ -39,7 +39,7 @@ export MINIO_SECRET_KEY=minioadmin
 export MINIO_BUCKET=vortex
 export BGE_MODEL_PATH="${BGE_MODEL_PATH:-$PROJECT_ROOT/models/bge-small-zh}"
 
-JAR_PATH="$PROJECT_ROOT/vortex-app/target/vortex-app-0.1.1-exec.jar"
+JAR_PATH="$PROJECT_ROOT/vortex-app/target/vortex-app-0.2.0-exec.jar"
 if [ ! -f "$JAR_PATH" ]; then
   echo "ERROR: Jar not found: $JAR_PATH" >&2
   exit 1

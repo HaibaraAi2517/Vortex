@@ -27,7 +27,9 @@ mvn -pl vortex-app -am -DskipTests package
 Run the focused quickstart stack:
 
 ```powershell
-docker compose -f docker-compose.quickstart.yml up --build -d
+Copy-Item .env.example .env.local
+# Replace every placeholder in .env.local first.
+docker compose --env-file .env.local -f docker-compose.quickstart.yml up --build -d --wait
 ```
 
 ## Before Opening A Pull Request
