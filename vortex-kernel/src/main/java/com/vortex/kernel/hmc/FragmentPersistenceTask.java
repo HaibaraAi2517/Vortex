@@ -22,4 +22,5 @@ public class FragmentPersistenceTask {
     private String lastFailure;
     private boolean l2Persisted;
     private boolean l3Archived;
+    private long generation;
 }

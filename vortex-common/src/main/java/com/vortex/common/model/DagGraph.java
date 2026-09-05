@@ -430,8 +430,7 @@ public class DagGraph {
     }
 
     private void rebuildIfDirty() {
-        if (!dirty) return;
-        synchronized (this) {
+        synchronized (edges) {
             if (!dirty) return; // double-check
             rebuildAdjacency();
         }

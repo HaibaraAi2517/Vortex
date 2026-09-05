@@ -9,6 +9,44 @@ import static org.assertj.core.api.Assertions.*;
 class DagGraphTest {
 
     @Test
+    void adjacencyRebuildDoesNotInvertGraphAndEdgeLocks() throws Exception {
+        DagGraph graph = new DagGraph();
+        DagNode source = node("source");
+        DagNode target = node("target");
+        graph.addNode(source);
+        graph.addNode(target);
+        var field = DagGraph.class.getDeclaredField("edges");
+        field.setAccessible(true);
+        Object edges = field.get(graph);
+        var graphHeld = new java.util.concurrent.CountDownLatch(1);
+        var edgesHeld = new java.util.concurrent.CountDownLatch(1);
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2,
+                Thread.ofPlatform().daemon().factory());
+        try {
+            var reader = executor.submit(() -> {
+                synchronized (graph) {
+                    graphHeld.countDown();
+                    assertThat(edgesHeld.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                    return graph.getSourceNodes();
+                }
+            });
+            var writer = executor.submit(() -> {
+                synchronized (edges) {
+                    edgesHeld.countDown();
+                    assertThat(graphHeld.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                    graph.addEdge(edge(source, target));
+                    return true;
+                }
+            });
+            assertThat(writer.get(3, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThat(reader.get(3, java.util.concurrent.TimeUnit.SECONDS))
+                    .extracting(DagNode::getNodeId).containsExactly("source");
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void addNode_and_retrieve() {
         DagGraph g = new DagGraph();
         DagNode n = DagNode.builder().type(DagNode.NodeType.THOUGHT).content("hello").build();

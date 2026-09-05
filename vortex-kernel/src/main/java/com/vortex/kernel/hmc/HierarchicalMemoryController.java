@@ -232,12 +232,16 @@ public class HierarchicalMemoryController {
         long startedAt = System.nanoTime();
         ensureL1Embedding(fragment);
         populateOptionalL2Embedding(fragment);
-        evictionCoordinator.admitToL1(fragment, persistenceReason);
-        if (waitForPersistence) {
-            persistenceManager.persistBlocking(fragment, persistenceReason);
-        } else {
-            persistenceManager.persistAsync(fragment, persistenceReason);
-        }
+        persistenceManager.withFragmentLock(fragment.getId(), () -> {
+            persistenceManager.beginStore(fragment.getId());
+            evictionCoordinator.admitToL1(fragment, persistenceReason);
+            if (waitForPersistence) {
+                persistenceManager.persistBlocking(fragment, persistenceReason);
+            } else {
+                persistenceManager.persistAsync(fragment, persistenceReason);
+            }
+            return null;
+        });
         sloTracker.recordStoreLatency(System.nanoTime() - startedAt);
     }
 
@@ -298,15 +302,17 @@ public class HierarchicalMemoryController {
         if (fragmentId == null || fragmentId.isBlank()) {
             return false;
         }
-        Optional<MemoryFragment> existing = findFragment(fragmentId);
-        if (existing.isEmpty()) {
-            return false;
-        }
-        evictionCoordinator.removeFromL1(fragmentId);
-        l2.delete(fragmentId);
-        l3.deleteFragment(fragmentId);
-        recallOrchestrator.resetRecallSignals(List.of(fragmentId));
-        return true;
+        return persistenceManager.withFragmentLock(fragmentId, () -> {
+            Optional<MemoryFragment> existing = findFragment(fragmentId);
+            if (existing.isEmpty()) {
+                return false;
+            }
+            persistenceManager.deleteFragment(fragmentId, () -> {
+                evictionCoordinator.removeFromL1(fragmentId);
+                recallOrchestrator.resetRecallSignals(List.of(fragmentId));
+            });
+            return true;
+        });
     }
 
     /** Clears recall-only mutable signals so benchmark modes remain isolated. */

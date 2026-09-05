@@ -186,7 +186,9 @@ public class SnapshotService implements CheckpointCapable {
      * Recover a task from its latest checkpoint with exactly-once semantics.
      */
     public TaskState recover(String taskId, String checkpointId) {
-        return recoveryEngine.recover(taskId, checkpointId, taskLifecycleManager);
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            return recoveryEngine.recover(taskId, checkpointId, taskLifecycleManager);
+        });
     }
 
     /** Test-only: evicts task from cache to verify lazy recovery. */
@@ -199,25 +201,29 @@ public class SnapshotService implements CheckpointCapable {
     // ========================================================================
 
     public TaskBranch createBranch(String taskId, String branchName, String sourceNodeId) {
-        TaskState state = taskLifecycleManager.requireTask(taskId);
-        branchManager.validateCreateBranch(state, sourceNodeId);
-        String branchId = UUID.randomUUID().toString();
-        String forkNodeId = UUID.randomUUID().toString();
-        String branchEdgeId = UUID.randomUUID().toString();
-        String payload = dagMutationService.jsonPayload(
-                "branchId", branchId,
-                "branchName", branchName,
-                "sourceNodeId", sourceNodeId,
-                "forkNodeId", forkNodeId,
-                "branchEdgeId", branchEdgeId);
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.CREATE_BRANCH, payload);
-        state.setWalSequenceNumber(entry.getSequenceNumber());
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = taskLifecycleManager.requireTask(taskId);
+            branchManager.validateCreateBranch(state, sourceNodeId);
+            String branchId = UUID.randomUUID().toString();
+            String forkNodeId = UUID.randomUUID().toString();
+            String branchEdgeId = UUID.randomUUID().toString();
+            String payload = dagMutationService.jsonPayload(
+                    "branchId", branchId,
+                    "branchName", branchName,
+                    "sourceNodeId", sourceNodeId,
+                    "forkNodeId", forkNodeId,
+                    "branchEdgeId", branchEdgeId);
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.CREATE_BRANCH, payload);
+            state.setWalSequenceNumber(entry.getSequenceNumber());
 
-        TaskBranch branch = branchManager.createBranch(
-                state, branchId, branchName, sourceNodeId, forkNodeId, branchEdgeId);
-        scheduler.recordAction(taskId);
-        return branch;
+            TaskBranch branch = branchManager.createBranch(
+                    state, branchId, branchName, sourceNodeId, forkNodeId, branchEdgeId);
+            taskLifecycleManager.markNodeDirty(taskId, forkNodeId);
+            taskLifecycleManager.markEdgeDirty(taskId, branchEdgeId);
+            scheduler.recordAction(taskId);
+            return branch;
+        });
     }
 
     public List<TaskBranch> listBranches(String taskId) {
@@ -226,29 +232,36 @@ public class SnapshotService implements CheckpointCapable {
     }
 
     public TaskBranch mergeBranch(String taskId, String sourceBranchId, String targetBranchId) {
-        TaskState state = taskLifecycleManager.requireTask(taskId);
-        branchManager.validateMergeBranch(state, sourceBranchId, targetBranchId);
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = taskLifecycleManager.requireTask(taskId);
+            branchManager.validateMergeBranch(state, sourceBranchId, targetBranchId);
 
-        String payload = dagMutationService.jsonPayload("sourceBranchId", sourceBranchId,
-                "targetBranchId", targetBranchId);
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.MERGE_BRANCH, payload);
-        state.setWalSequenceNumber(entry.getSequenceNumber());
+            String mergeNodeId = UUID.randomUUID().toString();
+            String payload = dagMutationService.jsonPayload("sourceBranchId", sourceBranchId,
+                    "targetBranchId", targetBranchId, "mergeNodeId", mergeNodeId);
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.MERGE_BRANCH, payload);
+            state.setWalSequenceNumber(entry.getSequenceNumber());
 
-        TaskBranch merged = branchManager.mergeBranch(state, sourceBranchId, targetBranchId);
-        scheduler.recordAction(taskId);
-        return merged;
+            TaskBranch merged = branchManager.mergeBranch(
+                    state, sourceBranchId, targetBranchId, mergeNodeId, entry.getTimestamp());
+            taskLifecycleManager.markNodeDirty(taskId, mergeNodeId);
+            scheduler.recordAction(taskId);
+            return merged;
+        });
     }
 
     public void switchBranch(String taskId, String branchId) {
-        TaskState state = taskLifecycleManager.requireTask(taskId);
-        branchManager.validateSwitchBranch(state, branchId);
-        String payload = dagMutationService.jsonPayload("branchId", branchId);
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.SWITCH_BRANCH, payload);
-        state.setWalSequenceNumber(entry.getSequenceNumber());
-        branchManager.switchBranch(state, branchId);
-        scheduler.recordAction(taskId);
+        taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = taskLifecycleManager.requireTask(taskId);
+            branchManager.validateSwitchBranch(state, branchId);
+            String payload = dagMutationService.jsonPayload("branchId", branchId);
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.SWITCH_BRANCH, payload);
+            state.setWalSequenceNumber(entry.getSequenceNumber());
+            branchManager.switchBranch(state, branchId);
+            scheduler.recordAction(taskId);
+        });
     }
 
     // ========================================================================

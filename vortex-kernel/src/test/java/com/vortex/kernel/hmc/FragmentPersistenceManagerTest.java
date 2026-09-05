@@ -34,6 +34,113 @@ class FragmentPersistenceManagerTest {
     Path tempDir;
 
     @Test
+    void queuedWriteCannotResurrectDeletedFragment() {
+        L2WarmStore l2 = org.mockito.Mockito.mock(L2WarmStore.class);
+        L3ColdStore l3 = org.mockito.Mockito.mock(L3ColdStore.class);
+        List<Runnable> queued = new ArrayList<>();
+        FragmentPersistenceManager manager = deletionTestManager(l2, l3, queued::add);
+        manager.persistAsync(deletionTestFragment(), "initial-store");
+
+        manager.deleteFragment("deleted", () -> {});
+        queued.forEach(Runnable::run);
+
+        org.mockito.Mockito.verify(l2).delete("deleted");
+        org.mockito.Mockito.verify(l3).deleteFragment("deleted");
+        org.mockito.Mockito.verify(l2, org.mockito.Mockito.never()).upsert(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verify(l3, org.mockito.Mockito.never()).archiveFragment(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void deletionFenceSurvivesRestartAndRejectsDlqEvenAfterIdReuse() {
+        L2WarmStore l2 = org.mockito.Mockito.mock(L2WarmStore.class);
+        L3ColdStore l3 = org.mockito.Mockito.mock(L3ColdStore.class);
+        FragmentPersistenceManager manager = deletionTestManager(l2, l3, command -> {
+            throw new RejectedExecutionException("queue full");
+        });
+        manager.persistAsync(deletionTestFragment(), "initial-store");
+        manager.deleteFragment("deleted", () -> {});
+
+        FragmentPersistenceManager restarted = deletionTestManager(l2, l3, Runnable::run);
+        restarted.withFragmentLock("deleted", () -> {
+            restarted.beginStore("deleted");
+            MemoryFragment replacement = deletionTestFragment();
+            replacement.setContent("replacement");
+            restarted.persistBlocking(replacement, "initial-store");
+            return null;
+        });
+        restarted.replayPendingTasks();
+
+        var archived = org.mockito.ArgumentCaptor.forClass(MemoryFragment.class);
+        org.mockito.Mockito.verify(l3).archiveFragment(archived.capture());
+        assertThat(archived.getValue().getContent()).isEqualTo("replacement");
+        org.mockito.Mockito.verify(l2).upsert(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void deletionWaitsForInFlightWriteBeforeRemovingData() throws Exception {
+        L2WarmStore l2 = org.mockito.Mockito.mock(L2WarmStore.class);
+        L3ColdStore l3 = org.mockito.Mockito.mock(L3ColdStore.class);
+        CountDownLatch writing = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            writing.countDown();
+            assertThat(resume.await(5, TimeUnit.SECONDS)).isTrue();
+            return null;
+        }).when(l3).archiveFragment(org.mockito.ArgumentMatchers.any());
+        FragmentPersistenceManager manager = deletionTestManager(l2, l3, Runnable::run);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var write = executor.submit(() -> manager.persistBlocking(deletionTestFragment(), "initial-store"));
+            try {
+                assertThat(writing.await(5, TimeUnit.SECONDS)).isTrue();
+                var deletion = executor.submit(() -> manager.deleteFragment("deleted", () -> {}));
+                org.assertj.core.api.Assertions.assertThatThrownBy(() -> deletion.get(150, TimeUnit.MILLISECONDS))
+                        .isInstanceOf(java.util.concurrent.TimeoutException.class);
+                resume.countDown();
+                write.get(5, TimeUnit.SECONDS);
+                deletion.get(5, TimeUnit.SECONDS);
+                var order = org.mockito.Mockito.inOrder(l3);
+                order.verify(l3).archiveFragment(org.mockito.ArgumentMatchers.any());
+                order.verify(l3).deleteFragment("deleted");
+            } finally {
+                resume.countDown();
+            }
+        }
+    }
+
+    @Test
+    void failedDeleteKeepsDurableFenceUntilCleanupRetrySucceeds() {
+        L2WarmStore l2 = org.mockito.Mockito.mock(L2WarmStore.class);
+        L3ColdStore l3 = org.mockito.Mockito.mock(L3ColdStore.class);
+        List<Runnable> queued = new ArrayList<>();
+        FragmentPersistenceManager manager = deletionTestManager(l2, l3, queued::add);
+        manager.persistAsync(deletionTestFragment(), "initial-store");
+        org.mockito.Mockito.doThrow(new IllegalStateException("unavailable"))
+                .doNothing().when(l3).deleteFragment("deleted");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> manager.deleteFragment("deleted", () -> {}))
+                .isInstanceOf(IllegalStateException.class);
+        queued.forEach(Runnable::run);
+        FragmentPersistenceManager restarted = deletionTestManager(l2, l3, Runnable::run);
+        restarted.persistBlocking(deletionTestFragment(), "late-pin-update");
+        restarted.deleteFragment("deleted", () -> {});
+
+        org.mockito.Mockito.verify(l3, org.mockito.Mockito.never()).archiveFragment(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verify(l3, org.mockito.Mockito.times(2)).deleteFragment("deleted");
+    }
+
+    private FragmentPersistenceManager deletionTestManager(L2WarmStore l2, L3ColdStore l3, Executor executor) {
+        return new FragmentPersistenceManager(l2, l3,
+                new FileBackedDeadLetterQueue(tempDir.resolve("delete-dlq.jsonl").toString(), 5),
+                new FileBackedProcessedTaskStore(tempDir.resolve("delete-keys.txt"), 1),
+                new MemorySloTracker(new SimpleMeterRegistry()), false, executor);
+    }
+
+    private MemoryFragment deletionTestFragment() {
+        return MemoryFragment.builder().id("deleted").namespace("ns").content("old")
+                .embedding(new float[]{1}).tokenCount(1).build();
+    }
+
+    @Test
     void failedPersistenceIsQueuedAndCanBeReplayed(CapturedOutput output) {
         ToggleableL2WarmStore l2 = new ToggleableL2WarmStore();
         RecordingL3ColdStore l3 = new RecordingL3ColdStore();

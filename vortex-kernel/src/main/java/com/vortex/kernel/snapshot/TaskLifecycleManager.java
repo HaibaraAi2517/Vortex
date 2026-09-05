@@ -154,30 +154,32 @@ public class TaskLifecycleManager implements CheckpointCapable, RecoveryEngine.R
      * Get the current state of a task. Lazily recovers from L3 if not in memory.
      */
     public Optional<TaskState> getTask(String taskId) {
-        if (isDeleteCommitted(taskId)) {
-            return Optional.empty();
-        }
-        TaskState cached = activeTasks.getIfPresent(taskId);
-        if (cached != null) {
-            return Optional.of(cached);
-        }
-        TaskState pending = pendingFinalizationTasks.get(taskId);
-        if (pending != null) {
-            return Optional.of(pending);
-        }
-        TaskState pendingCleanup = pendingFinalizationCleanupTasks.get(taskId);
-        if (pendingCleanup != null) {
-            return Optional.of(pendingCleanup);
-        }
+        return withTaskLock(taskId, () -> {
+            if (isDeleteCommitted(taskId)) {
+                return Optional.empty();
+            }
+            TaskState cached = activeTasks.getIfPresent(taskId);
+            if (cached != null) {
+                return Optional.of(cached);
+            }
+            TaskState pending = pendingFinalizationTasks.get(taskId);
+            if (pending != null) {
+                return Optional.of(pending);
+            }
+            TaskState pendingCleanup = pendingFinalizationCleanupTasks.get(taskId);
+            if (pendingCleanup != null) {
+                return Optional.of(pendingCleanup);
+            }
 
-        String checkpointId = latestCheckpointIds.get(taskId);
-        if (checkpointId == null) {
-            return Optional.empty();
-        }
-        TaskState recovered = recoveryEngine.doRecover(taskId, checkpointId, this);
-        attachRecoveredTask(recovered);
-        log.info("Lazy-loaded task from L3 taskId={}", taskId);
-        return Optional.of(recovered);
+            String checkpointId = latestCheckpointIds.get(taskId);
+            if (checkpointId == null) {
+                return Optional.empty();
+            }
+            TaskState recovered = recoveryEngine.doRecover(taskId, checkpointId, this);
+            attachRecoveredTask(recovered);
+            log.info("Lazy-loaded task from L3 taskId={}", taskId);
+            return Optional.of(recovered);
+        });
     }
 
     /**
@@ -231,68 +233,76 @@ public class TaskLifecycleManager implements CheckpointCapable, RecoveryEngine.R
      * Mark a task as completed: final checkpoint, WAL close, and cleanup.
      */
     public void completeTask(String taskId) {
-        transitionToTerminalState(taskId, TaskState.TaskStatus.COMPLETED);
+        withTaskLock(taskId, () -> {
+            transitionToTerminalState(taskId, TaskState.TaskStatus.COMPLETED);
+        });
     }
 
     /**
      * Mark a task as failed: final checkpoint attempt, WAL close, and cleanup.
      */
     public void failTask(String taskId) {
-        transitionToTerminalState(taskId, TaskState.TaskStatus.FAILED);
+        withTaskLock(taskId, () -> {
+            transitionToTerminalState(taskId, TaskState.TaskStatus.FAILED);
+        });
     }
 
     @Override
     public String checkpoint(String taskId) {
-        TaskState state = requireTask(taskId);
-        return checkpointLoadedTask(taskId, state);
+        return withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            return checkpointLoadedTask(taskId, state);
+        });
     }
 
     /**
      * Hard-delete a task together with its WAL and checkpoints.
      */
     public boolean deleteTask(String taskId) {
-        TaskState cached = activeTasks.getIfPresent(taskId);
-        List<CheckpointMetadata> checkpoints = checkpointManager.reloadTask(taskId);
-        boolean walExists = walReader.exists(taskId);
-        boolean indexed = latestCheckpointIds.containsKey(taskId);
-        boolean pending = pendingFinalizationTasks.containsKey(taskId);
-        boolean pendingCleanup = pendingFinalizationCleanupTasks.containsKey(taskId);
-        boolean deleteCommitted = isDeleteCommitted(taskId);
-        if (cached == null
-                && !pending
-                && !pendingCleanup
-                && !deleteCommitted
-                && checkpoints.isEmpty()
-                && !walExists
-                && !indexed) {
-            return false;
-        }
+        return withTaskLock(taskId, () -> {
+            TaskState cached = activeTasks.getIfPresent(taskId);
+            List<CheckpointMetadata> checkpoints = checkpointManager.reloadTask(taskId);
+            boolean walExists = walReader.exists(taskId);
+            boolean indexed = latestCheckpointIds.containsKey(taskId);
+            boolean pending = pendingFinalizationTasks.containsKey(taskId);
+            boolean pendingCleanup = pendingFinalizationCleanupTasks.containsKey(taskId);
+            boolean deleteCommitted = isDeleteCommitted(taskId);
+            if (cached == null
+                    && !pending
+                    && !pendingCleanup
+                    && !deleteCommitted
+                    && checkpoints.isEmpty()
+                    && !walExists
+                    && !indexed) {
+                return false;
+            }
 
-        if (!deleteCommitted) {
-            walWriter.append(taskId, com.vortex.common.model.ActionLogEntry.OperationType.DELETE_TASK,
-                    jsonPayload("taskId", taskId));
-            log.info("Delete intent recorded taskId={} checkpoints={} hadWal={}",
+            if (!deleteCommitted) {
+                walWriter.append(taskId, com.vortex.common.model.ActionLogEntry.OperationType.DELETE_TASK,
+                        jsonPayload("taskId", taskId));
+                log.info("Delete intent recorded taskId={} checkpoints={} hadWal={}",
+                        taskId, checkpoints.size(), walExists);
+            }
+
+            pendingDeletionCleanupTasks.add(taskId);
+            scheduler.unregisterTask(taskId);
+            activeTasks.invalidate(taskId);
+            pendingFinalizationTasks.remove(taskId);
+            pendingFinalizationCleanupTasks.remove(taskId);
+            latestCheckpointIds.remove(taskId);
+            removeListingState(taskId);
+            try {
+                cleanupDeletedTaskArtifacts(taskId, checkpoints);
+            } catch (RuntimeException e) {
+                log.warn("Delete cleanup pending taskId={} remainingCheckpoints={} walExists={}",
+                        taskId, checkpoints.size(), walReader.exists(taskId), e);
+                throw e;
+            }
+
+            log.info("Task deleted taskId={} checkpointsRemoved={} hadWal={}",
                     taskId, checkpoints.size(), walExists);
-        }
-
-        pendingDeletionCleanupTasks.add(taskId);
-        scheduler.unregisterTask(taskId);
-        activeTasks.invalidate(taskId);
-        pendingFinalizationTasks.remove(taskId);
-        pendingFinalizationCleanupTasks.remove(taskId);
-        latestCheckpointIds.remove(taskId);
-        removeListingState(taskId);
-        try {
-            cleanupDeletedTaskArtifacts(taskId, checkpoints);
-        } catch (RuntimeException e) {
-            log.warn("Delete cleanup pending taskId={} remainingCheckpoints={} walExists={}",
-                    taskId, checkpoints.size(), walReader.exists(taskId), e);
-            throw e;
-        }
-
-        log.info("Task deleted taskId={} checkpointsRemoved={} hadWal={}",
-                taskId, checkpoints.size(), walExists);
-        return true;
+            return true;
+        });
     }
 
     /**
@@ -399,6 +409,33 @@ public class TaskLifecycleManager implements CheckpointCapable, RecoveryEngine.R
 
     ConcurrentHashMap<String, ReentrantLock> getCheckpointLocks() {
         return checkpointLocks;
+    }
+
+    // The lock spans validation, WAL append, state application and dirty tracking.
+    // Checkpoint and recovery must observe the same per-task transaction boundary.
+    <T> T withTaskLock(String taskId, java.util.function.Supplier<T> action) {
+        ReentrantLock lock = checkpointLocks.computeIfAbsent(taskId, id -> new ReentrantLock());
+        lock.lock();
+        try {
+            return action.get();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    void withTaskLock(String taskId, Runnable action) {
+        withTaskLock(taskId, () -> {
+            action.run();
+            return null;
+        });
+    }
+
+    void markNodeDirty(String taskId, String nodeId) {
+        dirtySetTracker.markNodeDirty(taskId, nodeId);
+    }
+
+    void markEdgeDirty(String taskId, String edgeId) {
+        dirtySetTracker.markEdgeDirty(taskId, edgeId);
     }
 
     public boolean isDeleteCommitted(String taskId) {

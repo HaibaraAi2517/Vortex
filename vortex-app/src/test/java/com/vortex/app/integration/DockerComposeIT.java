@@ -111,6 +111,33 @@ public class DockerComposeIT {
 
     private String namespace;
 
+    @Test
+    void milvusTreatsInjectionPayloadsAsLiteralValues() {
+        MemoryFragment normal = fragment("normal", "java literal", new float[]{1, 0, 0, 0}, 1, 0.5);
+        String hostileNamespace = namespace + "\" or namespace != \"";
+        MemoryFragment hostile = MemoryFragment.builder()
+                .id("id\"] or id != \"")
+                .namespace(hostileNamespace)
+                .content("java special namespace")
+                .embedding(new float[]{1, 0, 0, 0}).tokenCount(1).build();
+        l2WarmStore.upsert(normal);
+        l2WarmStore.upsert(hostile);
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+            assertThat(l2WarmStore.get(hostile.getId())).isPresent();
+            assertThat(l2WarmStore.listByNamespace(hostileNamespace, 10))
+                    .extracting(MemoryFragment::getId).containsExactly(hostile.getId());
+            assertThat(l2WarmStore.search(new float[]{1, 0, 0, 0}, hostileNamespace, 10))
+                    .extracting(MemoryFragment::getNamespace).containsExactly(hostileNamespace);
+        });
+
+        l2WarmStore.delete(hostile.getId());
+
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+            assertThat(l2WarmStore.get(hostile.getId())).isEmpty();
+            assertThat(l2WarmStore.get(normal.getId())).isPresent();
+        });
+    }
+
     @BeforeEach
     void setUp() {
         clearIntegrationNamespaces();

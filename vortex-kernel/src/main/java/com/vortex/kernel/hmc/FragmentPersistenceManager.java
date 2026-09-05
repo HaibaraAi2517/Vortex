@@ -42,6 +42,11 @@ public class FragmentPersistenceManager {
     private final boolean replayOnStartup;
     private final Executor asyncExecutor;
     private final AtomicLong pendingAsyncWork = new AtomicLong();
+    private final FragmentDeletionFence deletionFence;
+    private final java.util.concurrent.locks.ReentrantLock[] fragmentLocks =
+            java.util.stream.IntStream.range(0, 256)
+                    .mapToObj(i -> new java.util.concurrent.locks.ReentrantLock())
+                    .toArray(java.util.concurrent.locks.ReentrantLock[]::new);
 
     @Autowired
     public FragmentPersistenceManager(
@@ -70,6 +75,7 @@ public class FragmentPersistenceManager {
         this.sloTracker = sloTracker;
         this.replayOnStartup = replayOnStartup;
         this.asyncExecutor = asyncExecutor;
+        this.deletionFence = new FragmentDeletionFence(processedTaskStore.fragmentStateDirectory());
     }
 
     @PostConstruct
@@ -337,6 +343,19 @@ public class FragmentPersistenceManager {
     }
 
     private void persistTask(FragmentPersistenceTask task) {
+        withFragmentLock(task.getFragment().getId(), () -> {
+            FragmentDeletionFence.State fence = deletionFence.state(task.getFragment().getId());
+            if (fence.deleted() || fence.generation() != task.getGeneration()) {
+                log.debug("Skipping stale persistence task fragmentId={} generation={}",
+                        task.getFragment().getId(), task.getGeneration());
+                return null;
+            }
+            persistCurrentTask(task);
+            return null;
+        });
+    }
+
+    private void persistCurrentTask(FragmentPersistenceTask task) {
         if (processedTaskStore.contains(task.getIdempotencyKey())) {
             log.debug("Skipping already processed persistence task idempotencyKey={} fragmentId={}",
                     task.getIdempotencyKey(), task.getFragment().getId());
@@ -363,7 +382,12 @@ public class FragmentPersistenceManager {
                 fragment.getNamespace(),
                 fragment.getId(),
                 normalizedReason);
+        long generation = deletionFence.state(fragment.getId()).generation();
+        if (generation != 0L) {
+            idempotencyKey += ":generation-" + generation;
+        }
         return FragmentPersistenceTask.builder()
+                .generation(generation)
                 .idempotencyKey(idempotencyKey)
                 .reason(normalizedReason)
                 .fragment(fragment)
@@ -379,6 +403,30 @@ public class FragmentPersistenceManager {
             return MemoryDurabilityLogSupport.PHASE_L2_UPSERT;
         }
         return MemoryDurabilityLogSupport.PHASE_L3_ARCHIVE;
+    }
+
+    <T> T withFragmentLock(String fragmentId, java.util.function.Supplier<T> action) {
+        var lock = fragmentLocks[Math.floorMod(fragmentId.hashCode(), fragmentLocks.length)];
+        lock.lock();
+        try {
+            return action.get();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    void beginStore(String fragmentId) {
+        deletionFence.beginStore(fragmentId);
+    }
+
+    void deleteFragment(String fragmentId, Runnable removeFromMemory) {
+        withFragmentLock(fragmentId, () -> {
+            deletionFence.delete(fragmentId);
+            removeFromMemory.run();
+            l2.delete(fragmentId);
+            l3.deleteFragment(fragmentId);
+            return null;
+        });
     }
 
     private String failureReasonForPhase(String phase) {

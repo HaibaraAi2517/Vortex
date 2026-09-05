@@ -405,14 +405,14 @@ public class RecallOrchestrator {
             RecallDiagnosticsAccumulator diagnostics) {
         diagnostics.recordCandidateCount(candidateSource, l2Hits == null ? 0 : l2Hits.size());
         for (MemoryFragment hit : l2Hits == null ? List.<MemoryFragment>of() : l2Hits) {
-            if (hit == null) {
+            if (hit == null || !Objects.equals(query.getNamespace(), hit.getNamespace())) {
                 continue;
             }
             if (!attemptedL2Ids.add(hit.getId()) || candidatesById.containsKey(hit.getId())) {
                 diagnostics.incrementDuplicateRejectedCount(candidateSource);
                 continue;
             }
-            MemoryFragment candidate = enrichForRecall(hit, requiredTags, diagnostics);
+            MemoryFragment candidate = enrichForRecall(hit, query.getNamespace(), requiredTags, diagnostics);
             if (candidate == null) {
                 diagnostics.incrementTagRejectedCount(candidateSource);
                 continue;
@@ -440,7 +440,9 @@ public class RecallOrchestrator {
                 Math.max(32, query.getTopK() * 8),
                 Math.max(1, keywordCandidatePoolLimit));
         for (MemoryFragment namespaceCandidate : l2.listByNamespace(query.getNamespace(), namespaceLimit)) {
-            if (namespaceCandidate != null && matchesAllTags(namespaceCandidate, requiredTags)) {
+            if (namespaceCandidate != null
+                    && Objects.equals(query.getNamespace(), namespaceCandidate.getNamespace())
+                    && matchesAllTags(namespaceCandidate, requiredTags)) {
                 keywordPool.putIfAbsent(namespaceCandidate.getId(), namespaceCandidate);
             }
         }
@@ -628,9 +630,13 @@ public class RecallOrchestrator {
 
     private MemoryFragment enrichForRecall(
             MemoryFragment candidate,
+            String namespace,
             List<String> requiredTags,
             RecallDiagnosticsAccumulator diagnostics) {
         MemoryFragment fragment = findFragment(candidate.getId(), diagnostics).orElse(candidate);
+        if (!Objects.equals(namespace, fragment.getNamespace())) {
+            return null;
+        }
         if (matchesAllTags(fragment, requiredTags)) {
             diagnostics.incrementEnrichFragmentTagMatchedCount();
             return fragment;
@@ -640,7 +646,8 @@ public class RecallOrchestrator {
             return candidate;
         }
         Optional<MemoryFragment> l2Fragment = l2.get(candidate.getId());
-        if (l2Fragment.isPresent() && matchesAllTags(l2Fragment.get(), requiredTags)) {
+        if (l2Fragment.isPresent() && Objects.equals(namespace, l2Fragment.get().getNamespace())
+                && matchesAllTags(l2Fragment.get(), requiredTags)) {
             diagnostics.incrementEnrichL2TagFallbackMatchedCount();
             return l2Fragment.get();
         }

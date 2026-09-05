@@ -52,6 +52,8 @@ import java.util.*;
 @Slf4j
 @Component
 public class MilvusWarmStore implements L2WarmStore {
+    private static final com.fasterxml.jackson.databind.ObjectMapper EXPRESSION_MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper();
 
     private static final String DEFAULT_COLLECTION = "vortex_memory";
     private static final String FIELD_ID = "id";
@@ -72,6 +74,7 @@ public class MilvusWarmStore implements L2WarmStore {
     private final Duration loadWaitInterval;
     private volatile boolean tagsFieldAvailable;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public MilvusWarmStore(
             @Value("${vortex.storage.l2.milvus.host:localhost}") String host,
             @Value("${vortex.storage.l2.milvus.port:19530}") int port,
@@ -81,14 +84,21 @@ public class MilvusWarmStore implements L2WarmStore {
             @Value("${vortex.storage.l2.milvus.drop-collection-confirm-token:}") String dropCollectionConfirmToken,
             @Value("${vortex.storage.l2.milvus.load-wait-timeout:180s}") Duration loadWaitTimeout,
             @Value("${vortex.storage.l2.milvus.load-wait-interval:1s}") Duration loadWaitInterval) {
+        this(new MilvusServiceClient(ConnectParam.newBuilder().withHost(host).withPort(port).build()),
+                embeddingDim, collectionName, dropCollectionOnStartup, dropCollectionConfirmToken,
+                loadWaitTimeout, loadWaitInterval);
+    }
+
+    MilvusWarmStore(MilvusServiceClient client, int embeddingDim, String collectionName,
+                    boolean dropCollectionOnStartup, String dropCollectionConfirmToken,
+                    Duration loadWaitTimeout, Duration loadWaitInterval) {
         this.embeddingDim = embeddingDim;
         this.collectionName = collectionName;
         this.dropCollectionOnStartup = dropCollectionOnStartup;
         this.dropCollectionConfirmToken = dropCollectionConfirmToken;
         this.loadWaitTimeout = loadWaitTimeout == null ? Duration.ofSeconds(180) : loadWaitTimeout;
         this.loadWaitInterval = loadWaitInterval == null ? Duration.ofSeconds(1) : loadWaitInterval;
-        this.client = new MilvusServiceClient(
-                ConnectParam.newBuilder().withHost(host).withPort(port).build());
+        this.client = client;
     }
 
     @PostConstruct
@@ -251,7 +261,7 @@ public class MilvusWarmStore implements L2WarmStore {
             log.warn("L2 search called with null embedding — skipping");
             return Collections.emptyList();
         }
-        String expr = FIELD_NS + " == \"" + namespace + "\"";
+        String expr = FIELD_NS + " == " + expressionLiteral(namespace);
         R<SearchResults> result = client.search(SearchParam.newBuilder()
                 .withCollectionName(collectionName)
                 .withMetricType(io.milvus.param.MetricType.COSINE)
@@ -273,7 +283,7 @@ public class MilvusWarmStore implements L2WarmStore {
             SearchResultsWrapper.IDScore score = wrapper.getIDScore(0).get(i);
             MemoryFragment f = MemoryFragment.builder()
                     .id(score.getStrID())
-                    .namespace(namespace)
+                    .namespace((String) wrapper.getFieldWrapper(FIELD_NS).getFieldData().get(i))
                     .content((String) wrapper.getFieldWrapper(FIELD_CONTENT).getFieldData().get(i))
                     .importance(((Number) wrapper.getFieldWrapper(FIELD_IMPORTANCE).getFieldData().get(i)).doubleValue())
                     .tokenCount(((Number) wrapper.getFieldWrapper(FIELD_TOKEN_COUNT).getFieldData().get(i)).intValue())
@@ -289,7 +299,7 @@ public class MilvusWarmStore implements L2WarmStore {
     public Optional<MemoryFragment> get(String id) {
         R<QueryResults> result = client.query(QueryParam.newBuilder()
                 .withCollectionName(collectionName)
-                .withExpr(FIELD_ID + " in [\"" + id + "\"]")
+                .withExpr(FIELD_ID + " in [" + expressionLiteral(id) + "]")
                 .withOutFields(outFields())
                 .build());
         if (result.getStatus() != 0 || result.getData() == null) {
@@ -318,7 +328,7 @@ public class MilvusWarmStore implements L2WarmStore {
         int boundedLimit = Math.max(1, limit);
         R<QueryResults> result = client.query(QueryParam.newBuilder()
                 .withCollectionName(collectionName)
-                .withExpr(FIELD_NS + " == \"" + nullToEmpty(namespace) + "\"")
+                .withExpr(FIELD_NS + " == " + expressionLiteral(namespace))
                 .withOutFields(outFields())
                 .withLimit((long) boundedLimit)
                 .build());
@@ -348,10 +358,21 @@ public class MilvusWarmStore implements L2WarmStore {
 
     @Override
     public void delete(String id) {
-        client.delete(io.milvus.param.dml.DeleteParam.newBuilder()
+        R<MutationResult> result = client.delete(io.milvus.param.dml.DeleteParam.newBuilder()
                 .withCollectionName(collectionName)
-                .withExpr(FIELD_ID + " in [\"" + id + "\"]")
+                .withExpr(FIELD_ID + " in [" + expressionLiteral(id) + "]")
                 .build());
+        if (result.getStatus() != 0) {
+            throw new IllegalStateException("Milvus delete failed for fragment " + id + ": " + result.getMessage());
+        }
+    }
+
+    private static String expressionLiteral(String value) {
+        try {
+            return EXPRESSION_MAPPER.writeValueAsString(value == null ? "" : value);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalArgumentException("Invalid Milvus expression value", e);
+        }
     }
 
     @Override

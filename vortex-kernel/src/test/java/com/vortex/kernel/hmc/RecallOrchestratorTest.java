@@ -36,6 +36,31 @@ import static org.mockito.Mockito.verify;
  * and deduplication.
  */
 class RecallOrchestratorTest {
+    @Test
+    void recallRejectsForeignNamespaceFromAllL2CandidateSources() {
+        MemoryFragment foreign = fragment("VTX-42", "private", "VTX-42 secret", List.of(), 4);
+        l2.seedSearchResults(List.of(foreign));
+        l2.seedNamespaceResults(List.of(foreign));
+
+        RecallResult result = orchestrator.recall(RecallQuery.builder()
+                .query("VTX-42").namespace("public").topK(5).tokenBudget(200)
+                .retrievalMode(RetrievalMode.HYBRID).rankingStrategy(RecallRankingStrategy.RRF).build());
+
+        assertThat(result.getFragments()).isEmpty();
+    }
+
+    @Test
+    void recallRejectsForeignNamespaceRevealedByColdEnrichment() {
+        MemoryFragment candidate = fragment("id", "public", "candidate", List.of(), 4);
+        l2.seedSearchResults(List.of(candidate));
+        l3.archiveFragment(fragment("id", "private", "secret", List.of(), 4));
+
+        RecallResult result = orchestrator.recall(RecallQuery.builder()
+                .query("candidate").namespace("public").topK(5).tokenBudget(200)
+                .retrievalMode(RetrievalMode.VECTOR_ONLY).build());
+
+        assertThat(result.getFragments()).isEmpty();
+    }
 
     private static final MemorySloTracker SLO_TRACKER = new MemorySloTracker(new SimpleMeterRegistry());
     private static final AdaptiveWeightLearner WEIGHT_LEARNER =

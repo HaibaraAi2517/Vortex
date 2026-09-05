@@ -39,6 +39,22 @@ import static org.mockito.Mockito.when;
 class MinioColdStoreTest {
 
     @Test
+    void deleteCheckpointPropagatesFailureForEveryArtifact() throws Exception {
+        for (String suffix : List.of(".kryo", ".json", ".meta.json")) {
+            MinioClient client = mock(MinioClient.class);
+            MinioColdStore store = new MinioColdStore(client, "vortex-it", "run-123/");
+            doThrow(new IOException("delete failed"))
+                    .when(client).removeObject(argThatRemoveObject("vortex-it",
+                            "run-123/checkpoints/task-1/cp-1" + suffix));
+
+            assertThatThrownBy(() -> store.deleteCheckpoint("task-1/cp-1"))
+                    .isInstanceOf(CheckpointStoreException.class)
+                    .satisfies(ex -> assertThat(((CheckpointStoreException) ex).getFailureType())
+                            .isEqualTo(CheckpointStoreException.FailureType.DELETE_FAILED));
+        }
+    }
+
+    @Test
     void archiveFragmentAppliesConfiguredKeyPrefix() throws Exception {
         MinioClient minioClient = mock(MinioClient.class);
         MinioColdStore coldStore = new MinioColdStore(minioClient, "vortex-it", "run-123");

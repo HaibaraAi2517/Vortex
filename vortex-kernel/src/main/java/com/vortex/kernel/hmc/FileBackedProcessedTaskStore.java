@@ -75,6 +75,10 @@ public class FileBackedProcessedTaskStore {
         }
     }
 
+    Path fragmentStateDirectory() {
+        return storePath.resolveSibling(storePath.getFileName() + ".fragments");
+    }
+
     private void loadIfNeeded() {
         if (processedKeys != null) {
             return;

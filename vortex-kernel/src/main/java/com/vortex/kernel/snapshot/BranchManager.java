@@ -182,6 +182,11 @@ public class BranchManager {
     }
 
     public TaskBranch mergeBranch(TaskState task, String sourceBranchId, String targetBranchId) {
+        return mergeBranch(task, sourceBranchId, targetBranchId, java.util.UUID.randomUUID().toString(), java.time.Instant.now());
+    }
+
+    public TaskBranch mergeBranch(TaskState task, String sourceBranchId, String targetBranchId,
+                                  String mergeNodeId, java.time.Instant createdAt) {
         validateMergeBranch(task, sourceBranchId, targetBranchId);
         TaskBranch source = getBranch(task, sourceBranchId).orElseThrow();
         TaskBranch target = getBranch(task, targetBranchId).orElseThrow();
@@ -191,6 +196,8 @@ public class BranchManager {
 
         // Add a MERGE node in the target branch to document the merge
         DagNode mergeNode = DagNode.builder()
+                .nodeId(mergeNodeId)
+                .createdAt(createdAt)
                 .type(DagNode.NodeType.MERGE)
                 .content("Merged branch '" + source.getBranchName() + "' → '" + target.getBranchName() + "'")
                 .status(DagNode.NodeStatus.COMPLETED)

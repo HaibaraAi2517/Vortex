@@ -36,64 +36,72 @@ public class RuntimeMutationService {
             String conversationId,
             String role,
             String content) {
-        TaskState state = requireTask(taskId);
-        String resolvedConversationId = requireNonBlank(conversationId, "conversationId");
-        String messageId = UUID.randomUUID().toString();
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.APPEND_CONVERSATION_MESSAGE,
-                jsonPayload(
-                        "conversationId", resolvedConversationId,
-                        "messageId", messageId,
-                        "role", role,
-                        "content", content));
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            String resolvedConversationId = requireNonBlank(conversationId, "conversationId");
+            String messageId = UUID.randomUUID().toString();
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.APPEND_CONVERSATION_MESSAGE,
+                    jsonPayload(
+                            "conversationId", resolvedConversationId,
+                            "messageId", messageId,
+                            "role", role,
+                            "content", content));
 
-        ConversationMessage message = buildConversationMessage(messageId, role, content, entry.getTimestamp());
-        appendConversationMessage(state, resolvedConversationId, message);
-        markMutation(state, entry, () -> dirtySetTracker.markConversationDirty(taskId, resolvedConversationId));
-        return message;
+            ConversationMessage message = buildConversationMessage(messageId, role, content, entry.getTimestamp());
+            appendConversationMessage(state, resolvedConversationId, message);
+            markMutation(state, entry, () -> dirtySetTracker.markConversationDirty(taskId, resolvedConversationId));
+            return message;
+        });
     }
 
     public ToolExecutionState startToolExecution(String taskId, String executionId, String toolName, String input) {
-        TaskState state = requireTask(taskId);
-        String resolvedExecutionId = requireNonBlank(executionId, "executionId");
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.START_TOOL_EXECUTION,
-                jsonPayload(
-                        "executionId", resolvedExecutionId,
-                        "toolName", toolName,
-                        "input", input));
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            String resolvedExecutionId = requireNonBlank(executionId, "executionId");
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.START_TOOL_EXECUTION,
+                    jsonPayload(
+                            "executionId", resolvedExecutionId,
+                            "toolName", toolName,
+                            "input", input));
 
-        ToolExecutionState toolExecution = buildToolExecution(
-                resolvedExecutionId, toolName, input, entry.getTimestamp());
-        state.getToolExecutions().put(resolvedExecutionId, toolExecution);
-        markMutation(state, entry, () -> dirtySetTracker.markToolExecutionDirty(taskId, resolvedExecutionId));
-        return toolExecution;
+            ToolExecutionState toolExecution = buildToolExecution(
+                    resolvedExecutionId, toolName, input, entry.getTimestamp());
+            state.getToolExecutions().put(resolvedExecutionId, toolExecution);
+            markMutation(state, entry, () -> dirtySetTracker.markToolExecutionDirty(taskId, resolvedExecutionId));
+            return toolExecution;
+        });
     }
 
     public ToolExecutionState completeToolExecution(String taskId, String executionId, String output) {
-        TaskState state = requireTask(taskId);
-        String resolvedExecutionId = requireNonBlank(executionId, "executionId");
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.COMPLETE_TOOL_EXECUTION,
-                jsonPayload("executionId", resolvedExecutionId, "output", output));
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            String resolvedExecutionId = requireNonBlank(executionId, "executionId");
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.COMPLETE_TOOL_EXECUTION,
+                    jsonPayload("executionId", resolvedExecutionId, "output", output));
 
-        ToolExecutionState toolExecution = requireToolExecution(state, resolvedExecutionId);
-        toolExecution.succeed(output, entry.getTimestamp());
-        markMutation(state, entry, () -> dirtySetTracker.markToolExecutionDirty(taskId, resolvedExecutionId));
-        return toolExecution;
+            ToolExecutionState toolExecution = requireToolExecution(state, resolvedExecutionId);
+            toolExecution.succeed(output, entry.getTimestamp());
+            markMutation(state, entry, () -> dirtySetTracker.markToolExecutionDirty(taskId, resolvedExecutionId));
+            return toolExecution;
+        });
     }
 
     public ToolExecutionState failToolExecution(String taskId, String executionId, String errorMessage) {
-        TaskState state = requireTask(taskId);
-        String resolvedExecutionId = requireNonBlank(executionId, "executionId");
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.FAIL_TOOL_EXECUTION,
-                jsonPayload("executionId", resolvedExecutionId, "errorMessage", errorMessage));
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            String resolvedExecutionId = requireNonBlank(executionId, "executionId");
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.FAIL_TOOL_EXECUTION,
+                    jsonPayload("executionId", resolvedExecutionId, "errorMessage", errorMessage));
 
-        ToolExecutionState toolExecution = requireToolExecution(state, resolvedExecutionId);
-        toolExecution.fail(errorMessage, entry.getTimestamp());
-        markMutation(state, entry, () -> dirtySetTracker.markToolExecutionDirty(taskId, resolvedExecutionId));
-        return toolExecution;
+            ToolExecutionState toolExecution = requireToolExecution(state, resolvedExecutionId);
+            toolExecution.fail(errorMessage, entry.getTimestamp());
+            markMutation(state, entry, () -> dirtySetTracker.markToolExecutionDirty(taskId, resolvedExecutionId));
+            return toolExecution;
+        });
     }
 
     public LlmCallState startLlmCall(
@@ -103,61 +111,69 @@ public class RuntimeMutationService {
             String model,
             String prompt,
             long timeoutMillis) {
-        TaskState state = requireTask(taskId);
-        String resolvedCallId = requireNonBlank(callId, "callId");
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.START_LLM_CALL,
-                jsonPayload(
-                        "callId", resolvedCallId,
-                        "provider", provider,
-                        "model", model,
-                        "prompt", prompt,
-                        "timeoutMillis", String.valueOf(timeoutMillis)));
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            String resolvedCallId = requireNonBlank(callId, "callId");
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.START_LLM_CALL,
+                    jsonPayload(
+                            "callId", resolvedCallId,
+                            "provider", provider,
+                            "model", model,
+                            "prompt", prompt,
+                            "timeoutMillis", String.valueOf(timeoutMillis)));
 
-        LlmCallState llmCall = buildLlmCall(
-                resolvedCallId, provider, model, prompt, timeoutMillis, entry.getTimestamp());
-        state.getLlmCalls().put(resolvedCallId, llmCall);
-        markMutation(state, entry, () -> dirtySetTracker.markLlmCallDirty(taskId, resolvedCallId));
-        return llmCall;
+            LlmCallState llmCall = buildLlmCall(
+                    resolvedCallId, provider, model, prompt, timeoutMillis, entry.getTimestamp());
+            state.getLlmCalls().put(resolvedCallId, llmCall);
+            markMutation(state, entry, () -> dirtySetTracker.markLlmCallDirty(taskId, resolvedCallId));
+            return llmCall;
+        });
     }
 
     public LlmCallState completeLlmCall(String taskId, String callId, String response) {
-        TaskState state = requireTask(taskId);
-        String resolvedCallId = requireNonBlank(callId, "callId");
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.COMPLETE_LLM_CALL,
-                jsonPayload("callId", resolvedCallId, "response", response));
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            String resolvedCallId = requireNonBlank(callId, "callId");
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.COMPLETE_LLM_CALL,
+                    jsonPayload("callId", resolvedCallId, "response", response));
 
-        LlmCallState llmCall = requireLlmCall(state, resolvedCallId);
-        llmCall.complete(response, entry.getTimestamp());
-        markMutation(state, entry, () -> dirtySetTracker.markLlmCallDirty(taskId, resolvedCallId));
-        return llmCall;
+            LlmCallState llmCall = requireLlmCall(state, resolvedCallId);
+            llmCall.complete(response, entry.getTimestamp());
+            markMutation(state, entry, () -> dirtySetTracker.markLlmCallDirty(taskId, resolvedCallId));
+            return llmCall;
+        });
     }
 
     public LlmCallState timeoutLlmCall(String taskId, String callId, String errorMessage) {
-        TaskState state = requireTask(taskId);
-        String resolvedCallId = requireNonBlank(callId, "callId");
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.TIMEOUT_LLM_CALL,
-                jsonPayload("callId", resolvedCallId, "errorMessage", errorMessage));
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            String resolvedCallId = requireNonBlank(callId, "callId");
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.TIMEOUT_LLM_CALL,
+                    jsonPayload("callId", resolvedCallId, "errorMessage", errorMessage));
 
-        LlmCallState llmCall = requireLlmCall(state, resolvedCallId);
-        llmCall.timeout(errorMessage, entry.getTimestamp());
-        markMutation(state, entry, () -> dirtySetTracker.markLlmCallDirty(taskId, resolvedCallId));
-        return llmCall;
+            LlmCallState llmCall = requireLlmCall(state, resolvedCallId);
+            llmCall.timeout(errorMessage, entry.getTimestamp());
+            markMutation(state, entry, () -> dirtySetTracker.markLlmCallDirty(taskId, resolvedCallId));
+            return llmCall;
+        });
     }
 
     public LlmCallState markLlmCallRetry(String taskId, String callId) {
-        TaskState state = requireTask(taskId);
-        String resolvedCallId = requireNonBlank(callId, "callId");
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.MARK_LLM_CALL_RETRY,
-                jsonPayload("callId", resolvedCallId));
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            String resolvedCallId = requireNonBlank(callId, "callId");
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.MARK_LLM_CALL_RETRY,
+                    jsonPayload("callId", resolvedCallId));
 
-        LlmCallState llmCall = requireLlmCall(state, resolvedCallId);
-        llmCall.markRetryPending();
-        markMutation(state, entry, () -> dirtySetTracker.markLlmCallDirty(taskId, resolvedCallId));
-        return llmCall;
+            LlmCallState llmCall = requireLlmCall(state, resolvedCallId);
+            llmCall.markRetryPending();
+            markMutation(state, entry, () -> dirtySetTracker.markLlmCallDirty(taskId, resolvedCallId));
+            return llmCall;
+        });
     }
 
     private TaskState requireTask(String taskId) {

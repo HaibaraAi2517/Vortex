@@ -103,7 +103,10 @@ public class MinioColdStore implements L3ColdStore {
 
     @Override
     public void deleteFragment(String id) {
-        String key = fragmentKey(id);
+        deleteObjectStrict(fragmentKey(id));
+    }
+
+    private void deleteObjectStrict(String key) {
         try {
             minioClient.removeObject(RemoveObjectArgs.builder()
                     .bucket(bucket)
@@ -111,7 +114,7 @@ public class MinioColdStore implements L3ColdStore {
                     .build());
         } catch (ErrorResponseException e) {
             if (isNotFound(e)) {
-                log.debug("No fragment to delete for {}", id);
+                log.debug("No object to delete for {}", key);
                 return;
             }
             log.error("MinIO delete failed key={}: {}", key, e.getMessage());
@@ -277,25 +280,9 @@ public class MinioColdStore implements L3ColdStore {
     public void deleteCheckpoint(String checkpointRef) {
         String checkpointBaseKey = normalizeCheckpointBaseKey(checkpointRef);
 
-        // Try both formats
-        String kryoKey = checkpointBaseKey + KRYO_SUFFIX;
-        String jsonKey = checkpointBaseKey + JSON_SUFFIX;
-        String metaKey = checkpointBaseKey + METADATA_SUFFIX;
-        try {
-            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(kryoKey)).build());
-        } catch (Exception e) {
-            log.debug("No .kryo checkpoint to delete for {}", checkpointRef);
-        }
-        try {
-            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(jsonKey)).build());
-        } catch (Exception e) {
-            log.debug("No .json checkpoint to delete for {}", checkpointRef);
-        }
-        try {
-            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(applyKeyPrefix(metaKey)).build());
-        } catch (Exception e) {
-            log.debug("No metadata checkpoint to delete for {}", checkpointRef);
-        }
+        deleteObjectStrict(checkpointBaseKey + KRYO_SUFFIX);
+        deleteObjectStrict(checkpointBaseKey + JSON_SUFFIX);
+        deleteObjectStrict(checkpointBaseKey + METADATA_SUFFIX);
     }
 
     @Override

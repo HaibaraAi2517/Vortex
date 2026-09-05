@@ -332,7 +332,14 @@ public class RecoveryEngine {
             }
             case MERGE_BRANCH -> {
                 Map<String, String> p = parseReplayPayload(state, entry);
-                branchManager.mergeBranch(state, p.get("sourceBranchId"), p.get("targetBranchId"));
+                String mergeNodeId = p.get("mergeNodeId");
+                if (mergeNodeId == null || mergeNodeId.isBlank()) {
+                    // Older WAL records did not carry the ID. Keep replay deterministic.
+                    mergeNodeId = java.util.UUID.nameUUIDFromBytes(
+                            ("merge:" + entry.getEntryId()).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+                }
+                branchManager.mergeBranch(state, p.get("sourceBranchId"), p.get("targetBranchId"),
+                        mergeNodeId, entry.getTimestamp());
             }
             case SWITCH_BRANCH -> {
                 Map<String, String> p = parseReplayPayload(state, entry);

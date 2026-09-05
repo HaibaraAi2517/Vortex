@@ -57,31 +57,33 @@ public class DagMutationService {
      * Append a node to the task's DAG. Returns the created node.
      */
     public DagNode appendNode(String taskId, String type, String content) {
-        TaskState state = requireTask(taskId);
-        DagNode.NodeType nodeType = parseNodeType(type);
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            DagNode.NodeType nodeType = parseNodeType(type);
 
-        String nodeId = UUID.randomUUID().toString();
-        String payload = jsonPayload(
-                "nodeId", nodeId,
-                "type", type,
-                "content", content,
-                "branchId", normalizedBranchId(state.getCurrentBranchId()));
+            String nodeId = UUID.randomUUID().toString();
+            String payload = jsonPayload(
+                    "nodeId", nodeId,
+                    "type", type,
+                    "content", content,
+                    "branchId", normalizedBranchId(state.getCurrentBranchId()));
 
-        // 1. Write to WAL
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.APPEND_NODE, payload);
+            // 1. Write to WAL
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.APPEND_NODE, payload);
 
-        // 2. Apply to in-memory state
-        DagNode node = buildPendingNode(nodeId, nodeType, content, entry.getTimestamp(), state.getCurrentBranchId());
-        state.getGraph().addNode(node);
-        state.setCurrentNodeId(nodeId);
-        state.setWalSequenceNumber(entry.getSequenceNumber());
-        dirtySetTracker.markNodeDirty(taskId, nodeId);
-        scheduler.recordAction(taskId);
+            // 2. Apply to in-memory state
+            DagNode node = buildPendingNode(nodeId, nodeType, content, entry.getTimestamp(), state.getCurrentBranchId());
+            state.getGraph().addNode(node);
+            state.setCurrentNodeId(nodeId);
+            state.setWalSequenceNumber(entry.getSequenceNumber());
+            dirtySetTracker.markNodeDirty(taskId, nodeId);
+            scheduler.recordAction(taskId);
 
-        eventPublisher.publishEvent(new DagChangeEvent.NodeAppended(taskId, nodeId, type));
+            eventPublisher.publishEvent(new DagChangeEvent.NodeAppended(taskId, nodeId, type));
 
-        return node;
+            return node;
+        });
     }
 
     /**
@@ -89,42 +91,44 @@ public class DagMutationService {
      */
     public DagNode appendNodeWithTarget(String taskId, String type, String content,
                                          String targetNodeId, DagEdge.EdgeType edgeType) {
-        TaskState state = requireTask(taskId);
-        DagNode.NodeType nodeType = parseNodeType(type);
-        requireNode(state, targetNodeId);
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            DagNode.NodeType nodeType = parseNodeType(type);
+            requireNode(state, targetNodeId);
 
-        String nodeId = UUID.randomUUID().toString();
-        String payload = jsonPayload(
-                "nodeId", nodeId,
-                "type", type,
-                "content", content,
-                "targetNodeId", targetNodeId,
-                "edgeType", edgeType.name(),
-                "branchId", normalizedBranchId(state.getCurrentBranchId()));
+            String nodeId = UUID.randomUUID().toString();
+            String payload = jsonPayload(
+                    "nodeId", nodeId,
+                    "type", type,
+                    "content", content,
+                    "targetNodeId", targetNodeId,
+                    "edgeType", edgeType.name(),
+                    "branchId", normalizedBranchId(state.getCurrentBranchId()));
 
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.APPEND_NODE, payload);
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.APPEND_NODE, payload);
 
-        DagNode node = buildPendingNode(nodeId, nodeType, content, entry.getTimestamp(), state.getCurrentBranchId());
-        state.getGraph().addNode(node);
+            DagNode node = buildPendingNode(nodeId, nodeType, content, entry.getTimestamp(), state.getCurrentBranchId());
+            state.getGraph().addNode(node);
 
-        DagEdge edge = DagEdge.builder()
-                .sourceNodeId(targetNodeId)
-                .targetNodeId(nodeId)
-                .dependencyType(edgeType)
-                .build();
-        state.getGraph().addEdge(edge);
+            DagEdge edge = DagEdge.builder()
+                    .sourceNodeId(targetNodeId)
+                    .targetNodeId(nodeId)
+                    .dependencyType(edgeType)
+                    .build();
+            state.getGraph().addEdge(edge);
 
-        state.setCurrentNodeId(nodeId);
-        state.setWalSequenceNumber(entry.getSequenceNumber());
-        dirtySetTracker.markNodeDirty(taskId, nodeId);
-        dirtySetTracker.markEdgeDirty(taskId, edge.getEdgeId());
-        scheduler.recordAction(taskId);
+            state.setCurrentNodeId(nodeId);
+            state.setWalSequenceNumber(entry.getSequenceNumber());
+            dirtySetTracker.markNodeDirty(taskId, nodeId);
+            dirtySetTracker.markEdgeDirty(taskId, edge.getEdgeId());
+            scheduler.recordAction(taskId);
 
-        eventPublisher.publishEvent(new DagChangeEvent.NodeAppended(taskId, nodeId, type));
-        eventPublisher.publishEvent(new DagChangeEvent.EdgeAdded(taskId, targetNodeId, nodeId));
+            eventPublisher.publishEvent(new DagChangeEvent.NodeAppended(taskId, nodeId, type));
+            eventPublisher.publishEvent(new DagChangeEvent.EdgeAdded(taskId, targetNodeId, nodeId));
 
-        return node;
+            return node;
+        });
     }
 
     /**
@@ -132,99 +136,107 @@ public class DagMutationService {
      */
     public DagEdge addEdge(String taskId, String sourceNodeId, String targetNodeId,
                              DagEdge.EdgeType dependencyType, String condition) {
-        TaskState state = requireTask(taskId);
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
 
-        String edgeId = UUID.randomUUID().toString();
-        DagEdge edge = DagEdge.builder()
-                .edgeId(edgeId)
-                .sourceNodeId(sourceNodeId)
-                .targetNodeId(targetNodeId)
-                .dependencyType(dependencyType)
-                .condition(condition)
-                .build();
-        state.getGraph().validateEdge(edge);
+            String edgeId = UUID.randomUUID().toString();
+            DagEdge edge = DagEdge.builder()
+                    .edgeId(edgeId)
+                    .sourceNodeId(sourceNodeId)
+                    .targetNodeId(targetNodeId)
+                    .dependencyType(dependencyType)
+                    .condition(condition)
+                    .build();
+            state.getGraph().validateEdge(edge);
 
-        String payload = jsonPayload(
-                "edgeId", edgeId,
-                "sourceNodeId", sourceNodeId,
-                "targetNodeId", targetNodeId,
-                "dependencyType", dependencyType.name(),
-                "condition", condition != null ? condition : "");
+            String payload = jsonPayload(
+                    "edgeId", edgeId,
+                    "sourceNodeId", sourceNodeId,
+                    "targetNodeId", targetNodeId,
+                    "dependencyType", dependencyType.name(),
+                    "condition", condition != null ? condition : "");
 
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.ADD_EDGE, payload);
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.ADD_EDGE, payload);
 
-        state.getGraph().addEdge(edge);
-        state.setWalSequenceNumber(entry.getSequenceNumber());
-        dirtySetTracker.markEdgeDirty(taskId, edgeId);
-        scheduler.recordAction(taskId);
+            state.getGraph().addEdge(edge);
+            state.setWalSequenceNumber(entry.getSequenceNumber());
+            dirtySetTracker.markEdgeDirty(taskId, edgeId);
+            scheduler.recordAction(taskId);
 
-        eventPublisher.publishEvent(new DagChangeEvent.EdgeAdded(taskId, sourceNodeId, targetNodeId));
+            eventPublisher.publishEvent(new DagChangeEvent.EdgeAdded(taskId, sourceNodeId, targetNodeId));
 
-        return edge;
+            return edge;
+        });
     }
 
     /**
      * Complete a node by ID (replaces old cursor-based approach).
      */
     public DagNode completeNode(String taskId, String nodeId, String result) {
-        TaskState state = requireTask(taskId);
-        DagNode node = requireNode(state, nodeId);
+        return taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            DagNode node = requireNode(state, nodeId);
 
-        String payload = jsonPayload("nodeId", nodeId, "result", result != null ? result : "");
+            String payload = jsonPayload("nodeId", nodeId, "result", result != null ? result : "");
 
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.COMPLETE_NODE, payload);
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.COMPLETE_NODE, payload);
 
-        node.complete(result);
-        state.setWalSequenceNumber(entry.getSequenceNumber());
-        dirtySetTracker.markNodeDirty(taskId, nodeId);
-        scheduler.recordAction(taskId);
+            node.complete(result);
+            state.setWalSequenceNumber(entry.getSequenceNumber());
+            dirtySetTracker.markNodeDirty(taskId, nodeId);
+            scheduler.recordAction(taskId);
 
-        eventPublisher.publishEvent(new DagChangeEvent.NodeCompleted(taskId, nodeId, result));
+            eventPublisher.publishEvent(new DagChangeEvent.NodeCompleted(taskId, nodeId, result));
 
-        return node;
+            return node;
+        });
     }
 
     /**
      * Delete a node by ID and remove its incident edges.
      */
     public void deleteNode(String taskId, String nodeId) {
-        TaskState state = requireTask(taskId);
-        requireNode(state, nodeId);
+        taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
+            requireNode(state, nodeId);
 
-        String payload = jsonPayload("nodeId", nodeId);
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.DELETE_NODE, payload);
+            String payload = jsonPayload("nodeId", nodeId);
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.DELETE_NODE, payload);
 
-        state.getGraph().removeNode(nodeId);
-        if (Objects.equals(state.getCurrentNodeId(), nodeId)) {
-            state.setCurrentNodeId(resolveCurrentNodeId(state));
-        }
-        state.setWalSequenceNumber(entry.getSequenceNumber());
-        dirtySetTracker.markNodeDeleted(taskId, nodeId);
-        scheduler.recordAction(taskId);
+            state.getGraph().removeNode(nodeId);
+            if (Objects.equals(state.getCurrentNodeId(), nodeId)) {
+                state.setCurrentNodeId(resolveCurrentNodeId(state));
+            }
+            state.setWalSequenceNumber(entry.getSequenceNumber());
+            dirtySetTracker.markNodeDeleted(taskId, nodeId);
+            scheduler.recordAction(taskId);
+        });
     }
 
     /**
      * Update a context key-value pair.
      */
     public void updateContext(String taskId, String key, String value) {
-        TaskState state = requireTask(taskId);
+        taskLifecycleManager.withTaskLock(taskId, () -> {
+            TaskState state = requireTask(taskId);
 
-        String payload = jsonPayload("key", key, "value", value != null ? value : "");
+            String payload = jsonPayload("key", key, "value", value != null ? value : "");
 
-        ActionLogEntry entry = walWriter.append(taskId,
-                ActionLogEntry.OperationType.UPDATE_CONTEXT, payload);
+            ActionLogEntry entry = walWriter.append(taskId,
+                    ActionLogEntry.OperationType.UPDATE_CONTEXT, payload);
 
-        if (value == null) {
-            state.getContext().remove(key);
-        } else {
-            state.getContext().put(key, value);
-        }
-        state.setWalSequenceNumber(entry.getSequenceNumber());
-        dirtySetTracker.markContextDirty(taskId, key);
-        scheduler.recordAction(taskId);
+            if (value == null) {
+                state.getContext().remove(key);
+            } else {
+                state.getContext().put(key, value);
+            }
+            state.setWalSequenceNumber(entry.getSequenceNumber());
+            dirtySetTracker.markContextDirty(taskId, key);
+            scheduler.recordAction(taskId);
+        });
     }
 
     // ========================================================================

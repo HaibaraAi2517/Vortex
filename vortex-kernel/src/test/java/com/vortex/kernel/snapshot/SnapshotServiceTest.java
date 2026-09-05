@@ -66,6 +66,111 @@ class SnapshotServiceTest {
     }
 
     @Test
+    void deltaCheckpointPreservesBranchForkNodeAndEdge() {
+        TaskState task = service.createTask("branch delta", "ns");
+        DagNode root = service.appendNode(task.getTaskId(), "THOUGHT", "root");
+        service.checkpoint(task.getTaskId());
+        TaskBranch branch = service.createBranch(task.getTaskId(), "alternative", root.getNodeId());
+
+        TaskState recovered = service.recover(task.getTaskId(), service.checkpoint(task.getTaskId()));
+
+        assertThat(recovered.getGraph().getNode(branch.getForkNodeId())).isPresent();
+        assertThat(recovered.getGraph().areConnected(root.getNodeId(), branch.getForkNodeId())).isTrue();
+        assertThat(recovered.getCurrentNodeId()).isEqualTo(branch.getForkNodeId());
+    }
+
+    @Test
+    void deltaCheckpointPreservesMergeNode() {
+        TaskState task = service.createTask("merge delta", "ns");
+        DagNode root = service.appendNode(task.getTaskId(), "THOUGHT", "root");
+        TaskBranch source = service.createBranch(task.getTaskId(), "source", root.getNodeId());
+        TaskBranch target = service.createBranch(task.getTaskId(), "target", root.getNodeId());
+        service.checkpoint(task.getTaskId());
+        service.mergeBranch(task.getTaskId(), source.getBranchId(), target.getBranchId());
+        String mergeId = task.getCurrentNodeId();
+
+        TaskState recovered = service.recover(task.getTaskId(), service.checkpoint(task.getTaskId()));
+
+        assertThat(recovered.getGraph().getNode(mergeId)).isPresent();
+        assertThat(recovered.getCurrentNodeId()).isEqualTo(mergeId);
+    }
+
+    @Test
+    void mergeWalReplayPreservesNodeIdentityForSubsequentEdges() {
+        TaskState task = service.createTask("merge replay", "ns");
+        DagNode root = service.appendNode(task.getTaskId(), "THOUGHT", "root");
+        TaskBranch source = service.createBranch(task.getTaskId(), "source", root.getNodeId());
+        TaskBranch target = service.createBranch(task.getTaskId(), "target", root.getNodeId());
+        String checkpoint = service.checkpoint(task.getTaskId());
+        service.mergeBranch(task.getTaskId(), source.getBranchId(), target.getBranchId());
+        String mergeId = task.getCurrentNodeId();
+        DagNode next = service.appendNodeWithTarget(task.getTaskId(), "THOUGHT", "next",
+                mergeId, DagEdge.EdgeType.CONTROL_DEP);
+
+        TaskState recovered = service.recover(task.getTaskId(), checkpoint);
+
+        assertThat(recovered.getGraph().getNode(mergeId)).isPresent();
+        assertThat(recovered.getGraph().areConnected(mergeId, next.getNodeId())).isTrue();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"dag", "runtime", "branch"})
+    void checkpointWaitsUntilLoggedMutationIsApplied(String mutationKind) throws Exception {
+        TaskState task = service.createTask("checkpoint race", "ns");
+        DagNode root = service.appendNode(task.getTaskId(), "THOUGHT", "root");
+        service.checkpoint(task.getTaskId());
+        TaskState other = service.createTask("independent task", "ns");
+        CountDownLatch logged = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        ActionLogWriter original = walWriter;
+        ActionLogWriter paused = org.mockito.Mockito.mock(ActionLogWriter.class);
+        org.mockito.Mockito.when(paused.append(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(ActionLogEntry.OperationType.class),
+                        org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(invocation -> {
+                    ActionLogEntry entry = original.append(invocation.getArgument(0),
+                            invocation.getArgument(1), invocation.getArgument(2));
+                    logged.countDown();
+                    assertThat(resume.await(5, TimeUnit.SECONDS)).isTrue();
+                    return entry;
+                });
+        Object mutationOwner = switch (mutationKind) {
+            case "dag" -> org.springframework.test.util.ReflectionTestUtils.getField(service, "dagMutationService");
+            case "runtime" -> org.springframework.test.util.ReflectionTestUtils.getField(service, "runtimeMutationService");
+            default -> service;
+        };
+        org.springframework.test.util.ReflectionTestUtils.setField(mutationOwner, "walWriter", paused);
+        try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            var mutation = executor.submit(() -> {
+                switch (mutationKind) {
+                    case "dag" -> service.appendNode(task.getTaskId(), "THOUGHT", "concurrent");
+                    case "runtime" -> service.appendConversationMessage(task.getTaskId(), "chat", "user", "concurrent");
+                    default -> service.createBranch(task.getTaskId(), "concurrent", root.getNodeId());
+                }
+            });
+            try {
+                assertThat(logged.await(5, TimeUnit.SECONDS)).isTrue();
+                var checkpoint = executor.submit(() -> service.checkpoint(task.getTaskId()));
+                assertThatThrownBy(() -> checkpoint.get(150, TimeUnit.MILLISECONDS))
+                        .isInstanceOf(java.util.concurrent.TimeoutException.class);
+                assertThat(executor.submit(() -> service.checkpoint(other.getTaskId()))
+                        .get(2, TimeUnit.SECONDS)).isNotBlank();
+                resume.countDown();
+                mutation.get(5, TimeUnit.SECONDS);
+                TaskState recovered = service.recover(task.getTaskId(), checkpoint.get(5, TimeUnit.SECONDS));
+                if (mutationKind.equals("runtime")) {
+                    assertThat(recovered.getConversations().get("chat").getMessages()).hasSize(1);
+                } else {
+                    assertThat(recovered.getGraph().nodeCount()).isEqualTo(2);
+                    assertThat(recovered.getGraph().getNode(task.getCurrentNodeId())).isPresent();
+                }
+            } finally {
+                resume.countDown();
+            }
+        }
+    }
+
+    @Test
     void appendNode_addsToGraph() {
         TaskState task = service.createTask("test", "ns");
         DagNode node = service.appendNode(task.getTaskId(), "THOUGHT", "step 1");

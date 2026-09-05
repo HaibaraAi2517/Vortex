@@ -25,6 +25,9 @@ evidence runbook with scope, boundaries, and reproduction commands.
 
 These numbers are benchmark evidence, not production guarantees.
 
+The 2026-09-05 P1 reliability patch has a paired working-tree evaluation in
+[P1 reliability regression](../ops/runbooks/vortex-p1-regression-20260905.md).
+
 ## Recall Retrieval Evaluation
 
 Benchmark scope:
