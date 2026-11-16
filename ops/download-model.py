@@ -45,8 +45,11 @@ if __name__ == "__main__":
     root = Path(__file__).resolve().parent.parent
     manifest = json.loads((root / "models/manifest.json").read_text(encoding="utf-8"))
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", choices=manifest, default="bge-small-zh")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--model", choices=manifest, default="bge-small-zh")
+    selection.add_argument("--all", action="store_true", help="Fetch every pinned model required by the complete test suite")
     parser.add_argument("--output", type=Path, default=root / "models")
     parser.add_argument("--base-url", default=os.environ.get("VORTEX_MODEL_BASE_URL", "https://huggingface.co"))
     args = parser.parse_args()
-    download(args.model, args.output, args.base_url, manifest)
+    for model in manifest if args.all else [args.model]:
+        download(model, args.output, args.base_url, manifest)

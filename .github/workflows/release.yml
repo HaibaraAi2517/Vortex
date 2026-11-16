@@ -81,11 +81,11 @@ jobs:
             exit 1
           fi
 
+      - name: Download and verify all pinned test models
+        run: python3 ops/download-model.py --all
+
       - name: Verify and build distribution
         run: mvn -B clean verify -Pdist
-
-      - name: Download verified model for integration tests
-        run: python3 ops/download-model.py
 
       - name: Run isolated integration tests
         shell: pwsh

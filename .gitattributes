@@ -1,4 +1,5 @@
 .gitattributes text eol=lf
+models/bge-small-zh/tokenizer.json text eol=lf
 models/ms-marco-MiniLM-L6-v2-c5ee24cb/config.json text eol=lf
 models/ms-marco-MiniLM-L6-v2-c5ee24cb/tokenizer.json text eol=lf
 models/ms-marco-MiniLM-L6-v2-c5ee24cb/model.onnx -text

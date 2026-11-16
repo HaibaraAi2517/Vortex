@@ -148,6 +148,7 @@ and secure disk erasure are separate concerns. Back up the entire data directory
 ## Verification
 
 ```bash
+python ops/download-model.py --all
 mvn verify
 python -m pip install "./sdk/python[mcp]"
 python -m unittest discover -s sdk/python/tests -v

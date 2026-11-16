@@ -1,6 +1,8 @@
 name: Local Memory
 
 on:
+  push:
+    branches: [main, master]
   pull_request:
   workflow_dispatch:
 
@@ -25,8 +27,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Download and verify pinned embedding model
-        run: python ops/download-model.py
+      - name: Download and verify all pinned test models
+        run: python ops/download-model.py --all
       - name: Verify Java modules and local HTTP API
         run: mvn -B verify
       - name: Install Python and official MCP SDK
