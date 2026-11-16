@@ -38,7 +38,10 @@ import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.images.builder.ImageFromDockerfile;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -65,9 +68,12 @@ import static org.awaitility.Awaitility.await;
 public class FullLifecycleIT {
 
     private static final Network NETWORK = Network.newNetwork();
+    private static final Path MINIO_BUILD_DIRECTORY = minioBuildDirectory();
 
     @Container
-    static final GenericContainer<?> minio = new GenericContainer<>("minio/minio:RELEASE.2024-07-04T14-25-45Z")
+    static final GenericContainer<?> minio = new GenericContainer<>(new ImageFromDockerfile()
+            .withFileFromPath("Dockerfile", MINIO_BUILD_DIRECTORY.resolve("Dockerfile"))
+            .withFileFromPath("checksums.sha256", MINIO_BUILD_DIRECTORY.resolve("checksums.sha256")))
             .withNetwork(NETWORK)
             .withNetworkAliases("minio")
             .withCommand("server /data --console-address :9001")
@@ -75,6 +81,18 @@ public class FullLifecycleIT {
             .withEnv("MINIO_ROOT_PASSWORD", "minioadmin")
             .withExposedPorts(9000)
             .waitingFor(Wait.forHttp("/minio/health/live").forPort(9000).withStartupTimeout(Duration.ofMinutes(2)));
+
+    private static Path minioBuildDirectory() {
+        // Maven may run from the repository root or this module; IDEs may use either.
+        for (Path directory = Path.of("").toAbsolutePath(); directory != null; directory = directory.getParent()) {
+            Path candidate = directory.resolve("ops/docker/minio");
+            if (Files.isRegularFile(candidate.resolve("Dockerfile"))
+                    && Files.isRegularFile(candidate.resolve("checksums.sha256"))) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("Cannot locate the repository's ops/docker/minio build context");
+    }
 
     @Container
     static final GenericContainer<?> etcd = new GenericContainer<>("quay.io/coreos/etcd:v3.5.5")

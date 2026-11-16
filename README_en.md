@@ -147,7 +147,17 @@ and secure disk erasure are separate concerns. Back up the entire data directory
 
 ## Verification
 
+The [Chinese cross-session quality baseline](docs/memory-quality-baseline-20261117.md) compares no memory,
+free-text summaries and the production Vortex agent on 100 synthetic cases. It retains failed calls and
+full traces, using a separate call to the same configured model as an automatic judge. These results are
+not independent human accuracy labels or a competitor ranking. See the [evaluation guide](docs/memory-quality.md).
+The first attempt scored 23/100, 94/100 and 86/100 respectively, with 96, 95 and 95 valid judgments;
+all arms had execution errors. Confirmation stopped after provider HTTP 402, so there is no complete,
+error-free confirmation. Development traces identify attribution, reference extraction and answering
+from correctly recalled facts as the next quality priorities.
+
 ```bash
+python ops/download-model.py --all
 mvn verify
 python -m pip install "./sdk/python[mcp]"
 python -m unittest discover -s sdk/python/tests -v
@@ -165,7 +175,7 @@ clients:
 | --- | --- | --- |
 | Python ↔ Spring AI, 2026-11-16 | Seven turns: Python saved Beijing/Americano; Spring AI read and updated them to Shanghai/oat latte; fresh clients read the new facts. MCP read the same revisions. | [Inputs, answers and boundaries](docs/automatic-agent-memory-verification.md) |
 | Codex CLI ↔ Python, 2026-11-17 | Nine turns: Codex saved facts; Python read and updated them; a fresh Codex session read the updates and retracted the city. Both clients then answered that the city was unknown while retaining the coffee preference. | [Tool events, revisions and boundaries](docs/codex-memory-verification.md) |
-| Python unit/protocol tests, 2026-11-17 | 62/62 passed, including actual MCP stdio protocol tests. | [Verification record](docs/codex-memory-verification.md) |
+| Python tests, 2026-11-17 | 92/92 passed, including MCP stdio, evaluation validity and diagnostic redaction checks. | [Test code](sdk/python/tests) |
 
 The Codex run used CLI 0.163.0 with the supplied policy and native memory disabled; it did not verify
 the desktop UI, Claude Code or Doubao. Codex read known fact keys with `get_memory`, so that run is

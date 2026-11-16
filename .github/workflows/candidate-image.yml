@@ -103,6 +103,9 @@ jobs:
             --certificate-identity-regexp '^https://github.com/HaibaraAi2517/Vortex/.github/workflows/candidate-image\.yml@refs/pull/[0-9]+/merge$' \
             --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 
+      - name: Build verified MinIO dependency
+        run: docker compose -f docker-compose.quickstart.yml build minio
+
       - name: Start pulled candidate
         run: docker compose -f docker-compose.quickstart.yml up -d --no-build --wait
 

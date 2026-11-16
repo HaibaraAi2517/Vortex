@@ -1,4 +1,11 @@
 .gitattributes text eol=lf
+models/bge-small-zh/tokenizer.json text eol=lf
 models/ms-marco-MiniLM-L6-v2-c5ee24cb/config.json text eol=lf
 models/ms-marco-MiniLM-L6-v2-c5ee24cb/tokenizer.json text eol=lf
 models/ms-marco-MiniLM-L6-v2-c5ee24cb/model.onnx -text
+ops/docker/minio/Dockerfile text eol=lf
+ops/docker/minio/checksums.sha256 text eol=lf
+ops/datasets/memory-quality-zh-v1.json text eol=lf
+ops/eval-memory-quality.py text eol=lf
+ops/eval-reports/20261117-memory-quality-zh-v1/*.json text eol=lf
+ops/eval-reports/20261117-memory-quality-zh-v1/evidence.tar.gz -text

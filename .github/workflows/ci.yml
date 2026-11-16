@@ -23,11 +23,11 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Download and verify all pinned test models
+        run: python3 ops/download-model.py --all
+
       - name: Unit tests and package verification
         run: mvn -B verify
-
-      - name: Download verified model for legacy integration and governance checks
-        run: python3 ops/download-model.py
 
       - name: Isolated app integration verify
         shell: pwsh
