@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from vortex_memory import ModelError
 from vortex_memory.agent import LEARNING_PROMPT
 
 
@@ -172,6 +173,41 @@ class MemoryQualityTest(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(len(result["errors"]), 4)
         self.assertTrue(all(error["stage"] == "extraction" for error in result["errors"]))
+
+    def test_known_model_failures_preserve_safe_status_and_reason_without_retry(self):
+        known = [
+            ("Model endpoint returned HTTP 429", {"reason": "http_error", "http_status": 429}),
+            ("Model endpoint did not return a valid response", {"reason": "invalid_response"}),
+            ("Model response was empty, truncated or requested an unsupported tool call",
+             {"reason": "empty_or_incomplete_response"}),
+        ]
+        for message, expected in known:
+            with self.subTest(message=message):
+                def unavailable(*args, **kwargs):
+                    raise ModelError(message)
+                result = self.execute("none", model=unavailable)
+                self.assertEqual(result["model_calls"][0]["error"], {"code": "ModelError", **expected})
+                self.assertEqual(result["errors"][0], {"stage": "execution", "code": "ModelError", **expected})
+                self.assertEqual(result["call_totals"]["count"], 1)
+                self.assertFalse(result["success"])
+
+    def test_unrecognized_exception_text_and_appended_credentials_never_enter_evidence(self):
+        secret = "sk-secret-never-save-example"
+        errors = [ModelError("Model endpoint returned HTTP 429 " + secret),
+                  ModelError("Model endpoint returned HTTP 429\n" + secret),
+                  ModelError("provider body " + secret),
+                  RuntimeError("Model endpoint returned HTTP 429 " + secret)]
+        for error in errors:
+            with self.subTest(error_type=type(error).__name__):
+                def unavailable(*args, **kwargs):
+                    raise error
+                result = self.execute("none", model=unavailable)
+                encoded = json.dumps(result)
+                self.assertNotIn(secret, encoded)
+                self.assertNotIn("provider body", encoded)
+                self.assertNotIn("http_status", encoded)
+                self.assertNotIn("HTTP 429", encoded)
+                self.assertEqual(result["call_totals"]["count"], 1)
 
     def test_empty_baselines_do_not_receive_perfect_fact_precision(self):
         for arm in ("none", "summary"):

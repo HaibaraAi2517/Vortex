@@ -15,13 +15,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
 from typing import Callable
 import uuid
 
-from vortex_memory import CompatibleChatModel, MemorySession, PERSONAL_FACTS, VortexClient
+from vortex_memory import CompatibleChatModel, MemorySession, ModelError, PERSONAL_FACTS, VortexClient
 from vortex_memory.agent import ANSWER_RULES
 
 
@@ -149,6 +150,23 @@ def estimate_calls(cases: list[dict], arms: list[str]) -> dict:
             "note": "One judge call per final answer. Failures may reduce calls. No automatic retries."}
 
 
+def safe_error_metadata(exc: Exception) -> dict:
+    """Recognize only SDK-owned fixed messages; never serialize arbitrary text."""
+    metadata = {"code": type(exc).__name__}
+    if isinstance(exc, ModelError):
+        text = str(exc)
+        http = re.fullmatch(r"Model endpoint returned HTTP ([1-5][0-9]{2})", text)
+        if http:
+            metadata.update(reason="http_error", http_status=int(http.group(1)))
+        elif text == "Model endpoint did not return a valid response":
+            metadata["reason"] = "invalid_response"
+        elif text == "Model response was empty, truncated or requested an unsupported tool call":
+            metadata["reason"] = "empty_or_incomplete_response"
+        else:
+            metadata["reason"] = "unclassified_model_error"
+    return metadata
+
+
 class RecordedModel:
     """Preserve exact synthetic inputs and outputs without touching SDK transport."""
     def __init__(self, model: Callable, kind: str, calls: list[dict]):
@@ -166,7 +184,7 @@ class RecordedModel:
                 raise ValueError("Model returned no text")
             return result
         except Exception as exc:
-            record["error"] = {"code": type(exc).__name__}
+            record["error"] = safe_error_metadata(exc)
             raise
         finally:
             record["latency_seconds"] = round(time.perf_counter() - started, 6)
@@ -199,7 +217,7 @@ class BaselineSession:
                 self.state["summary"] = summary[:self.summary_chars]
                 result["summary_truncated"] = len(summary) > self.summary_chars
             except Exception as exc:
-                result["errors"].append({"stage": "summary", "code": type(exc).__name__})
+                result["errors"].append({"stage": "summary", **safe_error_metadata(exc)})
         self.history.extend([{"role": "user", "content": message}, {"role": "assistant", "content": answer}])
         self.history = self.history[-12:]
         return result
@@ -338,10 +356,10 @@ def run_case_arm(case: dict, arm: str, *, url: str, summary_chars: int = 2048,
                 raw = judge(judge_messages(case, result["answer"]), json_mode=True)
                 result["judge_verdict"] = parse_judgment(raw)
             except Exception as exc:
-                result["errors"].append({"stage": "judge", "code": type(exc).__name__})
+                result["errors"].append({"stage": "judge", **safe_error_metadata(exc)})
     except Exception as exc:
         # Exception text/provider bodies may contain endpoints or credentials; retain type and trace data only.
-        result["errors"].append({"stage": "execution", "code": type(exc).__name__})
+        result["errors"].append({"stage": "execution", **safe_error_metadata(exc)})
     finally:
         if memory:
             try:
