@@ -1,0 +1,5128 @@
+{
+  "schema_version": 1,
+  "name": "memory-quality-zh-v1",
+  "description": "100个原创合成中文跨会话案例，覆盖10类记忆行为；每类6个开发案例和4个冻结测试案例。只测试当前五字段事实schema，所有人物和对话均为虚构。",
+  "cases": [
+    {
+      "id": "basic_01",
+      "category": "basic",
+      "split": "dev",
+      "sessions": [
+        [
+          "你好，我叫林知夏。",
+          "我现在长期住在成都。"
+        ]
+      ],
+      "question": "我叫什么，常住哪个城市？",
+      "expected_answer": "你叫林知夏，目前常住成都。",
+      "answer_rubric": "准确回答问题中要求的当前事实；不得从闲聊、说话语言或他人信息推断用户属性。同义表达可以接受。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "成都"
+          ],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "林知夏"
+          ],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": false
+    },
+    {
+      "id": "basic_02",
+      "category": "basic",
+      "split": "dev",
+      "sessions": [
+        [
+          "我平时最喜欢喝美式，不加糖。"
+        ],
+        [
+          "今后和我交流请默认用中文。"
+        ]
+      ],
+      "question": "我的咖啡口味和默认回复语言是什么？",
+      "expected_answer": "你喜欢不加糖的美式，默认回复语言是中文。",
+      "answer_rubric": "必须同时答出美式、不加糖以及中文；只说美式而遗漏糖的偏好不完整。不要从咖啡推断职业。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "美式",
+            "糖"
+          ],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "中文"
+          ],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": false
+    },
+    {
+      "id": "basic_03",
+      "category": "basic",
+      "split": "dev",
+      "sessions": [
+        [
+          "我在社区医院担任护士。",
+          "我的家和工作都在郑州，平时就常住这里。"
+        ]
+      ],
+      "question": "你知道我的工作和居住城市吗？",
+      "expected_answer": "你是护士，目前常住郑州。",
+      "answer_rubric": "准确回答问题中要求的当前事实；不得从闲聊、说话语言或他人信息推断用户属性。同义表达可以接受。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "郑州"
+          ],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "护士"
+          ],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": false
+    },
+    {
+      "id": "basic_04",
+      "category": "basic",
+      "split": "dev",
+      "sessions": [
+        [
+          "Hello, nice to meet you.",
+          "我的名字是宋遥。"
+        ],
+        [
+          "之后所有日常回复都请用日语。"
+        ]
+      ],
+      "question": "请用中文核对我的名字和长期回复语言设置。",
+      "expected_answer": "你的名字是宋遥，长期回复语言设置为日语。",
+      "answer_rubric": "用中文核对姓名宋遥和长期语言日语；最终问题的单次中文要求不应把长期语言覆盖成中文。最初英文问候不构成语言偏好。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "宋遥"
+          ],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "日语"
+          ],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户长期回复语言是英文"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "basic_05",
+      "category": "basic",
+      "split": "dev",
+      "sessions": [
+        [
+          "平时叫我阿梨就好。",
+          "我现在是自由插画师，主要画儿童绘本。"
+        ]
+      ],
+      "question": "你应该怎样称呼我，我从事什么工作？",
+      "expected_answer": "我可以称呼你阿梨；你是自由插画师。",
+      "answer_rubric": "准确回答问题中要求的当前事实；不得从闲聊、说话语言或他人信息推断用户属性。同义表达可以接受。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "阿梨"
+          ],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "插画师"
+          ],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": false
+    },
+    {
+      "id": "basic_06",
+      "category": "basic",
+      "split": "dev",
+      "sessions": [
+        [
+          "厦门是我现在长期居住的城市。"
+        ],
+        [
+          "我日常固定喝馥芮白，喜欢不加糖的。"
+        ]
+      ],
+      "question": "我平时在哪里生活，常喝哪种咖啡？",
+      "expected_answer": "你长期住在厦门，喜欢不加糖的馥芮白。",
+      "answer_rubric": "答出当前城市厦门、馥芮白和不加糖。允许补充这是用户已明确说明的偏好，不能补充奶种或温度。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "厦门"
+          ],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "馥芮白",
+            "糖"
+          ],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": false
+    },
+    {
+      "id": "basic_07",
+      "category": "basic",
+      "split": "test",
+      "sessions": [
+        [
+          "我目前在游戏公司做音效设计师。"
+        ],
+        [
+          "以后请一直用英文回复我。"
+        ]
+      ],
+      "question": "我的职业是什么，长期回复语言选的什么？",
+      "expected_answer": "You work as a game sound designer, and your preferred response language is English.",
+      "answer_rubric": "回答语义包含游戏音效设计师和英文。英文或中文表述的事实均可判语义正确；语言遵从可单独报告，不能因翻译而判事实错。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "音效设计师"
+          ],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "英文"
+          ],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": false
+    },
+    {
+      "id": "basic_08",
+      "category": "basic",
+      "split": "test",
+      "sessions": [
+        [
+          "我是江予舟，平时请直接叫我予舟。"
+        ],
+        [
+          "很高兴开始这次聊天。"
+        ]
+      ],
+      "question": "以后见面时你怎么称呼我？",
+      "expected_answer": "我会称呼你予舟。",
+      "answer_rubric": "优先使用用户指定称呼予舟；存储姓名中包含江予舟和称呼予舟均可，但最终称呼应是予舟。没有明确其他字段。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "予舟"
+          ],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": false
+    },
+    {
+      "id": "basic_09",
+      "category": "basic",
+      "split": "test",
+      "sessions": [
+        [
+          "我目前在昆明定居，工作时常用家里的书桌。"
+        ],
+        [
+          "我长期偏爱冷萃咖啡，不加奶。"
+        ]
+      ],
+      "question": "说说你知道的我的城市和咖啡习惯。",
+      "expected_answer": "你目前定居昆明，偏爱不加奶的冷萃咖啡。",
+      "answer_rubric": "必须包含昆明、冷萃和不加奶；在家使用书桌不足以推断职业或雇佣形式。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "昆明"
+          ],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "冷萃",
+            "奶"
+          ],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": false
+    },
+    {
+      "id": "basic_10",
+      "category": "basic",
+      "split": "test",
+      "sessions": [
+        [
+          "我的正式岗位是设备维修技师。"
+        ],
+        [
+          "日常对话请默认使用法语，我想长期保持这个设置。"
+        ]
+      ],
+      "question": "我的岗位和回复语言分别是什么？",
+      "expected_answer": "Tu es technicien de maintenance des équipements, et tu préfères des réponses en français.",
+      "answer_rubric": "语义正确表达设备维修技师和法语即可，不把学习语言猜成翻译职业。回复中的翻译不要求与参考答案逐字相同。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "设备维修技师"
+          ],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "法语"
+          ],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": false
+    },
+    {
+      "id": "correction_01",
+      "category": "correction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我现在住北京，长期喜欢无糖美式。"
+        ],
+        [
+          "我已经搬到上海了，现在常住上海。"
+        ]
+      ],
+      "question": "我现在住哪儿，咖啡口味变了吗？",
+      "expected_answer": "你现在常住上海；仍然喜欢无糖美式，没有提过咖啡偏好变化。",
+      "answer_rubric": "当前城市必须是上海，咖啡保持无糖美式。可以说明以前在北京，但不能并列为两个当前住址。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "上海"
+          ],
+          "none_of": [
+            "北京"
+          ]
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "美式",
+            "糖"
+          ],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前常住北京"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "correction_02",
+      "category": "correction",
+      "split": "dev",
+      "sessions": [
+        [
+          "以后叫我小禾。"
+        ],
+        [
+          "称呼改一下，往后请叫我禾安。"
+        ]
+      ],
+      "question": "你现在应该怎么称呼我？",
+      "expected_answer": "现在应称呼你禾安。",
+      "answer_rubric": "准确回答问题中要求的当前事实；不得从闲聊、说话语言或他人信息推断用户属性。同义表达可以接受。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "禾安"
+          ],
+          "none_of": [
+            "小禾"
+          ]
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前希望被称呼为小禾"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "correction_03",
+      "category": "correction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我在公司做测试工程师。"
+        ],
+        [
+          "我已经正式转岗为后端开发工程师，测试岗位交接完了。"
+        ]
+      ],
+      "question": "我的当前岗位是什么？",
+      "expected_answer": "你目前是后端开发工程师。",
+      "answer_rubric": "回答当前后端开发岗位。提到已结束的测试经历可以，但不能把两个岗位都当当前职位。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "后端",
+            "工程师"
+          ],
+          "none_of": [
+            "测试工程师"
+          ]
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前仍是测试工程师"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "correction_04",
+      "category": "correction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我平时爱喝加糖拿铁。"
+        ],
+        [
+          "我的长期口味换成无糖美式了，以后都按这个偏好。"
+        ]
+      ],
+      "question": "如果按我的日常喜好推荐咖啡，会是哪种？",
+      "expected_answer": "无糖美式。",
+      "answer_rubric": "准确回答问题中要求的当前事实；不得从闲聊、说话语言或他人信息推断用户属性。同义表达可以接受。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "美式",
+            "糖"
+          ],
+          "none_of": [
+            "拿铁"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前偏爱加糖拿铁"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "correction_05",
+      "category": "correction",
+      "split": "dev",
+      "sessions": [
+        [
+          "平时请默认用英文回复我。"
+        ],
+        [
+          "我改主意了，今后的默认回复语言设为中文。"
+        ]
+      ],
+      "question": "我的长期回复语言设置现在是什么？",
+      "expected_answer": "现在是中文。",
+      "answer_rubric": "准确回答问题中要求的当前事实；不得从闲聊、说话语言或他人信息推断用户属性。同义表达可以接受。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "中文"
+          ],
+          "none_of": [
+            "英文"
+          ]
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前默认回复语言是英文"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "correction_06",
+      "category": "correction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我目前常住常州。"
+        ],
+        [
+          "刚才城市打错了，准确的是苏州，我一直住苏州。"
+        ]
+      ],
+      "question": "我到底常住哪座城市？",
+      "expected_answer": "苏州；先前的常州是输入错误。",
+      "answer_rubric": "必须认定苏州为唯一当前城市；说明常州是错误记录不算泄漏。不得推断发生了搬家。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "苏州"
+          ],
+          "none_of": [
+            "常州"
+          ]
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前常住常州"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "correction_07",
+      "category": "correction",
+      "split": "test",
+      "sessions": [
+        [
+          "我的固定咖啡选择是不加奶的黑咖啡。"
+        ],
+        [
+          "最近正式改了日常口味：现在最喜欢用燕麦奶做的无糖拿铁。"
+        ]
+      ],
+      "question": "我现在通常喜欢怎样的咖啡？",
+      "expected_answer": "你现在喜欢燕麦奶无糖拿铁。",
+      "answer_rubric": "拿铁、燕麦奶和无糖都应保留；不能因旧偏好不加奶而把燕麦奶删除。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "燕麦奶",
+            "拿铁",
+            "糖"
+          ],
+          "none_of": [
+            "黑咖啡"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前偏好不加奶的黑咖啡"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "correction_08",
+      "category": "correction",
+      "split": "test",
+      "sessions": [
+        [
+          "我目前是中学教师。"
+        ],
+        [
+          "我已经离开教学岗，转为学校心理咨询师。"
+        ],
+        [
+          "又换了工作，现在正式做职业规划师，已经不在学校任职。"
+        ]
+      ],
+      "question": "我现在靠什么工作谋生？",
+      "expected_answer": "你目前是职业规划师。",
+      "answer_rubric": "按明确发生的最近一次转岗回答职业规划师；不能把任一历史岗位列成当前工作。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "职业规划师"
+          ],
+          "none_of": [
+            "教师",
+            "心理咨询师"
+          ]
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前是中学教师",
+        "用户当前是学校心理咨询师"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "correction_09",
+      "category": "correction",
+      "split": "test",
+      "sessions": [
+        [
+          "在聊天里叫我雪球吧。"
+        ],
+        [
+          "以后我的称呼换成树莓，雪球这个称呼停用。"
+        ]
+      ],
+      "question": "下次聊天你该叫我什么？",
+      "expected_answer": "树莓。",
+      "answer_rubric": "准确回答问题中要求的当前事实；不得从闲聊、说话语言或他人信息推断用户属性。同义表达可以接受。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "树莓"
+          ],
+          "none_of": [
+            "雪球"
+          ]
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前使用称呼雪球"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "correction_10",
+      "category": "correction",
+      "split": "test",
+      "sessions": [
+        [
+          "我现在常住大连，回复默认用韩语。"
+        ],
+        [
+          "搬家已结束，我如今长期在青岛生活。"
+        ]
+      ],
+      "question": "请用中文确认我的现居城市和默认语言。",
+      "expected_answer": "你现在常住青岛，默认回复语言仍然是韩语。",
+      "answer_rubric": "答出青岛和韩语。单次要求中文核对不改变长期设置；住址更新不能顺带清掉语言偏好。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "青岛"
+          ],
+          "none_of": [
+            "大连"
+          ]
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "韩语"
+          ],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前常住大连",
+        "用户默认语言已改成中文"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "retraction_01",
+      "category": "retraction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我目前住在北京。"
+        ],
+        [
+          "我已经不住北京了，新住址暂时不说。"
+        ]
+      ],
+      "question": "你知道我现在住哪个城市吗？",
+      "expected_answer": "不知道你现在的城市；只知道你已经不住北京了。",
+      "answer_rubric": "当前城市未知，必须明确无法确定。可以明确说已不住北京，但不能猜测新城市或把旧城作为当前答案。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "RETRACTED",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前住在北京"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "retraction_02",
+      "category": "retraction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我长期最喜欢卡布奇诺。"
+        ],
+        [
+          "我已经不再偏爱卡布奇诺了，把那条咖啡偏好撤回吧。"
+        ]
+      ],
+      "question": "我的日常咖啡偏好是什么？",
+      "expected_answer": "你撤回了原来的咖啡偏好，目前没有新的明确偏好。",
+      "answer_rubric": "准确回答当前状态。历史事实可被明确标为过去或已撤回，不能当作当前事实；未提供替代值时应承认不知道。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "RETRACTED",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前偏爱卡布奇诺"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "retraction_03",
+      "category": "retraction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我是会计，平时喜欢无糖美式。"
+        ],
+        [
+          "我已经离开会计岗位，新的职业先不透露。"
+        ]
+      ],
+      "question": "我的现职和咖啡偏好分别是什么？",
+      "expected_answer": "当前职业还不知道；咖啡偏好仍是无糖美式。",
+      "answer_rubric": "只对现职表达未知，同时准确保留无糖美式。离职不等于失业，不能进一步断言当前失业或退休。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "美式",
+            "糖"
+          ],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "RETRACTED",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前是会计"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "retraction_04",
+      "category": "retraction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我的名字叫温言，常住合肥。"
+        ],
+        [
+          "请撤回之前告诉你的我的名字，之后先别用名字称呼我。"
+        ]
+      ],
+      "question": "你还知道我的名字和常住城市吗？",
+      "expected_answer": "你已要求撤回名字，我不再据此称呼你；常住城市仍是合肥。",
+      "answer_rubric": "姓名字段应逻辑撤回，不能再按旧姓名称呼用户，也不必复述旧姓名。城市应保留合肥。此题不要求永久删除历史记录。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "合肥"
+          ],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "RETRACTED",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前可被称呼为温言"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "retraction_05",
+      "category": "retraction",
+      "split": "dev",
+      "sessions": [
+        [
+          "今后固定用日语回答我。"
+        ],
+        [
+          "取消之前固定日语回复的偏好，目前不设固定回复语言。"
+        ]
+      ],
+      "question": "我现在是否有指定长期回复语言？",
+      "expected_answer": "目前没有指定固定的长期回复语言。",
+      "answer_rubric": "说明固定语言设置已取消。不能用本轮中文反推新的中文长期偏好。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "RETRACTED",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前固定要求日语回复"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "retraction_06",
+      "category": "retraction",
+      "split": "dev",
+      "sessions": [
+        [
+          "叫我星河，我常住长沙，是产品设计师。",
+          "我平常喝燕麦奶拿铁。"
+        ],
+        [
+          "撤回我保存的住址和职业，其他信息保留。"
+        ]
+      ],
+      "question": "我的称呼、城市、职业和咖啡口味还分别是什么？",
+      "expected_answer": "称呼是星河，喜欢燕麦奶拿铁；城市和职业已撤回，当前不能确定。",
+      "answer_rubric": "两个被撤回的字段不得作为当前事实提供；称呼和咖啡必须保留。不要因批量撤回而删除全部用户信息。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "RETRACTED",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "燕麦奶",
+            "拿铁"
+          ],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "星河"
+          ],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "RETRACTED",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前常住长沙",
+        "用户当前是产品设计师"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "retraction_07",
+      "category": "retraction",
+      "split": "test",
+      "sessions": [
+        [
+          "我在天津定居。"
+        ],
+        [
+          "之前说在天津定居是错误信息，我没有在那里定居过，请撤销那条记录。"
+        ]
+      ],
+      "question": "关于我的现居城市，你有什么可靠结论？",
+      "expected_answer": "目前没有可靠的现居城市信息，天津那条已经撤销。",
+      "answer_rubric": "明确当前城市未知，不把错误记录改写成曾经住过天津的历史事实；用户已否认这段经历。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "RETRACTED",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前定居天津"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "retraction_08",
+      "category": "retraction",
+      "split": "test",
+      "sessions": [
+        [
+          "我目前是一名研发实习生。"
+        ],
+        [
+          "那份实习昨天结束了，我已经不是研发实习生。"
+        ]
+      ],
+      "question": "我的当前职位还能确定吗？",
+      "expected_answer": "不能确定，研发实习生这份职位已经结束，你未说明新职位。",
+      "answer_rubric": "撤回已结束的职位并承认新职位未知。不能推断已转正、正在失业、继续上学或其他职业。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "RETRACTED",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前是研发实习生"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "retraction_09",
+      "category": "retraction",
+      "split": "test",
+      "sessions": [
+        [
+          "我的固定口味是热摩卡配豆奶。"
+        ],
+        [
+          "请撤回保存的咖啡偏好，我不希望今后再用它做推荐。"
+        ]
+      ],
+      "question": "按你保存的信息，我平时想喝什么咖啡？",
+      "expected_answer": "你已要求撤回咖啡偏好，目前不能据此推荐。",
+      "answer_rubric": "咖啡字段应逻辑撤回，不应复述已失效口味或以历史记录为由继续推荐。说明目前缺少有效偏好；此题不验证永久删除历史。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "RETRACTED",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前偏好热摩卡配豆奶"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "retraction_10",
+      "category": "retraction",
+      "split": "test",
+      "sessions": [
+        [
+          "我常住南京，默认请用英文回复。"
+        ],
+        [
+          "我已经结束在南京的定居生活，现在四处短租，还没有固定常住城市。"
+        ]
+      ],
+      "question": "请用中文说说我的常住城市和长期回复语言。",
+      "expected_answer": "目前没有确定的常住城市；长期回复语言仍是英文。",
+      "answer_rubric": "城市无确定值，英文偏好保留；四处短租不支持猜测新的城市，最终单次中文核对不覆盖长期语言。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "RETRACTED",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "英文"
+          ],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前常住南京",
+        "用户长期回复语言已改为中文"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "temporal_01",
+      "category": "temporal",
+      "split": "dev",
+      "sessions": [
+        [
+          "我现在常住武汉。"
+        ],
+        [
+          "本科那四年我住在西安，毕业就离开了。"
+        ]
+      ],
+      "question": "我现在长期生活在哪儿？",
+      "expected_answer": "你现在常住武汉。",
+      "answer_rubric": "只以武汉回答当前住址。后来提起的西安是过去经历，消息写入时间较新不等于事实更新。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "武汉"
+          ],
+          "none_of": [
+            "西安"
+          ]
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前常住西安"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "temporal_02",
+      "category": "temporal",
+      "split": "dev",
+      "sessions": [
+        [
+          "我目前是土木工程师。"
+        ],
+        [
+          "大学暑假我在咖啡店当过咖啡师，那是很久以前的兼职。"
+        ]
+      ],
+      "question": "我的现职是什么？",
+      "expected_answer": "你目前是土木工程师。",
+      "answer_rubric": "保留当前土木工程师；不得把后来提起的过去兼职覆盖当前职位，也不要由咖啡店经历推断饮品偏好。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "土木工程师"
+          ],
+          "none_of": [
+            "咖啡师"
+          ]
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前是咖啡师"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "temporal_03",
+      "category": "temporal",
+      "split": "dev",
+      "sessions": [
+        [
+          "现在我固定喜欢不加糖的美式。"
+        ],
+        [
+          "高中时我特别爱喝很甜的拿铁，那会儿总和同学一起买。"
+        ]
+      ],
+      "question": "按照现在的口味，我喜欢什么咖啡？",
+      "expected_answer": "现在喜欢不加糖的美式。",
+      "answer_rubric": "当前偏好是无糖美式；高中经历可标为过去，不能成为当前推荐。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "美式",
+            "糖"
+          ],
+          "none_of": [
+            "拿铁"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前偏爱甜拿铁"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "temporal_04",
+      "category": "temporal",
+      "split": "dev",
+      "sessions": [
+        [
+          "之后日常回复请默认用中文。"
+        ],
+        [
+          "两年前我曾让另一个助手默认用英文，那个设置早就停用了。"
+        ]
+      ],
+      "question": "这个助手现在应默认用什么语言？",
+      "expected_answer": "中文。",
+      "answer_rubric": "当前助手保持中文；过去另一个助手已停用的设置不能迁移为当前设置。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "中文"
+          ],
+          "none_of": [
+            "英文"
+          ]
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前默认语言是英文"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "temporal_05",
+      "category": "temporal",
+      "split": "dev",
+      "sessions": [
+        [
+          "现在聊天请叫我清岚。"
+        ],
+        [
+          "读书时大家都叫我小岚，后来我不用那个称呼了。"
+        ]
+      ],
+      "question": "现在你该怎么叫我？",
+      "expected_answer": "清岚。",
+      "answer_rubric": "使用当前指定清岚；旧昵称只是历史说明，不能覆盖当前称呼。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "清岚"
+          ],
+          "none_of": [
+            "小岚"
+          ]
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户现在希望被称呼为小岚"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "temporal_06",
+      "category": "temporal",
+      "split": "dev",
+      "sessions": [
+        [
+          "我之前住沈阳，今年年初已经搬到宁波并在那里定居了。"
+        ],
+        [
+          "刚翻到去年沈阳那套出租屋的照片。"
+        ]
+      ],
+      "question": "我现在的常住城市是哪一个？",
+      "expected_answer": "宁波。",
+      "answer_rubric": "识别已完成搬家，当前为宁波；照片和出租屋回忆没有新增当前住址信息。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "宁波"
+          ],
+          "none_of": [
+            "沈阳"
+          ]
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前常住沈阳"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "temporal_07",
+      "category": "temporal",
+      "split": "test",
+      "sessions": [
+        [
+          "我现在在书店工作，岗位是图书采购员。"
+        ],
+        [
+          "五年前参与科研项目时，我做过研究助理，那个项目已经结束。"
+        ]
+      ],
+      "question": "我现在的工作角色是什么？",
+      "expected_answer": "图书采购员。",
+      "answer_rubric": "必须答图书采购员，不能被晚提到的过往科研角色覆盖。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "图书采购员"
+          ],
+          "none_of": [
+            "研究助理"
+          ]
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前是研究助理"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "temporal_08",
+      "category": "temporal",
+      "split": "test",
+      "sessions": [
+        [
+          "如今我的咖啡习惯是燕麦奶拿铁，不加糖。"
+        ],
+        [
+          "去年我还只喝加糖速溶咖啡，现在回想起来口味差别挺大。"
+        ]
+      ],
+      "question": "我的现有咖啡偏好包含哪些内容？",
+      "expected_answer": "燕麦奶拿铁，不加糖。",
+      "answer_rubric": "保留拿铁、燕麦奶、不加糖三点。去年加糖速溶是历史，不得混入当前糖量或种类。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "燕麦奶",
+            "拿铁",
+            "糖"
+          ],
+          "none_of": [
+            "速溶"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前固定喝加糖速溶咖啡"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "temporal_09",
+      "category": "temporal",
+      "split": "test",
+      "sessions": [
+        [
+          "我目前长期生活在福州。"
+        ],
+        [
+          "小时候我在哈尔滨住过六年，初中之后就离开了。",
+          "今天整理的是哈尔滨时期的家庭相册。"
+        ]
+      ],
+      "question": "现在的我住在哪里？",
+      "expected_answer": "你目前长期住在福州。",
+      "answer_rubric": "回答福州。两次哈尔滨历史提及也不能通过频率或新近消息覆盖当前事实。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "福州"
+          ],
+          "none_of": [
+            "哈尔滨"
+          ]
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前常住哈尔滨"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "temporal_10",
+      "category": "temporal",
+      "split": "test",
+      "sessions": [
+        [
+          "日常请称呼我许南星。"
+        ],
+        [
+          "以前发表小说时用过笔名洛川，如今那个笔名停用了。"
+        ]
+      ],
+      "question": "平常聊天你该怎样称呼我？",
+      "expected_answer": "许南星。",
+      "answer_rubric": "当前聊天称呼为许南星；历史笔名不能当成新姓名或称呼。不要从曾发表小说推断当前职业。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "许南星"
+          ],
+          "none_of": [
+            "洛川"
+          ]
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前要求被称呼为洛川"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "attribution_01",
+      "category": "attribution",
+      "split": "dev",
+      "sessions": [
+        [
+          "我日常喜欢无糖美式。"
+        ],
+        [
+          "我姐姐最爱焦糖拿铁，她每周都会买。"
+        ]
+      ],
+      "question": "我本人喜欢什么咖啡？",
+      "expected_answer": "你喜欢无糖美式。",
+      "answer_rubric": "用户偏好保持无糖美式；姐姐的高频购买不构成用户偏好。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "美式",
+            "糖"
+          ],
+          "none_of": [
+            "拿铁"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户本人偏爱焦糖拿铁"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "attribution_02",
+      "category": "attribution",
+      "split": "dev",
+      "sessions": [
+        [
+          "我朋友程越住在广州，最近在找附近的书店。"
+        ],
+        [
+          "能聊聊怎样选择一家社区书店吗？"
+        ]
+      ],
+      "question": "你知道我现在住哪座城市吗？",
+      "expected_answer": "不知道，你只提过朋友程越住在广州。",
+      "answer_rubric": "用户城市未知，不能把朋友城市或名字记到用户。允许说明已知的是朋友信息，但不应肯定用户也住广州。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户本人常住广州",
+        "用户姓名是程越"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "attribution_03",
+      "category": "attribution",
+      "split": "dev",
+      "sessions": [
+        [
+          "我现在做前端开发工程师。"
+        ],
+        [
+          "我妈妈是一名小学教师，她最近在准备公开课。"
+        ]
+      ],
+      "question": "我的当前职业是什么？",
+      "expected_answer": "前端开发工程师。",
+      "answer_rubric": "区分用户本人和其他主体、当前事实和尚未发生的设想。缺乏用户明确事实时承认未知，不把对话内容中的属性自动记到用户名下。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "前端",
+            "工程师"
+          ],
+          "none_of": [
+            "教师"
+          ]
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户本人是小学教师"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "attribution_04",
+      "category": "attribution",
+      "split": "dev",
+      "sessions": [
+        [
+          "帮我润色这段小说开头：我叫陆远，住在杭州，是一名律师。"
+        ],
+        [
+          "小说主人公后面会收到一封没有署名的信。"
+        ]
+      ],
+      "question": "你知道我的姓名、住址城市和职业吗？",
+      "expected_answer": "目前不知道你的这些信息；陆远、杭州和律师属于小说人物。",
+      "answer_rubric": "三个用户字段都未知。带第一人称的小说文本不是用户自述，不能因此写入任一字段。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户姓名是陆远",
+        "用户目前住在杭州",
+        "用户本人是律师"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "attribution_05",
+      "category": "attribution",
+      "split": "dev",
+      "sessions": [
+        [
+          "这是客户发来的原话：“以后请用英文给我发消息。”帮我分析语气是否礼貌。"
+        ],
+        [
+          "这位客户还说自己在伦敦开了工作室。"
+        ]
+      ],
+      "question": "我给你指定过长期回复语言或常住城市吗？",
+      "expected_answer": "你没有明确指定自己的长期回复语言或常住城市；提到的是客户。",
+      "answer_rubric": "两个用户字段都未知。引用客户的第一人称语言请求不可成为当前助手对用户的长期设置。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户默认回复语言是英文",
+        "用户本人常住伦敦"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "attribution_06",
+      "category": "attribution",
+      "split": "dev",
+      "sessions": [
+        [
+          "我现在常住重庆。"
+        ],
+        [
+          "室友的老家是贵阳，他父母一直在那里生活。"
+        ]
+      ],
+      "question": "我现在常住哪儿？",
+      "expected_answer": "重庆。",
+      "answer_rubric": "用户当前重庆；室友老家及其父母城市均不可覆盖。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "重庆"
+          ],
+          "none_of": [
+            "贵阳"
+          ]
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户本人常住贵阳"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "attribution_07",
+      "category": "attribution",
+      "split": "test",
+      "sessions": [
+        [
+          "我的名字是叶初。"
+        ],
+        [
+          "舞台剧里有句台词：“叫我阿洛，我是船长。”帮我想想怎么表演。"
+        ]
+      ],
+      "question": "你应该怎样称呼我，你知道我的真实职业吗？",
+      "expected_answer": "应称呼你叶初；你的职业还不知道。",
+      "answer_rubric": "叶初保留，职业明确未知；剧中第一人称台词不改变用户姓名或职业。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "叶初"
+          ],
+          "none_of": [
+            "阿洛"
+          ]
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户本人叫阿洛",
+        "用户本人是船长"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "attribution_08",
+      "category": "attribution",
+      "split": "test",
+      "sessions": [
+        [
+          "同事给我发来这条消息：“我已经换岗，现在是数据分析师，常住苏州。”"
+        ],
+        [
+          "帮我拟一句祝贺他换岗顺利的话。"
+        ]
+      ],
+      "question": "我现在是什么岗位，住哪座城？",
+      "expected_answer": "目前不知道你的岗位和城市；数据分析师、苏州是同事的信息。",
+      "answer_rubric": "区分用户本人和其他主体、当前事实和尚未发生的设想。缺乏用户明确事实时承认未知，不把对话内容中的属性自动记到用户名下。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户本人是数据分析师",
+        "用户本人常住苏州"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "attribution_09",
+      "category": "attribution",
+      "split": "test",
+      "sessions": [
+        [
+          "今后跟我交流请默认用中文。"
+        ],
+        [
+          "我的搭档要求他自己的助手长期用日语回复，我想了解两种语言输入法的区别。"
+        ]
+      ],
+      "question": "我这边的默认回复语言是什么？",
+      "expected_answer": "中文。",
+      "answer_rubric": "区分两个用户和两个助手；当前用户仍为中文。输入法问题不构成偏好更新。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "中文"
+          ],
+          "none_of": [
+            "日语"
+          ]
+        }
+      },
+      "forbidden_current_claims": [
+        "用户默认回复语言是日语"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "attribution_10",
+      "category": "attribution",
+      "split": "test",
+      "sessions": [
+        [
+          "这是一张虚构人物卡：名字顾澄，常住无锡，职业摄影师，喜欢摩卡，默认交流用德语。"
+        ],
+        [
+          "请检查这张人物卡有没有明显的逻辑冲突。"
+        ]
+      ],
+      "question": "你已经掌握我自己的名字、城市、职业、咖啡偏好和回复语言了吗？",
+      "expected_answer": "还没有，这五项只出现在虚构人物卡里，并不是你的个人信息。",
+      "answer_rubric": "五项都不能归属于用户。回答应明确用户资料未知，而非把虚构卡片完整复述为用户档案。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户姓名是顾澄",
+        "用户常住无锡",
+        "用户是摄影师",
+        "用户偏好摩卡",
+        "用户默认回复语言是德语"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "tentative_01",
+      "category": "tentative",
+      "split": "dev",
+      "sessions": [
+        [
+          "我目前常住成都。"
+        ],
+        [
+          "下周我要去三亚度假五天，正在看海边酒店。"
+        ]
+      ],
+      "question": "我现在的长期居住城市是什么？",
+      "expected_answer": "成都。",
+      "answer_rubric": "短期度假不改变常住城市；不能因最近一次地名提及而回答三亚。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "成都"
+          ],
+          "none_of": [
+            "三亚"
+          ]
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户已常住三亚"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "tentative_02",
+      "category": "tentative",
+      "split": "dev",
+      "sessions": [
+        [
+          "我现在是实验室助理。"
+        ],
+        [
+          "我希望十年后能成为教授，最近在看博士招生信息。"
+        ]
+      ],
+      "question": "我的当前工作角色是什么？",
+      "expected_answer": "实验室助理。",
+      "answer_rubric": "未来理想和看招生信息均不是已发生的职业变化，保持实验室助理。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "实验室助理"
+          ],
+          "none_of": [
+            "教授"
+          ]
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前是教授",
+        "用户当前已是博士生"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "tentative_03",
+      "category": "tentative",
+      "split": "dev",
+      "sessions": [
+        [
+          "我平时长期喜欢无糖拿铁。"
+        ],
+        [
+          "今天聚会我想点一杯焦糖玛奇朵，试试朋友推荐的味道。"
+        ]
+      ],
+      "question": "我通常喜欢的咖啡是什么？",
+      "expected_answer": "通常喜欢无糖拿铁。",
+      "answer_rubric": "单次点单不改长期偏好。可以说今天尝试过其他饮品，但日常偏好仍是无糖拿铁。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "拿铁",
+            "糖"
+          ],
+          "none_of": [
+            "玛奇朵"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户长期偏好焦糖玛奇朵"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "tentative_04",
+      "category": "tentative",
+      "split": "dev",
+      "sessions": [
+        [
+          "我在考虑明年搬到杭州，也可能选南京，还没定。"
+        ],
+        [
+          "先帮我比较两座城市的公共交通吧。"
+        ]
+      ],
+      "question": "我现在住在哪座城市？",
+      "expected_answer": "你没有说明现在的居住城市；杭州和南京都只是考虑中的未来选择。",
+      "answer_rubric": "不能从未来选项推断现在住址，也不能把两个候选城市一起作为当前事实保存。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前常住杭州",
+        "用户当前常住南京"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "tentative_05",
+      "category": "tentative",
+      "split": "dev",
+      "sessions": [
+        [
+          "以后请默认用中文与我交流。"
+        ],
+        [
+          "把这句话翻译成英文：请在周五前寄出样品。"
+        ]
+      ],
+      "question": "我的长期回复语言还是哪一种？",
+      "expected_answer": "中文。",
+      "answer_rubric": "翻译任务和一次性输出英文不修改长期中文设置；不要从待翻译句子推断用户职业。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "中文"
+          ],
+          "none_of": [
+            "英文"
+          ]
+        }
+      },
+      "forbidden_current_claims": [
+        "用户长期回复语言已改为英文"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "tentative_06",
+      "category": "tentative",
+      "split": "dev",
+      "sessions": [
+        [
+          "如果我以后开一个播客，可能会取名叫海盐。"
+        ],
+        [
+          "也可能用月台这个名字，现在只是想节目名称。"
+        ]
+      ],
+      "question": "你知道应该怎样称呼我本人吗？",
+      "expected_answer": "还不知道，你只讨论了未来播客的候选名称。",
+      "answer_rubric": "节目名不等于人名，候选名称也非明确指定称呼。不得选一个顺口的名称给用户。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户本人希望被称呼为海盐",
+        "用户本人希望被称呼为月台"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "tentative_07",
+      "category": "tentative",
+      "split": "test",
+      "sessions": [
+        [
+          "我目前是学校图书管理员。"
+        ],
+        [
+          "我准备明年考公务员，这个月开始复习，但还没报名。"
+        ]
+      ],
+      "question": "我现在已经是公务员了吗？现职是什么？",
+      "expected_answer": "还不能说是公务员；你目前是学校图书管理员。",
+      "answer_rubric": "应明确区分备考和入职，当前图书管理员不变。否认已成为公务员不算错误提及旧事实。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "图书管理员"
+          ],
+          "none_of": [
+            "公务员"
+          ]
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户已经是公务员"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "tentative_08",
+      "category": "tentative",
+      "split": "test",
+      "sessions": [
+        [
+          "假如我每天早上都喝双份浓缩，会不会容易睡不着？"
+        ],
+        [
+          "我是在替一个小说情节做设想。"
+        ]
+      ],
+      "question": "我的长期咖啡偏好是什么？",
+      "expected_answer": "目前不知道，你只提出了一个假设情节。",
+      "answer_rubric": "区分用户本人和其他主体、当前事实和尚未发生的设想。缺乏用户明确事实时承认未知，不把对话内容中的属性自动记到用户名下。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户长期偏好双份浓缩"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "tentative_09",
+      "category": "tentative",
+      "split": "test",
+      "sessions": [
+        [
+          "周末打算参加咖啡品鉴，会试冷萃、摩卡和卡布奇诺。"
+        ],
+        [
+          "报名表让大家先了解这三种饮品的制作方法。"
+        ]
+      ],
+      "question": "你能确定我平常最爱喝哪一种吗？",
+      "expected_answer": "不能，这些只是计划品鉴的饮品，没有明确你的日常偏好。",
+      "answer_rubric": "试饮清单不能变成长期偏好，多项候选同样不能全部存为用户喜欢。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户日常偏爱冷萃",
+        "用户日常偏爱摩卡",
+        "用户日常偏爱卡布奇诺"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "tentative_10",
+      "category": "tentative",
+      "split": "test",
+      "sessions": [
+        [
+          "我现在长期住在济南。"
+        ],
+        [
+          "这周出差，酒店在青岛，快递暂时寄到酒店前台。"
+        ]
+      ],
+      "question": "如果填写我的常住城市，该填哪里？",
+      "expected_answer": "济南。",
+      "answer_rubric": "出差住宿和临时收件地址都不能替换常住济南；无需推断出差结束日期。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "济南"
+          ],
+          "none_of": [
+            "青岛"
+          ]
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户已经定居青岛"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "partial_01",
+      "category": "partial",
+      "split": "dev",
+      "sessions": [
+        [
+          "我平常喜欢无糖拿铁，用普通牛奶。"
+        ],
+        [
+          "我把日常拿铁的奶换成燕麦奶了，其他口味照旧。"
+        ]
+      ],
+      "question": "按我现在的偏好，咖啡类型、奶和糖该怎么选？",
+      "expected_answer": "拿铁，使用燕麦奶，不加糖。",
+      "answer_rubric": "三项必须同时正确：拿铁、燕麦奶、不加糖。仅答燕麦奶而丢掉糖和种类也算不完整。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "拿铁",
+            "燕麦奶",
+            "糖"
+          ],
+          "none_of": [
+            "普通牛奶"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户现在拿铁仍使用普通牛奶",
+        "用户当前拿铁要加糖"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "partial_02",
+      "category": "partial",
+      "split": "dev",
+      "sessions": [
+        [
+          "我日常喜欢热美式，不加糖。"
+        ],
+        [
+          "以后我的美式都改成冰的，糖还是不加。"
+        ]
+      ],
+      "question": "现在我喜欢哪种咖啡，冷热和糖怎么选？",
+      "expected_answer": "冰美式，不加糖。",
+      "answer_rubric": "当前需冰美式且无糖。温度改变不能丢失种类或无糖属性。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "美式",
+            "冰",
+            "糖"
+          ],
+          "none_of": [
+            "热美式"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户现在偏好热美式",
+        "用户现在美式要加糖"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "partial_03",
+      "category": "partial",
+      "split": "dev",
+      "sessions": [
+        [
+          "我的长期咖啡口味是卡布奇诺，全脂奶，不加糖。"
+        ],
+        [
+          "奶改用脱脂奶吧，日常咖啡的其他偏好不变。"
+        ]
+      ],
+      "question": "复述我现在的完整咖啡偏好。",
+      "expected_answer": "卡布奇诺，用脱脂奶，不加糖。",
+      "answer_rubric": "脱脂奶替换全脂奶，卡布奇诺和不加糖保留；不能只存奶种或误改为拿铁。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "卡布奇诺",
+            "脱脂奶",
+            "糖"
+          ],
+          "none_of": [
+            "全脂奶"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前使用全脂奶做卡布奇诺"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "partial_04",
+      "category": "partial",
+      "split": "dev",
+      "sessions": [
+        [
+          "我平时喜欢燕麦奶拿铁，一直不加糖。"
+        ],
+        [
+          "从现在起我的日常拿铁改成加一勺糖，奶不变。"
+        ]
+      ],
+      "question": "我现在的拿铁配方是什么？",
+      "expected_answer": "燕麦奶拿铁，加一勺糖。",
+      "answer_rubric": "必须保留燕麦奶，甜度已明确改成一勺糖；不能用先前无糖覆盖本次更新。一勺和一茶匙不能自动等同，避免擅加容量。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "燕麦奶",
+            "拿铁",
+            "糖"
+          ],
+          "none_of": [
+            "不加糖",
+            "无糖"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前拿铁不加糖",
+        "用户当前拿铁改用普通牛奶"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "partial_05",
+      "category": "partial",
+      "split": "dev",
+      "sessions": [
+        [
+          "我平常喝冰美式，不加奶也不加糖。"
+        ],
+        [
+          "日常那杯以后改热的，别的都一样。"
+        ]
+      ],
+      "question": "我现在日常那杯咖啡应该怎么做？",
+      "expected_answer": "热美式，不加奶、不加糖。",
+      "answer_rubric": "温度改热，咖啡种类、无奶和无糖三项均需保留。提到奶和糖必须是否定加入。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "美式",
+            "热",
+            "奶",
+            "糖"
+          ],
+          "none_of": [
+            "冰美式"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前日常咖啡是冰美式",
+        "用户当前美式需要加奶或加糖"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "partial_06",
+      "category": "partial",
+      "split": "dev",
+      "sessions": [
+        [
+          "我长期喜欢豆奶摩卡，半糖。"
+        ],
+        [
+          "以后喝的都取消加糖，豆奶和摩卡保留。"
+        ]
+      ],
+      "question": "我现在的咖啡口味有哪些要点？",
+      "expected_answer": "豆奶摩卡，不额外加糖。",
+      "answer_rubric": "答豆奶、摩卡、不额外加糖。摩卡原料可能含糖，因此不应夸大为整杯绝对零糖；本题检查添加糖偏好的改变。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "豆奶",
+            "摩卡",
+            "糖"
+          ],
+          "none_of": [
+            "半糖"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户现在仍要求半糖"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "partial_07",
+      "category": "partial",
+      "split": "test",
+      "sessions": [
+        [
+          "我的固定选择是脱咖啡因拿铁，燕麦奶，不加糖。"
+        ],
+        [
+          "以后咖啡豆换成正常含咖啡因的，其余配方继续保持。"
+        ]
+      ],
+      "question": "把我的当前咖啡偏好完整说一下。",
+      "expected_answer": "正常含咖啡因的燕麦奶拿铁，不加糖。",
+      "answer_rubric": "含咖啡因状态改变，奶、糖、种类保留。不能把正常含咖啡因误成额外添加咖啡因或改成双份。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "拿铁",
+            "燕麦奶",
+            "糖",
+            "咖啡因"
+          ],
+          "none_of": [
+            "脱咖啡因"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前仍偏好脱咖啡因拿铁"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "partial_08",
+      "category": "partial",
+      "split": "test",
+      "sessions": [
+        [
+          "我平时最喜欢双份浓缩，不加糖。"
+        ],
+        [
+          "以后日常喝单份就好，其他不改。"
+        ]
+      ],
+      "question": "我现在偏好的种类、份量和甜度是什么？",
+      "expected_answer": "单份浓缩，不加糖。",
+      "answer_rubric": "单份浓缩和不加糖均需正确；单份、一份等同义表达可以。不要由份量变化推断健康原因。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "浓缩",
+            "糖"
+          ],
+          "none_of": [
+            "双份"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前偏好双份浓缩"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "partial_09",
+      "category": "partial",
+      "split": "test",
+      "sessions": [
+        [
+          "我的长期偏好是热馥芮白，低脂奶，不加糖。"
+        ],
+        [
+          "从今天起默认用全脂奶，其他口味设定照旧。"
+        ]
+      ],
+      "question": "我现在平时那杯咖啡的完整偏好是什么？",
+      "expected_answer": "热馥芮白，全脂奶，不加糖。",
+      "answer_rubric": "四个属性都保留或更新正确：馥芮白、热、全脂奶、不加糖。不能只回答奶种。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "馥芮白",
+            "热",
+            "全脂奶",
+            "糖"
+          ],
+          "none_of": [
+            "低脂奶"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前馥芮白默认用低脂奶"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "partial_10",
+      "category": "partial",
+      "split": "test",
+      "sessions": [
+        [
+          "我日常喜欢热拿铁，椰奶，不加糖。"
+        ],
+        [
+          "以后固定换成冰的，再把椰奶改为燕麦奶，甜度不动。"
+        ]
+      ],
+      "question": "我的日常咖啡现在怎么配？",
+      "expected_answer": "冰拿铁，燕麦奶，不加糖。",
+      "answer_rubric": "两个属性同时改变、两个属性保留：冰、燕麦奶、拿铁、无糖。不得因没重述无糖而删掉它。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "拿铁",
+            "冰",
+            "燕麦奶",
+            "糖"
+          ],
+          "none_of": [
+            "椰奶",
+            "热拿铁"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户现在偏好热拿铁",
+        "用户现在拿铁用椰奶"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "reference_01",
+      "category": "reference",
+      "split": "dev",
+      "sessions": [
+        [
+          "我之前在比较南京和杭州两座城市，准备选一个定居。",
+          "现在已经搬进后者的新家，正式在那里长期生活了。"
+        ]
+      ],
+      "question": "我已经定居在哪座城市？",
+      "expected_answer": "杭州。",
+      "answer_rubric": "同一会话中后者指杭州，且第二条明确搬家完成和长期居住；应形成杭州当前事实，不能因没有重复地名而丢掉事实。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "杭州"
+          ],
+          "none_of": [
+            "南京"
+          ]
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前定居南京"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "reference_02",
+      "category": "reference",
+      "split": "dev",
+      "sessions": [
+        [
+          "我在美式和拿铁之间尝了很久，终于想好自己的日常口味了。",
+          "今后长期选择前者，而且不加糖。"
+        ]
+      ],
+      "question": "我日常喜欢什么咖啡，糖怎么加？",
+      "expected_answer": "美式，不加糖。",
+      "answer_rubric": "前者指美式，第二条明确长期选择；不要仅存无糖而丢失种类，也不能把试过的两个种类都列为偏好。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "美式",
+            "糖"
+          ],
+          "none_of": [
+            "拿铁"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前日常偏爱拿铁"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "reference_03",
+      "category": "reference",
+      "split": "dev",
+      "sessions": [
+        [
+          "我的名字是沈清岚。",
+          "刚才名字中间的字写错了，应该是青草的青，姓和最后一个字都不变。"
+        ]
+      ],
+      "question": "我的正确名字是什么？",
+      "expected_answer": "沈青岚。",
+      "answer_rubric": "根据同会话字词更正组合出沈青岚；不能只把名字存成青或保持原错别字。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "沈青岚"
+          ],
+          "none_of": [
+            "沈清岚"
+          ]
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户正确姓名是沈清岚"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "reference_04",
+      "category": "reference",
+      "split": "dev",
+      "sessions": [
+        [
+          "我是数据分析师。",
+          "刚才说的岗位其实是我同事的，我本人现在做数据库管理员。"
+        ]
+      ],
+      "question": "我的当前职位是什么？",
+      "expected_answer": "数据库管理员。",
+      "answer_rubric": "明确更正主体后，当前用户职位是数据库管理员；第一条被撤销的错误归属不能保留为兼任岗位。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "数据库管理员"
+          ],
+          "none_of": [
+            "数据分析师"
+          ]
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户本人是数据分析师"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "reference_05",
+      "category": "reference",
+      "split": "dev",
+      "sessions": [
+        [
+          "我们先约定选项A是中文，选项B是日语。",
+          "今后你的日常回复默认采用选项B。"
+        ]
+      ],
+      "question": "我设定的长期回复语言是什么？",
+      "expected_answer": "日语。",
+      "answer_rubric": "从同会话选项映射解析B为日语；仅保存字母B不满足可用的语言事实。最终回答用哪种语言可独立评估。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "日语"
+          ],
+          "none_of": [
+            "中文"
+          ]
+        }
+      },
+      "forbidden_current_claims": [
+        "用户默认回复语言是中文"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "reference_06",
+      "category": "reference",
+      "split": "dev",
+      "sessions": [
+        [
+          "我想把日常咖啡的甜度设为无糖；温度和种类还没说。",
+          "种类定为拿铁，温度固定选热的，刚才说的甜度照用。"
+        ]
+      ],
+      "question": "我的日常咖啡是什么类型、温度和甜度？",
+      "expected_answer": "热拿铁，不加糖。",
+      "answer_rubric": "两个用户消息合并为热拿铁无糖。第一条仅明确糖，不能擅加种类；第二条补齐后须保留无糖。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "拿铁",
+            "热",
+            "糖"
+          ],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": false
+    },
+    {
+      "id": "reference_07",
+      "category": "reference",
+      "split": "test",
+      "sessions": [
+        [
+          "以后称呼我两个字：第一个字是雨，第二个字稍后告诉你。",
+          "第二个字是桐，前面那个字不变，这就是我平时希望用的称呼。"
+        ]
+      ],
+      "question": "我希望你怎么称呼我？",
+      "expected_answer": "雨桐。",
+      "answer_rubric": "两个同会话用户消息共同确定称呼雨桐；不得仅记最后一个字或自行添加姓氏。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "雨桐"
+          ],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户完整称呼只有桐"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "reference_08",
+      "category": "reference",
+      "split": "test",
+      "sessions": [
+        [
+          "说到岗位，编辑和校对员这两个称呼很容易混淆，我接下来说明自己的情况。",
+          "我现在正式担任第二种，第一种不是我的岗位。"
+        ]
+      ],
+      "question": "我具体从事哪种岗位？",
+      "expected_answer": "校对员。",
+      "answer_rubric": "第二种对应校对员，且明确当前正式岗位；仅列出候选不能算答案，需选定正确角色。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "校对员"
+          ],
+          "none_of": [
+            "编辑"
+          ]
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前是编辑"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "reference_09",
+      "category": "reference",
+      "split": "test",
+      "sessions": [
+        [
+          "候选回复语言按顺序是法语、西班牙语、意大利语。",
+          "长期设置就用中间那种，从今往后按它回复。"
+        ]
+      ],
+      "question": "我最后选定的默认回复语言是什么？",
+      "expected_answer": "西班牙语。",
+      "answer_rubric": "中间那种指西班牙语。不能把列举的三个选项都保存为默认语言，也不能将它解释为任意偏好。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "西班牙语"
+          ],
+          "none_of": [
+            "法语",
+            "意大利语"
+          ]
+        }
+      },
+      "forbidden_current_claims": [
+        "用户默认回复语言是法语",
+        "用户默认回复语言是意大利语"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "reference_10",
+      "category": "reference",
+      "split": "test",
+      "sessions": [
+        [
+          "我刚才写的两座城市，前一个是无锡，后一个是嘉兴。",
+          "我真正长期住的是前一个，后一个只是上周开会的地方。"
+        ]
+      ],
+      "question": "我现在常住哪里？",
+      "expected_answer": "无锡。",
+      "answer_rubric": "前一个指无锡，嘉兴是短期会议地点。对同会话指代应正确解析并保存用户明确当前住址。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "无锡"
+          ],
+          "none_of": [
+            "嘉兴"
+          ]
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户目前常住嘉兴"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "distraction_01",
+      "category": "distraction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我叫安禾，现在长期住在南昌。",
+          "17乘以6是多少？",
+          "解释一下为什么会出现彩虹。"
+        ],
+        [
+          "给小学生解释蒸发和沸腾的区别。",
+          "把句子“会议从下午两点开始”改得简洁一点。",
+          "一公里有多少米？"
+        ],
+        [
+          "阅读这句新闻练习：“游客从长沙乘车到武汉。”其中起点是哪座城？",
+          "请给三个用于描述晴天的词语。"
+        ]
+      ],
+      "question": "我叫什么，现在住在哪座城市？",
+      "expected_answer": "你叫安禾，现在常住南昌。",
+      "answer_rubric": "经过多个新会话的无关任务后仍能答出安禾和南昌；练习中的城市不应进入个人档案。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "南昌"
+          ],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "安禾"
+          ],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户常住长沙",
+        "用户常住武汉"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "distraction_02",
+      "category": "distraction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我日常最喜欢燕麦奶拿铁，不加糖。",
+          "5公斤等于多少克？",
+          "说说咖啡豆水洗处理法是什么。"
+        ],
+        [
+          "解释一下二分查找的大致思路。",
+          "给“窗外下起雨”续写一句环境描写。",
+          "把hello翻译成中文。"
+        ],
+        [
+          "一道数学题：一杯饮料8元，买3杯多少钱？",
+          "请区分烘焙和烹饪这两个词。"
+        ]
+      ],
+      "question": "我现在长期喜欢什么咖啡？",
+      "expected_answer": "燕麦奶拿铁，不加糖。",
+      "answer_rubric": "需包含拿铁、燕麦奶、无糖三点；咖啡知识问答不能新生成甜度、温度或职业。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "燕麦奶",
+            "拿铁",
+            "糖"
+          ],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": false
+    },
+    {
+      "id": "distraction_03",
+      "category": "distraction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我的当前工作是网络安全工程师。",
+          "JSON对象和数组有什么区别？",
+          "把列表[3,1,2]按从小到大排序。"
+        ],
+        [
+          "SQL里的COUNT一般做什么？",
+          "给一个合法的空JSON对象。",
+          "解释一次HTTP 404错误。"
+        ],
+        [
+          "把“服务暂时不可用”翻译成英文。",
+          "将字符串abc倒序。"
+        ]
+      ],
+      "question": "我的实际工作岗位是什么？",
+      "expected_answer": "网络安全工程师。",
+      "answer_rubric": "技术问答不会改变明确岗位，翻译任务也不产生翻译职业或英文语言偏好。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "网络安全工程师"
+          ],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户的岗位已变成翻译"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "distraction_04",
+      "category": "distraction",
+      "split": "dev",
+      "sessions": [
+        [
+          "请称呼我若溪，之后默认用中文回复。",
+          "这次请只用英文解释单词river。",
+          "请解释一下潮汐。"
+        ],
+        [
+          "写一句法语的早安问候，并说明意思。",
+          "二十四小时有多少分钟？",
+          "说说纸为什么能够被折叠。"
+        ],
+        [
+          "改正这个拼写：recieve。",
+          "请列举两种可回收材料。"
+        ]
+      ],
+      "question": "我的称呼和长期回复语言是什么？",
+      "expected_answer": "称呼是若溪，长期回复语言是中文。",
+      "answer_rubric": "单次外语任务不覆盖中文设置；称呼若溪应跨会话保存。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "若溪"
+          ],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "中文"
+          ],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户长期回复语言变成英文",
+        "用户长期回复语言变成法语"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "distraction_05",
+      "category": "distraction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我常住珠海，平时偏爱冷萃咖啡。",
+          "介绍一下珠江口是什么。",
+          "把“桌上有一本书”翻译成英文。"
+        ],
+        [
+          "一小时四十五分钟共有多少分钟？",
+          "小说练习里的角色住在北京，请给那座虚构房子想一个窗景。",
+          "什么是闰年？"
+        ],
+        [
+          "说明照片曝光过度的含义。",
+          "给一个关于秋天的成语。"
+        ]
+      ],
+      "question": "我现在住哪里，平常偏爱什么咖啡？",
+      "expected_answer": "你常住珠海，偏爱冷萃咖啡。",
+      "answer_rubric": "城市珠海、咖啡冷萃。北京属于小说练习，不可覆盖；没有糖奶信息时不擅自补配方。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "珠海"
+          ],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "冷萃"
+          ],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户常住北京"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "distraction_06",
+      "category": "distraction",
+      "split": "dev",
+      "sessions": [
+        [
+          "我目前是文物修复师。",
+          "杭州和绍兴的气候有什么共同点？",
+          "解释一下博物馆和美术馆的区别。"
+        ],
+        [
+          "把6/8约分。",
+          "介绍水彩与油画在材料上的一个区别。",
+          "什么是纸张的酸化？"
+        ],
+        [
+          "请把“展厅周一关闭”翻译为英文。",
+          "文字排版中行距是什么意思？"
+        ]
+      ],
+      "question": "你还知道我从事哪种职业吗？",
+      "expected_answer": "你目前是文物修复师。",
+      "answer_rubric": "职业保持文物修复师；主题相关闲聊也不能使职业变成画家、翻译或推断居住城市。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "文物修复师"
+          ],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户常住杭州",
+        "用户常住绍兴"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "distraction_07",
+      "category": "distraction",
+      "split": "test",
+      "sessions": [
+        [
+          "我的名字是顾晚舟，常住扬州，目前是景观设计师。",
+          "我长期喜欢无糖美式，默认回复请用中文。"
+        ],
+        [
+          "给一个等腰三角形的定义。",
+          "把“山路弯弯”改成完整句。",
+          "介绍一下水循环的三个主要环节。"
+        ],
+        [
+          "比较地铁和轻轨的一点区别。",
+          "整理这份虚构通讯录：魏宁，成都；罗川，沈阳。按姓氏拼音排序。",
+          "10的三次方是多少？"
+        ]
+      ],
+      "question": "帮我核对五项：名字、城市、职业、咖啡偏好和默认回复语言。",
+      "expected_answer": "顾晚舟，扬州，景观设计师，无糖美式，中文。",
+      "answer_rubric": "五个字段全部正确才算完整。通讯录人物为虚构他人，不能混入用户档案；可使用任意清楚的列举格式。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "扬州"
+          ],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "美式",
+            "糖"
+          ],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "顾晚舟"
+          ],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "景观设计师"
+          ],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ACTIVE",
+          "all_of": [
+            "中文"
+          ],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户姓名是魏宁",
+        "用户姓名是罗川",
+        "用户常住成都",
+        "用户常住沈阳"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "distraction_08",
+      "category": "distraction",
+      "split": "test",
+      "sessions": [
+        [
+          "我现在住在太原。",
+          "解释磁铁的南北极。",
+          "把90分钟换算成小时。"
+        ],
+        [
+          "我已搬到兰州并在这里定居，旧房子退租了。",
+          "给一句用于道谢的礼貌用语。",
+          "说明高铁站和火车站的关系。"
+        ],
+        [
+          "一首描写月亮的诗通常会用哪些意象？",
+          "把数字7、4、9按降序排列。"
+        ]
+      ],
+      "question": "经过这些聊天，我现在的常住城市是哪里？",
+      "expected_answer": "兰州。",
+      "answer_rubric": "干扰前后发生了明确搬家，应保留最近有效事实兰州；旧城更早出现并不应被再次当作当前住址。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "兰州"
+          ],
+          "none_of": [
+            "太原"
+          ]
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户仍常住太原"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "distraction_09",
+      "category": "distraction",
+      "split": "test",
+      "sessions": [
+        [
+          "我平时只偏爱不加糖的卡布奇诺。",
+          "我的同事小陶总喝甜拿铁。",
+          "帮小陶比较拿铁和摩卡的制作区别。"
+        ],
+        [
+          "小陶说他明天还想买焦糖拿铁。",
+          "算一下四杯每杯12元的饮料总价。",
+          "介绍奶泡如何形成。"
+        ],
+        [
+          "小说里的咖啡店老板只供应摩卡，这个设定合理吗？",
+          "请给那家虚构咖啡店取两个店名。"
+        ]
+      ],
+      "question": "如果是给我按长期偏好选一杯，应选什么？",
+      "expected_answer": "不加糖的卡布奇诺。",
+      "answer_rubric": "多次提及且主题相近的他人口味不能压过用户的卡布奇诺无糖；不得把同事或虚构店主归为用户。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "卡布奇诺",
+            "糖"
+          ],
+          "none_of": [
+            "拿铁",
+            "摩卡"
+          ]
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户本人偏爱甜拿铁",
+        "用户本人偏爱摩卡",
+        "用户姓名是小陶"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "distraction_10",
+      "category": "distraction",
+      "split": "test",
+      "sessions": [
+        [
+          "日常请叫我简宁。",
+          "帮小说角色设计一个名字，候选是晨星和望舒。",
+          "比较这两个候选名字的语感。"
+        ],
+        [
+          "把角色台词“我叫望舒”换一种语气。",
+          "简单解释第一人称叙事。",
+          "给虚构配角“阿朔”写一句开场白。"
+        ],
+        [
+          "把“故事结束了”翻成英文。",
+          "介绍句号和省略号的区别。"
+        ]
+      ],
+      "question": "你平常应当怎么称呼我本人？",
+      "expected_answer": "简宁。",
+      "answer_rubric": "用户称呼仍为简宁。频繁出现的角色名字及第一人称台词不能覆盖用户称呼。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ACTIVE",
+          "all_of": [
+            "简宁"
+          ],
+          "none_of": [
+            "晨星",
+            "望舒",
+            "阿朔"
+          ]
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户本人叫晨星",
+        "用户本人叫望舒",
+        "用户本人叫阿朔"
+      ],
+      "expect_abstention": false
+    },
+    {
+      "id": "abstention_01",
+      "category": "abstention",
+      "split": "dev",
+      "sessions": [
+        [
+          "我们聊聊怎样整理书架。",
+          "按作者和按主题分类各有什么好处？"
+        ]
+      ],
+      "question": "我的姓名是什么？",
+      "expected_answer": "你还没有告诉我姓名，我目前不知道。",
+      "answer_rubric": "明确承认没有姓名证据，不从聊天风格起名或冒充曾记得。可以邀请用户告知，但不能编一个名字。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": true
+    },
+    {
+      "id": "abstention_02",
+      "category": "abstention",
+      "split": "dev",
+      "sessions": [
+        [
+          "我日常偏爱美式咖啡。"
+        ],
+        [
+          "我想了解沿海和内陆城市的气候差异。"
+        ]
+      ],
+      "question": "我当前常住哪个城市？",
+      "expected_answer": "你没有说明自己的常住城市，无法确定。",
+      "answer_rubric": "咖啡偏好与气候问题都不足以推断城市；不得用最常见城市补答案。已知美式应保留但不必主动提及。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ACTIVE",
+          "all_of": [
+            "美式"
+          ],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [],
+      "expect_abstention": true
+    },
+    {
+      "id": "abstention_03",
+      "category": "abstention",
+      "split": "dev",
+      "sessions": [
+        [
+          "我在贵阳长期居住。"
+        ],
+        [
+          "最近看了不少介绍机器人行业的文章。"
+        ]
+      ],
+      "question": "你知道我的正式职业吗？",
+      "expected_answer": "目前不知道你的职业；阅读机器人行业文章不能说明你从事该行业。",
+      "answer_rubric": "只回答用户明确提供的本人当前事实；无关任务、所引文本、提问方式和助手生成内容不能产生新个人信息。没有证据时准确承认未知。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ACTIVE",
+          "all_of": [
+            "贵阳"
+          ],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户职业是机器人工程师"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "abstention_04",
+      "category": "abstention",
+      "split": "dev",
+      "sessions": [
+        [
+          "我现在是一名药剂师。"
+        ],
+        [
+          "请解释一下维生素这个词的由来。"
+        ]
+      ],
+      "question": "我的长期回复语言偏好是什么？",
+      "expected_answer": "你还没有明确指定长期回复语言。",
+      "answer_rubric": "不能仅因中文聊天就保存中文偏好。可以继续用中文交流，但不能把使用语言与明确长期设置混同。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ACTIVE",
+          "all_of": [
+            "药剂师"
+          ],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户默认长期回复语言是中文"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "abstention_05",
+      "category": "abstention",
+      "split": "dev",
+      "sessions": [
+        [
+          "Can you explain how a rainbow forms?",
+          "Give a short example of an alliteration."
+        ]
+      ],
+      "question": "我明确指定过默认回复语言吗？",
+      "expected_answer": "你没有明确指定过默认回复语言。",
+      "answer_rubric": "连续英文任务和最后中文问题都不构成明确长期语言选择；正确回答是未指定。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户已明确指定英文为长期默认语言",
+        "用户已明确指定中文为长期默认语言"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "abstention_06",
+      "category": "abstention",
+      "split": "dev",
+      "sessions": [
+        [
+          "我在给小说人物选名字，正在比较方舟、许诺和南笙。",
+          "哪个名字更适合一个冒险故事的角色？"
+        ]
+      ],
+      "question": "你还记得我的真实姓名吗？",
+      "expected_answer": "目前不知道你的真实姓名；你讨论的是小说人物名字。",
+      "answer_rubric": "只回答用户明确提供的本人当前事实；无关任务、所引文本、提问方式和助手生成内容不能产生新个人信息。没有证据时准确承认未知。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户真实姓名是方舟",
+        "用户真实姓名是许诺",
+        "用户真实姓名是南笙"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "abstention_07",
+      "category": "abstention",
+      "split": "test",
+      "sessions": [
+        [
+          "我的手机号码归属地显示深圳。"
+        ],
+        [
+          "手机号码携号转网是什么意思？"
+        ]
+      ],
+      "question": "仅凭之前的对话，你能确定我现在住哪儿吗？",
+      "expected_answer": "不能，号码归属地不能证明当前居住城市。",
+      "answer_rubric": "应明确证据不足；号码归属地不是当前住址，不要把概率猜测包装成已知个人事实。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前常住深圳"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "abstention_08",
+      "category": "abstention",
+      "split": "test",
+      "sessions": [
+        [
+          "我出生在桂林，小时候在那里住过。"
+        ],
+        [
+          "现在想找一本介绍桂林历史的书。"
+        ]
+      ],
+      "question": "我的当前常住城市是什么？",
+      "expected_answer": "你没有说明当前常住城市；出生地桂林不能直接等同于现在的住址。",
+      "answer_rubric": "保存五字段时不应把出生地或童年住址塞进当前城市。允许明确提及桂林是出生地，同时必须承认当前城市未知。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户当前常住桂林"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "abstention_09",
+      "category": "abstention",
+      "split": "test",
+      "sessions": [
+        [
+          "我最近读了几篇律师写的职业随笔。"
+        ],
+        [
+          "法官、律师和检察官的分工有什么区别？"
+        ]
+      ],
+      "question": "我在法律行业具体做哪一种工作？",
+      "expected_answer": "目前不能确定你是否在法律行业工作，更不知道具体岗位。",
+      "answer_rubric": "问题含有未证实的前提，应避免顺着前提随意选一种职业；阅读和咨询分工都不能证明职业。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户本人是律师",
+        "用户本人是法官",
+        "用户本人是检察官"
+      ],
+      "expect_abstention": true
+    },
+    {
+      "id": "abstention_10",
+      "category": "abstention",
+      "split": "test",
+      "sessions": [
+        [
+          "我有乳糖不耐受。"
+        ],
+        [
+          "介绍一下燕麦奶和豆奶在原料上的区别。"
+        ]
+      ],
+      "question": "你能确定我最喜欢喝哪种咖啡吗？",
+      "expected_answer": "不能，你没有说明咖啡偏好，乳糖不耐受和植物奶问题也不足以确定。",
+      "answer_rubric": "不将饮食限制自动转化为饮品偏好。五字段不覆盖健康信息；本题不得以乳糖不耐受推断任一咖啡种类。",
+      "expected_facts": {
+        "user.home.city": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.coffee": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.name": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.work.role": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        },
+        "user.preference.language": {
+          "status": "ABSENT",
+          "all_of": [],
+          "none_of": []
+        }
+      },
+      "forbidden_current_claims": [
+        "用户长期偏好燕麦奶拿铁",
+        "用户长期偏好豆奶拿铁",
+        "用户长期偏好无奶美式"
+      ],
+      "expect_abstention": true
+    }
+  ]
+}
