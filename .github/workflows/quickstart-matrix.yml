@@ -85,6 +85,9 @@ jobs:
           done
           exit 1
 
+      - name: Build verified MinIO dependency
+        run: docker compose -f docker-compose.quickstart.yml build minio
+
       - name: Start isolated Quickstart
         run: docker compose -f docker-compose.quickstart.yml up -d --no-build --wait
 

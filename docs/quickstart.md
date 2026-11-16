@@ -48,7 +48,8 @@ Create a local secret file and replace every placeholder first:
 
 ```powershell
 Copy-Item .env.example .env.local
-docker compose --env-file .env.local -f docker-compose.quickstart.yml pull
+docker compose --env-file .env.local -f docker-compose.quickstart.yml pull etcd milvus redis vortex-data-init vortex
+docker compose --env-file .env.local -f docker-compose.quickstart.yml build minio
 docker compose --env-file .env.local -f docker-compose.quickstart.yml up --no-build -d --wait
 ```
 
@@ -75,7 +76,11 @@ set +a
 ```
 
 This path pulls the fixed `ghcr.io/haibaraai2517/vortex:0.2.0` release image
-declared by `.env.example`; it does not rebuild application code. To validate a
+declared by `.env.example`; it does not rebuild application code. MinIO's old
+public registry image is unavailable, so its same-version dependency image is
+built locally from official GitHub release binaries with committed SHA-256
+checksums. The first build needs internet access and supports Linux amd64/arm64;
+see [the dependency recipe](../ops/docker/minio/README.md). To validate a
 source checkout instead, run the same `up` command with `--build` in place of
 `--no-build`.
 

@@ -177,6 +177,7 @@ jobs:
           }
           trap cleanup EXIT
           docker pull "${VORTEX_IMAGE}"
+          docker compose -p "${project}" -f docker-compose.quickstart.yml build minio
           docker compose -p "${project}" -f docker-compose.quickstart.yml up -d --no-build --wait
           curl --fail --silent --show-error http://127.0.0.1:18080/actuator/health
           curl --fail --silent --show-error \
