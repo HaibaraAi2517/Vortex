@@ -151,7 +151,7 @@ BGE-Small-ZH 偏向中文，英文语义质量需另行评测。`forget` 是逻�
 | 本地服务与持久化 | 中文检索、300 条干扰记忆、版本冲突、强制重启和官方 MCP Client 调用通过 | [本地服务验收](docs/local-memory-verification.md) |
 | Python ↔ Spring AI | 7 轮真实模型对话，新进程共享并更新城市与咖啡偏好 | [自动记忆验收](docs/automatic-agent-memory-verification.md) |
 | Codex CLI ↔ Python | 9 轮真实模型对话，保存、更新、撤回后读取通过；6 个独立 Codex 会话、12 次 MCP 调用 | [Codex 共享记忆验收](docs/codex-memory-verification.md) |
-| Python 客户端与协议 | 2026-11-17 完整测试 81/81 通过，包含 MCP stdio、版本冲突、未知写入结果和评测有效性 | [测试代码](sdk/python/tests) |
+| Python 客户端、协议与工具 | 2026-11-17 完整测试 92/92 通过，包含 MCP stdio、版本冲突、未知写入结果、评测有效性和诊断脱敏 | [测试代码](sdk/python/tests) |
 | 中文跨会话质量 | 100 个自建合成案例，对比无记忆、普通摘要与当前 Vortex；保留执行错误和逐例原始证据 | [质量基线与失败分析](docs/memory-quality-baseline-20261117.md) |
 
 Codex 这次按已知 key 读取事实，配合提供的项目规则运行；这些固定场景不是语义检索或普遍答案正确率评测。

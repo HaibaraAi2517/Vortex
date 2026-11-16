@@ -42,6 +42,14 @@ health, then run the memory recall and worker-recovery demo. When starting the s
 generate process-local MinIO, Redis, and Bearer credentials if they are not
 already set.
 
+Vortex's container health check allows a 180-second startup grace period before
+counting failed checks. A successful check can mark it healthy immediately;
+the grace period is not a mandatory delay. Set `VORTEX_HEALTH_START_PERIOD`
+before starting Compose to override it (the macOS CI VM uses `300s`). After
+the grace period, 36 consecutive failed checks mark the container unhealthy.
+The scripts bound Compose's readiness wait to 900 seconds; image downloads and
+builds occur separately from that readiness deadline.
+
 ## Start The Stack Only
 
 Create a local secret file and replace every placeholder first:
@@ -50,7 +58,7 @@ Create a local secret file and replace every placeholder first:
 Copy-Item .env.example .env.local
 docker compose --env-file .env.local -f docker-compose.quickstart.yml pull etcd milvus redis vortex-data-init vortex
 docker compose --env-file .env.local -f docker-compose.quickstart.yml build minio
-docker compose --env-file .env.local -f docker-compose.quickstart.yml up --no-build -d --wait
+docker compose --env-file .env.local -f docker-compose.quickstart.yml up --no-build -d --wait --wait-timeout 900
 ```
 
 Compose reads `.env.local` for container interpolation, but it does not export
@@ -97,6 +105,30 @@ The default Compose project is `vortex-quickstart`, separate from the developmen
 stack. To run another Quickstart concurrently, set both a unique
 `COMPOSE_PROJECT_NAME` and a different `VORTEX_HTTP_PORT`; container-internal
 ports do not change.
+
+## Diagnose A Failed Startup
+
+Before removing containers, use the same exported environment as the failed
+Compose run to collect bounded, redacted diagnostics. Credentials generated
+inside the one-shot demo scripts do not return to the parent shell; export your
+own credentials before launching those scripts if you need this follow-up
+command. CI and manually exported `.env.local` values already satisfy this:
+
+```bash
+python3 ops/collect-compose-diagnostics.py --file docker-compose.quickstart.yml --output target/quickstart-diagnostics
+```
+
+On Windows, use `python` in place of `python3`. The collector saves container
+status, selected runtime state and health-check results, and the last 250 Vortex
+log lines. It does not collect container configuration or environment variables.
+Known credential values and Spring's generated password are redacted; command
+failures and timeouts remain visible in the metadata. Both Quickstart CI jobs
+upload these diagnostics on failure before cleanup, retaining them for seven
+days. A collector success does not mean the application is healthy.
+
+Slow startup, application errors and resource exhaustion can all cause an
+unhealthy result. Inspect the recorded state and logs before changing timeouts;
+a longer grace period does not resolve an application failure.
 
 ## Run The Agent Demo
 

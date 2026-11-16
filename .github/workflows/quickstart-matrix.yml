@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Start isolated Quickstart
-        run: docker compose -f docker-compose.quickstart.yml up --build -d --wait
+        run: docker compose -f docker-compose.quickstart.yml up --build -d --wait --wait-timeout 900
 
       - name: Run Quickstart agent
         env:
@@ -39,6 +39,19 @@ jobs:
         run: |
           status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18082/swagger-ui/index.html)"
           test "${status}" = "200"
+
+      - name: Collect redacted startup diagnostics
+        if: failure()
+        run: python3 ops/collect-compose-diagnostics.py --file docker-compose.quickstart.yml --output target/quickstart-diagnostics
+
+      - name: Upload startup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quickstart-linux-diagnostics
+          path: target/quickstart-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Clean up Quickstart
         if: always()
@@ -52,6 +65,7 @@ jobs:
       VORTEX_IMAGE: ghcr.io/haibaraai2517/vortex:candidate-${{ github.event.pull_request.head.sha || github.sha }}
       VORTEX_HTTP_PORT: "18083"
       VORTEX_RELEASE_VERSION: "0.2.0"
+      VORTEX_HEALTH_START_PERIOD: "300s"
       VORTEX_SECURITY_BEARER_TOKEN: quickstart-macos-${{ github.run_id }}-token
       VORTEX_SECURITY_NAMESPACE_PATTERNS: quickstart-*
       MINIO_ROOT_USER: vortex-quickstart-macos
@@ -89,7 +103,7 @@ jobs:
         run: docker compose -f docker-compose.quickstart.yml build minio
 
       - name: Start isolated Quickstart
-        run: docker compose -f docker-compose.quickstart.yml up -d --no-build --wait
+        run: docker compose -f docker-compose.quickstart.yml up -d --no-build --wait --wait-timeout 900
 
       - name: Run Quickstart agent
         env:
@@ -101,6 +115,19 @@ jobs:
         run: |
           status="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18083/swagger-ui/index.html)"
           test "${status}" = "200"
+
+      - name: Collect redacted startup diagnostics
+        if: failure()
+        run: python3 ops/collect-compose-diagnostics.py --file docker-compose.quickstart.yml --output target/quickstart-diagnostics
+
+      - name: Upload startup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quickstart-macos-diagnostics
+          path: target/quickstart-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Clean up Quickstart
         if: always()

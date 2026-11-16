@@ -175,7 +175,7 @@ clients:
 | --- | --- | --- |
 | Python ↔ Spring AI, 2026-11-16 | Seven turns: Python saved Beijing/Americano; Spring AI read and updated them to Shanghai/oat latte; fresh clients read the new facts. MCP read the same revisions. | [Inputs, answers and boundaries](docs/automatic-agent-memory-verification.md) |
 | Codex CLI ↔ Python, 2026-11-17 | Nine turns: Codex saved facts; Python read and updated them; a fresh Codex session read the updates and retracted the city. Both clients then answered that the city was unknown while retaining the coffee preference. | [Tool events, revisions and boundaries](docs/codex-memory-verification.md) |
-| Python unit/protocol tests, 2026-11-17 | 81/81 passed, including MCP stdio and evaluation validity checks. | [Test code](sdk/python/tests) |
+| Python tests, 2026-11-17 | 92/92 passed, including MCP stdio, evaluation validity and diagnostic redaction checks. | [Test code](sdk/python/tests) |
 
 The Codex run used CLI 0.163.0 with the supplied policy and native memory disabled; it did not verify
 the desktop UI, Claude Code or Doubao. Codex read known fact keys with `get_memory`, so that run is

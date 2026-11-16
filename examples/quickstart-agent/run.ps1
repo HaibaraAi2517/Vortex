@@ -207,7 +207,7 @@ if ($StartQuickstart) {
   }
   Push-Location $repoRoot
   try {
-    docker compose -f docker-compose.quickstart.yml up --build -d
+    docker compose -f docker-compose.quickstart.yml up --build -d --wait --wait-timeout 900
     if ($LASTEXITCODE -ne 0) {
       throw "Quickstart Docker Compose failed with exit code $LASTEXITCODE."
     }

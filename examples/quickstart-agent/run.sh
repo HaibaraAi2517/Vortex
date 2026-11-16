@@ -104,7 +104,7 @@ PY
   export REDIS_PASSWORD="${REDIS_PASSWORD:-$(openssl rand -hex 24)}"
   export VORTEX_SECURITY_BEARER_TOKEN="${VORTEX_SECURITY_BEARER_TOKEN:-$(openssl rand -hex 32)}"
   export VORTEX_SECURITY_NAMESPACE_PATTERNS="${VORTEX_SECURITY_NAMESPACE_PATTERNS:-quickstart-*}"
-  (cd "$PROJECT_ROOT" && docker compose -f docker-compose.quickstart.yml up --build -d)
+  (cd "$PROJECT_ROOT" && docker compose -f docker-compose.quickstart.yml up --build -d --wait --wait-timeout 900)
 fi
 
 wait_vortex 180

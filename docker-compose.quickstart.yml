@@ -121,6 +121,7 @@ services:
       - quickstart-vortex-data:/var/lib/vortex
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      start_period: ${VORTEX_HEALTH_START_PERIOD:-180s}
       interval: 5s
       timeout: 5s
       retries: 36
