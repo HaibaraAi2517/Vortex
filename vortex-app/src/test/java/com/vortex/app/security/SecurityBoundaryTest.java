@@ -57,6 +57,7 @@ class SecurityBoundaryTest {
     void unauthenticatedBusinessAndMetricsRequestsShouldBeRejected() throws Exception {
         mockMvc.perform(get("/api/v1/test/tenant-a/project"))
                 .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", "Bearer realm=\"vortex\""))
                 .andExpect(jsonPath("$.error").value("AUTHENTICATION_REQUIRED"));
         mockMvc.perform(get("/actuator/prometheus"))
                 .andExpect(status().isUnauthorized());

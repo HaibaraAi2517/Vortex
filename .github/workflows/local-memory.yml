@@ -1,0 +1,58 @@
+name: Local Memory
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-memory:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download and verify pinned embedding model
+        run: python ops/download-model.py
+      - name: Verify Java modules and local HTTP API
+        run: mvn -B verify
+      - name: Install Python and official MCP SDK
+        run: python -m pip install "./sdk/python[mcp]" build
+      - name: Verify Python and MCP protocol
+        run: python -m unittest discover -s sdk/python/tests -v
+      - name: Verify Spring AI automatic recall and fact lifecycle
+        run: mvn -B -f examples/spring-ai-integration/pom.xml test
+      - name: Real model, full corpus, crash restart and MCP smoke
+        run: python ops/verify-local-memory.py --mcp
+      - name: Build Python distribution
+        run: python -m build sdk/python
+      - name: Build local trial bundle
+        run: python ops/package-local.py
+      - name: Verify extracted trial bundle independently of the checkout
+        run: python ops/verify-local-memory.py --bundle target/vortex-local-alpha.zip --distractors 0 --mcp --output target/local-bundle-smoke.json
+      - name: Upload trial bundle and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vortex-local-${{ matrix.os }}
+          path: |
+            target/vortex-local-alpha.zip
+            target/vortex-local-alpha.zip.sha256
+            target/local-memory-smoke.json
+            target/local-bundle-smoke.json
+            sdk/python/dist/*
+            **/target/surefire-reports/*.txt
+          if-no-files-found: warn

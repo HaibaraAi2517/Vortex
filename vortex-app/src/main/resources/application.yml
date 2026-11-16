@@ -4,6 +4,8 @@ server:
   max-http-request-header-size: 32KB
 
 spring:
+  profiles:
+    default: local
   application:
     name: vortex
   data:
@@ -104,7 +106,6 @@ vortex:
     pin:
       cleanup-interval-ms: ${VORTEX_PIN_CLEANUP_INTERVAL_MS:30000}
     recall:
-      keyword-candidate-pool-limit: ${VORTEX_RECALL_KEYWORD_CANDIDATE_POOL_LIMIT:256}
       cross-encoder-candidate-pool-limit: ${VORTEX_RECALL_CROSS_ENCODER_CANDIDATE_POOL_LIMIT:40}
       cross-encoder:
         enabled: ${VORTEX_RECALL_CROSS_ENCODER_ENABLED:false}

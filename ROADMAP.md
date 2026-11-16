@@ -1,89 +1,54 @@
 # Roadmap
 
-Vortex is in alpha. The roadmap is organized around problems to solve rather
-than a promise of fixed dates.
+The first users are individual developers running personal agents locally. The primary product
+is durable memory through Python/MCP/REST. Task recovery remains an advanced integration, not a prerequisite.
 
-## Make The Runtime Easier To Try
+## Implemented in the current working-tree alpha
 
-Current problem: a new user can run the no-key demo, but the project still needs
-more short, inspectable examples for common integration paths.
+- One-process Lucene storage: BM25/CJK bigrams, HNSW vectors and durable local state.
+- Full-corpus keyword search, including natural-language hybrid queries.
+- Explicit namespace/key facts with atomic revision CAS, history, expiry, retraction and deletion.
+- Protection against replaced/deleted memories returning from L1, background writes or restart.
+- Source-installable Python package and official MCP SDK stdio adapter.
+- A real BGE smoke path with 300 distractors, forced restart and MCP calls.
+- Trial ZIP packaging, pinned model downloads with SHA-256, and a Windows/Linux CI workflow.
+- Full-haystack LongMemEval-S hypothesis generation, with gold/evidence labels excluded from generation.
 
-Done:
+These are implementation and verification capabilities. They do not establish real user adoption,
+answer quality, production throughput or multi-user security.
 
-- Add a Spring AI ChatClient advisor example under `examples/spring-ai-integration/`.
-- Add LangChain4j adapters and a runnable integration example under
-  `examples/langchain4j-integration/`.
-- Record a short quickstart demo GIF and transcript under `docs/assets/`.
+## Before publishing the first personal-memory release
 
-Planned work:
+1. Review the source diff and packaged trial ZIP. Run the configured Windows/Linux CI and container build.
+2. Run LongMemEval-S with a frozen answer model and the official answer judge. Publish dataset/model hashes,
+   full-corpus size, answer accuracy by category, abstention/errors and latency. The current runner emits
+   no accuracy until that scoring step is complete; the historical oracle result is not reused.
+3. Set a new server release version, build immutable release artifacts and publish the Python wheel/Maven
+   artifacts only after registry ownership and signing credentials are configured.
+4. Offer the ZIP or single-container build to 5–10 consenting personal Agent developers. This is a target,
+   not a claim that any users have already adopted Vortex. Do not collect their memory content.
 
-- Add one MCP integration example.
-- Keep quickstart commands tested on Windows PowerShell and Bash.
+## Pilot acceptance targets
 
-## Make Retrieval Quality Easier To Evaluate
+- A new user can install, write, update and recall a fact from the guide without author intervention.
+- Track time to first successful recall and where installation fails.
+- At least three pilot users choose to continue using their integration across sessions for a week.
+- Every wrong-memory report can be reproduced from a user-approved minimal example.
+- Prioritize silent data loss, stale facts and failed onboarding over new features.
 
-Current problem: case-isolated retrieval evidence on the official LongMemEval
-oracle is committed and safe to cite within its documented scope, but it
-measures oracle-fragment retrieval rather than end-to-end answer quality or
-production traffic.
+Pilot feedback should answer whether the stable-key contract is understandable and whether users need
+automatic fact extraction. If extraction is added, evaluate mistaken merges, missed updates and provenance
+before enabling it by default.
 
-Done:
+## Subsequent work, driven by pilot evidence
 
-- Add a reviewed, case-isolated LongMemEval retrieval evaluation path.
-- Commit dataset conversion notes, hashes, configuration, statistical analysis,
-  and boundary notes with the final evidence report.
+- Broader embedding choices and independent English/multilingual quality evaluation.
+- Capacity/latency measurements for larger local corpora, including index growth and backup/restore.
+- Export/import and a migration path for existing Milvus users; atomic facts on another backend only when needed.
+- Separate the evaluation CLI from the application artifact and move large raw reports to versioned release assets
+  while retaining compact manifests and reproducible evidence links.
+- Real tenant identities and authorization only if a team-hosted product becomes a demonstrated need.
+- Keep recovery benchmarks and legacy distributed integration tests, without turning them into the default onboarding.
 
-Planned work:
-
-- Add an end-to-end real-LLM evaluation that measures answer quality separately
-  from oracle-fragment retrieval.
-- Add domain-specific fixtures that explain where hybrid recall helps and where
-  it does not.
-- Validate retrieval quality on traffic-shaped workloads before making online
-  production claims.
-
-## Harden Runtime Recovery
-
-Current problem: checkpoint/WAL recovery has deterministic coverage, but
-production process-manager and distributed deployment assumptions remain out of
-scope.
-
-Planned work:
-
-- Expand recovery examples around worker restart and duplicate execution IDs.
-- Document deployment patterns for external process managers.
-- Add more concurrency and interruption cases as the task-state API stabilizes.
-
-## Prepare For Real Deployments
-
-Current problem: Vortex exposes useful runtime primitives, but production
-identity, distributed policy enforcement, and capacity validation are not
-complete.
-
-Done:
-
-- Define a trusted-environment boundary with one shared Bearer token, namespace
-  allowlists, loopback-only Quickstart publishing, request-size limits,
-  in-process rate limiting, and structured audit events.
-- Document deployment, backup, restore, migration, upgrade, and rollback
-  procedures, and exercise the release drills against Milvus, MinIO, Redis, and
-  the Vortex application volume.
-
-Planned work:
-
-- Add production OIDC and/or mTLS identities instead of a shared token.
-- Add per-tenant identities, fine-grained RBAC, and stronger namespace isolation.
-- Add distributed rate limiting and audit aggregation.
-- Improve operational dashboards and SLO documentation.
-- Validate capacity and failure behavior on long-running, traffic-shaped workloads.
-
-## Improve Contributor Experience
-
-Current problem: the codebase has multiple modules, benchmark harnesses, and
-governance scripts that need clearer entry points.
-
-Planned work:
-
-- Keep module ownership and architecture notes current.
-- Add focused contributor docs for memory, retrieval, storage, and recovery.
-- Make CI failures easier to map back to local commands.
+The ONNX binaries and interview preparation guide are no longer tracked in the current tree; local copies
+were preserved. Historical Git objects and published evidence are not rewritten as part of this change.

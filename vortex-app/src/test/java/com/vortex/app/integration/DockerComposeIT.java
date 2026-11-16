@@ -52,6 +52,7 @@ import static org.awaitility.Awaitility.await;
  * Maven verify automatically brings the compose dependencies up, runs these
  * tests, then tears the stack down again.
  */
+@org.springframework.test.context.ActiveProfiles("distributed")
 @SpringBootTest(
         classes = {VortexApplication.class, DockerComposeIT.TestEmbeddingConfig.class},
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,

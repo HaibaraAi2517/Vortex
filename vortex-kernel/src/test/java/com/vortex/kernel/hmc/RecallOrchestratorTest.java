@@ -191,7 +191,7 @@ class RecallOrchestratorTest {
     }
 
     @Test
-    void v2HybridEnablesKeywordBranchOnlyForExactQueryFeatures() {
+    void v2HybridEnablesKeywordBranchForNaturalLanguageAndExactFeatures() {
         MemoryFragment candidate = fragment(
                 "VTX-42",
                 "ns",
@@ -218,7 +218,7 @@ class RecallOrchestratorTest {
                 .rankingStrategy(RecallRankingStrategy.RRF)
                 .build());
 
-        assertThat(naturalLanguage.getDiagnostics().getKeywordCandidateCount()).isZero();
+        assertThat(naturalLanguage.getDiagnostics().getKeywordCandidateCount()).isPositive();
         assertThat(exactFeature.getDiagnostics().getKeywordCandidateCount()).isPositive();
         assertThat(exactFeature.getDiagnostics().getRankingStrategy())
                 .isEqualTo(RecallRankingStrategy.RRF.name());
@@ -406,7 +406,7 @@ class RecallOrchestratorTest {
     @Test
     void keywordRecallScansPastLegacyCandidateWindow() {
         List<MemoryFragment> namespaceFragments = new ArrayList<>();
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 600; i++) {
             namespaceFragments.add(fragment(
                     "kw-distractor-" + i,
                     "ns",
@@ -431,14 +431,14 @@ class RecallOrchestratorTest {
                 .retrievalMode(RetrievalMode.KEYWORD_ONLY)
                 .build());
 
-        assertThat(l2.lastNamespaceLimit).isEqualTo(256);
+        assertThat(l2.lastNamespaceLimit).isEqualTo(Integer.MAX_VALUE);
         assertThat(result.getFragments()).hasSize(1);
         assertThat(result.getFragments().getFirst().getFragment().getId())
                 .isEqualTo("kw-beyond-legacy-window");
     }
 
     @Test
-    void defaultRecallDoesNotExpandCandidatesWithoutExactSignal() {
+    void defaultRecallExpandsCandidatesForNaturalLanguage() {
         MemoryFragment exact = fragment("kw-vector-only", "ns", "Pegasus owner is avery-deploy@example.com", List.of("role:user"), 4);
         l2.seedSearchResults(List.of());
         l2.seedNamespaceResults(List.of(exact));
@@ -451,10 +451,10 @@ class RecallOrchestratorTest {
                 .tags(List.of("role:user"))
                 .build());
 
-        assertThat(result.getFragments()).isEmpty();
+        assertThat(result.getFragments()).extracting(hit -> hit.getFragment().getId()).containsExactly("kw-vector-only");
         assertThat(result.getDiagnostics().getRetrievalMode()).isEqualTo(RetrievalMode.HYBRID.name());
         assertThat(result.getDiagnostics().getRankingStrategy()).isEqualTo(RecallRankingStrategy.RRF.name());
-        assertThat(result.getDiagnostics().getKeywordCandidateCount()).isZero();
+        assertThat(result.getDiagnostics().getKeywordCandidateCount()).isPositive();
         assertThat(result.getDiagnostics().getRerankerType()).isEqualTo(RerankerType.NONE);
         assertThat(result.getDiagnostics().getRerankEffectStatus())
                 .isEqualTo(RerankEffectStatus.NOT_EXECUTED);

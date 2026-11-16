@@ -14,7 +14,7 @@ below retain their upstream licenses. Their inclusion does not change the licens
 - Model card: https://huggingface.co/BAAI/bge-small-zh-v1.5
 - ONNX artifact source: https://huggingface.co/Xenova/bge-small-zh-v1.5
 
-Distributed files:
+Runtime files (fetched at pinned revisions with SHA-256 verification; ONNX binaries are no longer tracked in Git):
 
 | File | SHA-256 |
 | --- | --- |
@@ -32,7 +32,7 @@ tokenizer SHA-256 matches the upstream base revision.
 - Upstream license: Apache-2.0
 - Model card: https://huggingface.co/cross-encoder/ms-marco-MiniLM-L6-v2
 
-Distributed files:
+Optional runtime files (`python ops/download-model.py --model ms-marco-MiniLM-L6-v2-c5ee24cb`):
 
 | File | SHA-256 |
 | --- | --- |

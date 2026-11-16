@@ -28,6 +28,14 @@ import java.util.UUID;
 @Slf4j
 public class TaskExceptionHandler {
 
+    @ExceptionHandler(com.vortex.storage.api.MemoryRevisionConflictException.class)
+    public ResponseEntity<ProblemDetail> handleMemoryConflict(com.vortex.storage.api.MemoryRevisionConflictException ex) {
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        detail.setProperty("error", "MEMORY_REVISION_CONFLICT");
+        detail.setProperty("currentRevision", ex.getCurrentRevision());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(detail);
+    }
+
     @ExceptionHandler(CheckpointRecoveryException.class)
     public ResponseEntity<ProblemDetail> handleCheckpointRecoveryFailure(CheckpointRecoveryException ex) {
         HttpStatus status = mapStatus(ex.getReason());

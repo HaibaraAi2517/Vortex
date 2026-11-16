@@ -23,6 +23,8 @@ public interface L2WarmStore {
     /**
      * List fragments for a namespace, capped by {@code limit}.
      * Intended for bootstrapping or maintenance flows rather than hot-path recall.
+     * Integer.MAX_VALUE requests a complete scan for compatibility lexical retrieval;
+     * implementations must paginate or fail instead of silently truncating that scan.
      */
     default List<MemoryFragment> listByNamespace(String namespace, int limit) {
         return List.of();
@@ -37,5 +39,10 @@ public interface L2WarmStore {
      */
     default int vectorDimension() {
         return -1;
+    }
+
+    /** Whether ordinary store requests must commit before becoming visible in L1. */
+    default boolean synchronousDurability() {
+        return false;
     }
 }

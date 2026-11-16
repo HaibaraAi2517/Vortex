@@ -1,319 +1,191 @@
 # Vortex
 
-<p align="center">
-  简体中文 | <a href="README_en.md">English</a>
-</p>
+简体中文 · [English](README_en.md)
 
 [![CI](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml/badge.svg)](https://github.com/HaibaraAi2517/Vortex/actions/workflows/ci.yml)
-[![Release: v0.2.0](https://img.shields.io/badge/release-v0.2.0-2EA44F.svg)](docs/releases/v0.2.0.md)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](pom.xml)
-[![Spring Boot 3.3](https://img.shields.io/badge/Spring%20Boot-3.3-6DB33F.svg)](vortex-app/pom.xml)
-[![Milvus](https://img.shields.io/badge/Milvus-2.4-00A1EA.svg)](docker-compose.yml)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-**面向长时运行 AI Agent 的 Memory 与 RAG runtime：跨会话记住上下文，召回正确事实，并在崩溃后恢复任务。基于 Java 21、Spring Boot、Milvus、MinIO、Redis 和 Caffeine 构建。**
+**给个人 AI Agent 的本地持久记忆。记住偏好和项目事实，在事实变化时更新它，下次对话只召回当前版本。**
 
-`v0.2.0` 是最近一个带完整发布证据的标签版本。Vortex 不是托管 SaaS，而是一个
-Agent Memory 与任务恢复内核；仓库把实现代码、确定性基准、故障注入证据和
-复现路径放在一起，便于直接核验。当前分支或本地工作区可能已经包含标签之后的
-行为变更，不能自动继承 `v0.2.0` 的测试、覆盖率和 benchmark 结论。
+一个 Java 进程，一个本地数据目录；通过 Python、Spring AI、MCP 或 REST 接入。
+默认模式内嵌 Lucene BM25、中文 bigram 与 HNSW 向量检索，使用本地 BGE 模型，
+存储和检索不需要外部数据库、Docker 或聊天模型 API Key。
+自动对话和事实抽取需要另外配置聊天模型；Codex 接入复用客户端已有的模型和登录配置。
 
-`v0.2.0` 的发布门禁覆盖 clean Maven verify、`13/13` Docker integration、Windows、
-Linux 与 macOS Quickstart、签名候选镜像拉取，以及备份恢复和升级回滚演练。完整记录见
-[v0.2.0 发布说明](docs/releases/v0.2.0.md)。旧版 benchmark 数字仍只描述其对应标签。
+当前源码的本地模式是 **alpha**，面向个人开发者本机使用。
+已发布的 [v0.2.0](docs/releases/v0.2.0.md) 使用原 Milvus/MinIO 架构，**不包含下面的新功能**。
+Python 包目前从源码安装，尚未发布到 PyPI；Java Maven 构件也尚未发布。
 
-<p align="center">
-  <a href="#演示"><b>演示</b></a> ·
-  <a href="#快速开始"><b>快速开始</b></a> ·
-  <a href="#三个核心技术决策及取舍"><b>技术决策</b></a> ·
-  <a href="docs/benchmark.md"><b>基准证据</b></a> ·
-  <a href="docs/architecture.md"><b>详细架构</b></a>
-</p>
+| 想做什么 | 从这里开始 |
+| --- | --- |
+| 先看到记忆更新与召回效果 | 启动服务，打开下方的记忆工作台 |
+| 让 Python Agent 正常聊天时自动记忆 | [MemorySession 与模型配置](docs/automatic-agent-memory.md#python正常聊天即可) |
+| 在 Codex 与 Python 间共享事实 | [Codex CLI 接入指南](docs/codex-memory.md) |
+| 给 Spring AI 应用加入自动记忆 | [ChatClient Advisor 示例](examples/spring-ai-integration/README.md) |
+| 接入其他 MCP 客户端或自定义 Agent | [Python SDK、MCP 工具与配置](sdk/python/README.md) |
 
-## 使用前须知
+## 快速接入
 
-- Vortex 当前适合源码审阅、本机 Demo 和可信隔离网络内的集成试验，不是可直接
-  暴露到公网的生产服务。
-- 直接在宿主机启动应用时默认仅监听 `127.0.0.1`，安全过滤器保持关闭以兼容本地开发。
-  Quickstart 则强制使用 32 字符以上的 Bearer token、namespace allowlist、API 限流和
-  审计事件；这是一条可信环境试用边界，不是 OIDC、RBAC 或多租户生产认证。
-- REST 服务以固定版本 OCI image `ghcr.io/haibaraai2517/vortex:0.2.0` 发布；Java
-  Maven artifacts 尚未发布，嵌入式使用仍需从源码构建。
-- Quickstart 只把 Vortex API 发布到 `127.0.0.1:${VORTEX_HTTP_PORT:-8080}`；Redis、
-  Milvus、MinIO 及管理端口仅存在于 Compose 网络。启动脚本会生成本次进程使用的随机
-  MinIO、Redis 和 Bearer 凭据。
+源码启动需要 JDK 21、Maven 3.9+ 和 Python 3.10+。
+首次启动会下载依赖和固定版本的本地模型，并校验 SHA-256；后续启动复用本地文件。
+从源码构建的试用 ZIP 包包含模型，运行记忆服务只需 Java 21；Python/MCP 接入另需 Python。
+见 [打包步骤](docs/local-memory.md#构建可分享的试用包)，目前没有新的公开 release 下载。
 
-## 演示
-
-<p align="center">
-  <img src="docs/assets/quickstart-agent-demo.gif" alt="Vortex 记忆召回与任务恢复演示" width="1000">
-</p>
-
-该演示无需外部 LLM API Key：它会写入并召回持久记忆，在任务 Checkpoint 后
-停止 Worker，再从恢复出的运行时状态继续执行任务。
-
-## 系统架构
-
-```mermaid
-flowchart TB
-    A[Agent / Spring AI / LangChain4j] --> API[Vortex REST 与 Java 契约]
-    API --> K[Memory 与 Task Kernel]
-
-    subgraph W[写入链路]
-        direction LR
-        K --> E[切分与本地 Embedding]
-        E --> L1[L1 Caffeine write-through]
-        L1 --> ACK[返回并保证 read-your-own-write]
-        L1 --> P[有界异步 Pipeline]
-        P --> L2[L2 Milvus 向量索引]
-        P --> L3[L3 MinIO 冷归档]
-    end
-
-    subgraph R[召回链路]
-        direction LR
-        K --> VC[向量候选]
-        K --> KW[关键词候选]
-        KW --> H[默认 RRF 融合与排序]
-        VC --> H
-        H --> B[可选线性融合或门禁 Cross-Encoder]
-        B --> T[token budget]
-        T --> CTX[上下文返回 Agent]
-    end
-
-    subgraph S[恢复链路]
-        direction LR
-        K --> CP[Runtime Snapshot 与 Checkpoint]
-        CP --> WAL[WAL 去重回放]
-        WAL --> ID[Execution ID 幂等]
-        ID --> RES[恢复 Task DAG]
-    end
-```
-
-同步边界止于 L1 可见；最终索引和归档进入有界后台 Pipeline，召回与恢复保持为
-独立内核路径。这个边界是项目在延迟、一致性和故障恢复之间最核心的设计选择。
-
-当前公共 Recall 契约默认使用 `HYBRID + RRF`，并保持额外 reranker 关闭。
-`VECTOR_ONLY`、`KEYWORD_ONLY`、MMR、线性分数融合和受门禁控制的 Cross-Encoder
-仍可通过请求参数显式选择。冻结的 `HYBRID_RRF` 候选已经通过 read-only DEV 与
-sealed validation 门禁并晋级；`VectorOnly` 保留为回退和历史对照。完整范围见
-[Recall Ranking v2 评测](ops/runbooks/vortex-recall-ranking-v2-evaluation-20260802.md)。
-
-## 快速开始
-
-前置条件：
-
-- Docker Desktop，或支持 Compose v2 的 Docker Engine
-- 至少 6 GB 可用内存
-- Windows 命令需要 Windows PowerShell 5.1 或更高版本
-- Linux/macOS 命令需要 `bash`、`curl`、`python3`、`openssl` 和标准的 `seq`
-- 仅在可信本机环境运行 Quickstart；默认需要宿主机回环端口 `8080`
-
-Windows 可先检查端口占用和系统保留范围：
+在仓库根目录启动服务：
 
 ```powershell
-Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue
-netsh interface ipv4 show excludedportrange protocol=tcp
+# Windows
+powershell -NoProfile -ExecutionPolicy Bypass -File .\ops\run-local.ps1
 ```
-
-如果 `8080` 冲突，先设置 `VORTEX_HTTP_PORT` 为其他可用端口；这只改变宿主机映射，
-不会改变容器内 Vortex 的 `8080` 或任何存储服务端口。Redis、Milvus 和 MinIO 无需
-宿主机端口，因此宿主机 `6379`、`19530`、`9000`、`9001` 和 `9091` 被占用时仍可运行。
-并行运行第二套 Quickstart 时，同时设置唯一的 `COMPOSE_PROJECT_NAME`。
-
-下面一条命令会构建并启动完整环境，等待健康检查，完成记忆写入与召回，然后在
-Checkpoint 后强杀 Worker 并恢复任务：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\examples\quickstart-agent\run.ps1 -StartQuickstart
-```
-
-Linux/macOS：
 
 ```bash
-START_QUICKSTART=true bash examples/quickstart-agent/run.sh
+# Linux / macOS
+bash ops/run-local.sh
 ```
 
-上面的脚本会生成仅在该进程及其 Compose 子进程中有效的随机凭据。需要在后续终端
-继续运行 curl、现场演示或 Java 集成示例时，使用可复用的 `.env.local`：
+启动后打开 **[记忆工作台](http://127.0.0.1:8080/)**，点击「运行真实演示」。
+工作台会实际写入北京、更新为上海，再验证普通召回排除了旧版本。
+也可以直接新增自己的记忆，查看版本历史，撤回事实，或复制检索片段给 Agent。
+整个流程不需要 Python 客户端、外部数据库或聊天模型 API Key。
+这里展示真实的存储和检索结果，不生成 Agent 聊天答案。
 
-```powershell
-Copy-Item .env.example .env.local
-# 先替换 .env.local 中的全部占位符。
-Get-Content .env.local | ForEach-Object {
-  if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
-    [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2], "Process")
-  }
-}
-docker compose --env-file .env.local -f docker-compose.quickstart.yml pull
-docker compose --env-file .env.local -f docker-compose.quickstart.yml up --no-build -d --wait
-```
-
-直接采用正式镜像时，按 [Quickstart 文档](docs/quickstart.md) 使用
-`.env.example` 中固定的 `ghcr.io/haibaraai2517/vortex:0.2.0`，并以
-`--no-build` 启动；上面的 Demo 命令则有意构建当前源码 checkout。
-
-成功输出会先出现 `WITH VORTEX: recalled durable memory`，再出现
-`WITH VORTEX: recovered task ...`，最后打印
-`No external LLM API key was used.`。停止环境：
+需要接入代码时，另开终端：
 
 ```bash
-docker compose --env-file .env.local -f docker-compose.quickstart.yml down
+python -m pip install ./sdk/python
+python examples/personal-memory/demo.py
 ```
 
-录制输出和完整 HTTP 操作见
-[examples/quickstart-agent](examples/quickstart-agent) 与
-[docs/quickstart.md](docs/quickstart.md)。
+示例会写入“我住北京”，更新为“我已经搬到上海了”，召回当前住所，并验证旧版本更新被拒绝。
+服务默认监听 `127.0.0.1:8080`，数据位于 `./data/vortex`，关闭服务后仍保留。
+后续 Windows 启动可加 `-SkipBuild`；端口冲突可加 `-Port 18080`。
 
-Swagger UI 与 OpenAPI 文档允许匿名加载；调用业务 API 前需要在 `Authorize` 中输入
-Bearer token，Prometheus 和详细管理端点仍受保护。Spring AI 与 LangChain4j 示例
-会读取 `VORTEX_SECURITY_BEARER_TOKEN`，默认使用兼容 Quickstart allowlist 的
-`quickstart-*` namespace：
+也可以只运行一个容器：
 
-- [Spring AI ChatClient advisor 示例](examples/spring-ai-integration/README.md)
-- [LangChain4j ChatRequest transformer 示例](examples/langchain4j-integration/README.md)
-- [DeepSeek 交互式一键演示：真实模型 + 工具调用 + Checkpoint 恢复 + 多轮对话](examples/real-agent-demo/README.md)
-
-Windows 下运行 DeepSeek 完整演示无需预先设置环境变量，命令执行后按提示隐藏输入 API Key：
-
-```powershell
-.\examples\real-agent-demo\run-deepseek.ps1
+```bash
+docker compose -f docker-compose.local.yml up --build -d
 ```
 
-演示会清晰对比模型接入 Vortex 前后的回答，现场展示 Tool Call、进程终止和 Checkpoint
-恢复；恢复成功后进入 `YOU >` 交互提示符。每轮对话都会追加 task node 并生成新的可恢复 Checkpoint。
+[完整本地指南：配置、鉴权、备份与接口](docs/local-memory.md)
 
-## 基准测试证据
+## 在你的 Agent 中使用
 
-下面的核心数据来自 deterministic benchmark，并链接了证据文件和复现命令。完整范围、边界和复现说明见 [docs/benchmark.md](docs/benchmark.md)。这些数据不是生产环境保证。
+Python Agent 可以通过 `MemorySession` 自动检索和学习，不必在每一轮手动调用写入接口。
+安装 `python -m pip install ./sdk/python` 后，配置 `DEEPSEEK_API_KEY`，或
+`MODEL_BASE_URL`、`MODEL_NAME`、`MODEL_API_KEY` 三项兼容模型配置，再运行：
 
-| 方向 | 结果 | 证据 |
+```python
+from vortex_memory import CompatibleChatModel, MemorySession, VortexClient
+
+memory = VortexClient(namespace="personal")
+agent = MemorySession(memory, CompatibleChatModel.from_env())
+turn = agent.chat("我已经搬到上海长期居住了。")
+print(turn.answer)
+print(turn.updates)  # 服务已确认提交的事实及版本
+print(turn.errors)   # 提取失败、版本冲突或写入结果未知
+```
+
+新建 `MemorySession` 或重启客户端会清空对话历史；连接同一 namespace 后仍可读取长期记忆。
+默认自动抽取管理居住城市、咖啡偏好、姓名、职业和回复语言五个字段，可按业务配置字段。
+完整交互示例：`python examples/personal-memory/agent.py --namespace personal`。
+
+需要自行控制写入时机时，使用底层客户端：
+
+```python
+from vortex_memory import VortexClient
+
+memory = VortexClient(namespace="personal")
+key = "user.home.city"
+old = memory.get_fact(key)
+memory.remember(key, "我已经搬到上海了",
+                expected_revision=old["revision"] if old else 0)
+context = memory.context("用户现在住在哪里？")
+# 把 context 作为参考数据加入 Agent 上下文。
+```
+
+用稳定的 namespace 对应一个人/Agent，用稳定的 key 对应一个可变事实。
+`remember` 是显式事实更新，`store` 是事件/文档追加；原始文本追加不会自动判断矛盾。
+并发更新同一版本时返回 HTTP 409，调用方重新读取后决定如何处理。
+
+MCP 客户端安装 `python -m pip install "./sdk/python[mcp]"`，配置 stdio 命令
+`python -m vortex_memory.mcp`，即可使用 `remember`、`recall`、`get_memory`、
+`memory_history`、`retract_memory` 和 `forget_memory`。
+[Python 文档与完整 MCP 配置](sdk/python/README.md)
+
+使用 Codex CLI 时，可以保留现有模型和登录配置，在独立目录直接启动带 Vortex 的会话：
+
+```bash
+python -m pip install "./sdk/python[mcp]"
+python ops/run-codex-memory.py --namespace personal
+```
+
+启动脚本为本次运行配置 MCP，并加载示例事实管理规则；同一 namespace 下的 Python Agent 可共享更新。
+见 [Codex 接入指南](docs/codex-memory.md)和 [Codex ↔ Python 九轮实测记录](docs/codex-memory-verification.md)。
+
+需要正常聊天时自动检索和更新事实，可使用 Python `MemorySession` 或 Spring AI `VortexMemoryAdvisor`。
+两者在回答前检索，回答后通过真实模型提取配置字段，并按版本提交；MCP 继续共享同一记忆库。
+见 [自动 Agent 接入与跨会话验证](docs/automatic-agent-memory.md)。自动抽取需要额外配置聊天模型。
+
+## 解决哪些问题
+
+| 需求 | 当前行为 |
+| --- | --- |
+| 中文自然语言查询 | CJK bigram + BM25 与本地向量融合；“用户喜欢什么咖啡”能匹配“我喜欢喝美式咖啡，不加糖” |
+| 几百条之后仍能检索 | 全文索引覆盖完整 namespace；topK 只限制结果，语料不截断为任意 256 条 |
+| 北京搬到上海 | 相同 key 原子更新；旧版本保留在审计历史中，普通召回排除它 |
+| 临时偏好/错误事实 | `expiresAt` 到期失效、`retract` 撤回、`forget` 删除 live store 内容和历史 |
+| 重启后继续使用 | 本地普通写入在成功响应前提交到磁盘；重启无需重建语料 |
+| 防止旧写入复活 | revision CAS、持久版本墓碑、缓存与后台重试的生命周期过滤 |
+| 与其他 Agent 隔离 | namespace 和 tags 过滤；可启用 Bearer token + namespace allowlist |
+
+当前定位是**个人、单进程、本机持久记忆**。支持配置字段内的模型辅助事实更新，不提供公网、多租户身份、任意领域事实归并或容量 SLA。
+BGE-Small-ZH 偏向中文，英文语义质量需另行评测。`forget` 是逻辑删除，已有备份与磁盘安全擦除需另行管理。
+
+## 验证与质量边界
+
+已经完成以下本机验证，记录包含具体场景与未覆盖范围：
+
+| 验证 | 实际结果 | 证据 |
 | --- | --- | --- |
-| LongMemEval recall | 官方 LongMemEval oracle 的 120-case case-isolated 评测完成五种模式 `600` 次配对运行，错误数 `0`。`VectorOnly` fragment Recall@5 为 `0.8094`，相对 `KeywordOnly` 提升 `+0.1856`，paired 95% CI `[+0.1086, +0.2632]`。 | [LongMemEval 评测报告](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md) |
-| Cross-Encoder 门禁 | 锁定的 ONNX Cross-Encoder DEV 候选在 `120/120` case 改变排序，但未通过五项冻结的质量与延迟规则。`VectorOnly` 是该证据版本的模型晋级基线；validation 和 reserve 均未运行。 | [Cross-Encoder DEV 决策](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) |
-| Main-path latency | 返回前同步完成预抽取记忆切分、本地 Embedding 与 L1 write-through，最终处理进入有界后台 Pipeline；100 case/mode 下 P99 从 `818.82 ms` 降至 `268.65 ms`（`-67.19%`），返回时 L1 可见率和最终 L2/L3 readiness 均为 `100%`。 | [Write-through 延迟证据](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md) |
-| Runtime recovery | deterministic fault-injection matrix 在 service restart、tool failure、LLM exception、state integrity 和 concurrency 五类场景中通过 `32/32` covered cases。 | [Runtime recovery evidence](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md) |
+| 本地服务与持久化 | 中文检索、300 条干扰记忆、版本冲突、强制重启和官方 MCP Client 调用通过 | [本地服务验收](docs/local-memory-verification.md) |
+| Python ↔ Spring AI | 7 轮真实模型对话，新进程共享并更新城市与咖啡偏好 | [自动记忆验收](docs/automatic-agent-memory-verification.md) |
+| Codex CLI ↔ Python | 9 轮真实模型对话，保存、更新、撤回后读取通过；6 个独立 Codex 会话、12 次 MCP 调用 | [Codex 共享记忆验收](docs/codex-memory-verification.md) |
+| Python 客户端与协议 | 2026-11-17 完整测试 62/62 通过，包含 MCP stdio、版本冲突和未知写入结果处理 | [测试代码](sdk/python/tests) |
 
-Recall 是 oracle fragment 检索指标，不是答案准确率。延迟来自排除外部 LLM generation
-的本地确定性 benchmark，不是 production P99 或完整 Agent latency。Cross-Encoder
-被拒绝的结果也不能表述为模型收益；具体边界以链接的 evidence 文件为准。
+Codex 这次按已知 key 读取事实，配合提供的项目规则运行；这些固定场景不是语义检索或普遍答案正确率评测。
 
-## 三个核心技术决策及取舍
+复现基础验证：
 
-### 1. L1 write-through 后返回，最终持久化异步化
+```bash
+mvn verify
+python -m pip install "./sdk/python[mcp]"
+python -m unittest discover -s sdk/python/tests -v
+python ops/verify-local-memory.py --mcp
+```
 
-**问题。** 如果每次写入都同步完成记忆抽取、摘要、向量索引和冷归档，请求主链路
-会为调用方返回前并不需要的工作付出延迟。
+最后一条命令使用真实本地 BGE 模型，启动独立数据目录和端口，写入 300 条干扰记忆，
+检查中文召回、版本更新、强制进程重启和 MCP 调用，不访问你的日常记忆目录。
+[本轮验证记录与未验证边界](docs/local-memory-verification.md)。
 
-**决策。** Vortex 在同步边界内完成预抽取记忆的切分、本地 Embedding 和 L1
-admission；最终抽取、L2 索引和 L3 归档进入带重试与 backpressure 的有界
-Pipeline。调用方获得 read-your-own-write，同时不等待所有持久层完成。
+历史 [LongMemEval oracle 证据](docs/benchmark.md) 测量的是片段召回，不能证明答案正确率。
+本轮分词与默认融合行为已变化，不能继承旧版评测结论。非 oracle 的端到端答案质量和第一批
+真实用户的持续使用情况，仍是下一阶段的发布门槛，见 [ROADMAP](ROADMAP.md)。
+[非 oracle LongMemEval-S 生成与官方评分接入](docs/non-oracle-evaluation.md) 已提供，尚未宣称答案准确率。
 
-**取舍。** 系统接受 L2/L3 最终一致，并必须暴露 Pipeline 状态与失败处理。换来的
-结果是：100 case/mode 的确定性基准中，主链路 P99 从 `818.82 ms` 降至
-`268.65 ms`，返回时 L1 可见率和最终 L2/L3 readiness 均为 `100%`。证据见
-[write-through 延迟报告](ops/runbooks/vortex-main-path-latency-write-through-evidence-20260728.md)。
+## Java 集成与已有内核
 
-**实现入口。** [AsyncMemoryPipeline](vortex-kernel/src/main/java/com/vortex/kernel/hmc/AsyncMemoryPipeline.java)
-负责有界异步交接；[HierarchicalMemoryController](vortex-kernel/src/main/java/com/vortex/kernel/hmc/HierarchicalMemoryController.java)
-负责切分、本地 Embedding 和 L1 admission。
+现有的 Task DAG、Checkpoint、WAL 和 Execution ID 内核保留为进阶能力；个人记忆接入无需学习它们。
+local 模式的 Execution ID 记录在内存，不能用它声称跨重启副作用 exactly-once。
 
-### 2. 选择可审计的召回基线，不上线未被证据支持的重排模型
+- [Spring AI 示例](examples/spring-ai-integration/README.md)
+- [LangChain4j 示例](examples/langchain4j-integration/README.md)
+- [原分布式 Quickstart](docs/quickstart.md)：显式使用 `distributed` profile 和 Milvus/MinIO
+- [架构与恢复机制](docs/architecture.md)
 
-**问题。** 共享评测命名空间会造成跨用例数据泄漏，而重排模型仅仅“改变排序”并不
-等于提升召回质量。
-
-**决策。** `v0.1.1` 废弃污染结果，按 case 隔离重跑 LongMemEval，并用五项冻结的
-质量与延迟规则控制模型晋级。锁定的 ONNX Cross-Encoder 虽改变 `120/120` 个
-排序，但未通过门禁，因此没有晋级为默认 reranker。当前代码进一步引入
-`HYBRID + RRF` 默认候选融合，但仍关闭额外 reranker；冻结候选已通过 read-only
-DEV 与 sealed validation 门禁并晋级为受保护的公共默认值。
-
-**取舍。** 项目暂时放弃推测性的 Cross-Encoder 收益，并保留 `VectorOnly` 作为
-可回退、可对照的基线。当前 Hybrid/RRF 默认值扩大了关键词与向量候选覆盖面，
-也增加了排序复杂度和重新验证责任。`v0.1.1` 隔离后的
-120-case 评测中 fragment Recall@5 为 `0.8094`，相对 `KeywordOnly`
-提升 `+0.1856`，paired 95% CI 为 `[+0.1086, +0.2632]`。证据见
-[LongMemEval 报告](ops/runbooks/vortex-recall-longmemeval-evaluation-report-20260729.md)
-、[Cross-Encoder 决策](ops/runbooks/vortex-cross-encoder-dev-decision-20260729.md) 和
-[Recall Ranking v2 晋级证据](ops/runbooks/vortex-recall-ranking-v2-evaluation-20260802.md)。
-
-**实现入口。** [RecallQuery](vortex-common/src/main/java/com/vortex/common/dto/RecallQuery.java)
-定义证据支持的默认值；[RecallOrchestrator](vortex-kernel/src/main/java/com/vortex/kernel/hmc/RecallOrchestrator.java)
-实现显式选择的 retrieval 与 reranker 分支。
-
-### 3. Snapshot + WAL + Execution ID，不声称分布式 exactly-once
-
-**问题。** 仅有 Checkpoint 无法区分重启前已经完成和仍在执行的 Tool/LLM 调用，
-直接 replay 可能重复产生副作用。
-
-**决策。** Runtime Snapshot 持久化 Task DAG、Conversation、Memory 引用和
-Tool/LLM 状态；恢复时加载 Checkpoint、去重回放 WAL、重建状态，再以
-Execution ID 请求哈希、原子占位与响应重放保证幂等。
-
-**取舍。** 方案增加序列化成本、WAL 写放大和状态迁移约束，提供的是确定性的单运行时
-恢复，而不是分布式一致性或跨区域 exactly-once。默认 Execution ID backend 为
-进程内存；Quickstart 显式切换到 Redis。执行中的 Execution ID 占位不会按业务 TTL
-自动过期，进入 `COMPLETED` 或 `UNKNOWN` 后才开始保留期，避免长动作跨 TTL 后重放
-副作用；异常遗留的 `IN_PROGRESS` 需要人工核对。Quickstart 将 WAL、DLQ、处理记录和
-应用状态统一挂载到 `/var/lib/vortex` 持久卷。故障注入矩阵在
-五类场景中通过 `32/32` covered cases。证据见
-[runtime recovery 报告](ops/runbooks/vortex-runtime-recovery-benchmark-evidence-20260627.md)。
-
-**实现入口。** [SnapshotService](vortex-kernel/src/main/java/com/vortex/kernel/snapshot/SnapshotService.java)
-持久化 Checkpoint，[RecoveryEngine](vortex-kernel/src/main/java/com/vortex/kernel/snapshot/RecoveryEngine.java)
-负责状态回放，[ExecutionIdService](vortex-app/src/main/java/com/vortex/app/runtime/ExecutionIdService.java)
-保护对外可见执行的幂等性。
-
-## 已实现范围
-
-| 方向 | 已实现能力 |
-| --- | --- |
-| Memory | store、recall、feedback、pin/unpin、eviction、异步 ingest 状态、namespace/tag 过滤与 token budget |
-| Retrieval | keyword、vector、hybrid candidate merge、可选重排门禁与 context assembly |
-| Runtime state | Task DAG 修改、Checkpoint、WAL replay、branch/switch/merge 与 Execution ID 幂等 |
-| Storage | L1 Caffeine、L2 Milvus、L3 MinIO，以及可选 Redis Execution ID backend |
-| Model integration | Vortex generation/embedding 契约、Spring AI 示例和 LangChain4j adapter |
-| Operations | Health catalog、SLO snapshot、Prometheus metrics、确定性 benchmark 与 governance check |
-
-Quickstart 后可匿名打开 `http://localhost:8080/swagger-ui.html` 查看完整 REST
-接口，并在 Swagger 的 `Authorize` 对话框中输入已配置的 Bearer token 后调用业务 API。
-Prometheus 与详细管理端点仍需认证。详细 endpoint 和配置继续由 [docs/quickstart.md](docs/quickstart.md) 与
-[docs/architecture.md](docs/architecture.md) 承接。CI 与 benchmark 复现命令见
-[docs/benchmark.md](docs/benchmark.md)。
-
-## 项目边界
-
-Vortex 与纯向量 RAG、手写 memory layer 的定位差异见
-[docs/comparison.md](docs/comparison.md)。面向项目审阅的稳定版本为
-[`v0.2.0`](docs/releases/v0.2.0.md)，早期 release note 继续保留归档。
-第三方采用风险、修复步骤和发布验收标准见
-[外部使用与发布准备手册](ops/runbooks/vortex-external-adoption-readiness-manual.md)。
-
-Vortex 暂不声称已经具备：
-
-- 生产级 OIDC/mTLS、细粒度 RBAC、独立租户身份与分布式限流/审计汇聚。Quickstart
-  当前提供的是单个共享 Bearer token、namespace allowlist、进程内限流和结构化审计事件。
-- 长时间高并发生产容量结果。
-- 分布式一致性、多节点调度或跨区域复制。
-- 完整外部 process-manager crash-loop 编排。
-- 在 latency benchmark 内集成真实 LLM generation 的完整 Agent runtime。
-
-因此当前适用范围是：
-
-| 场景 | 状态 |
-| --- | --- |
-| 源码阅读、作品集审阅、本机 Demo | 支持 |
-| 可信隔离网络内通过 REST 试验 | 有条件支持；使用固定版本 OCI image、Quickstart token、namespace 与回环端口边界 |
-| 作为 Maven/Gradle 库直接依赖 | 尚未发布 artifacts |
-| 公网、多租户或生产部署 | 不支持 |
+分布式兼容模式暂不支持新的 facts 原子更新接口；其关键词分支遍历全部 namespace 页面，成本随数据量增长。
+新用户优先使用本地模式。
 
 ## 许可证
 
-Vortex 代码与文档使用 [Apache License 2.0](LICENSE)。模型与依赖归属记录见
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。部署、备份恢复与迁移步骤见
-[部署运维手册](ops/runbooks/vortex-deployment-operations.md)，候选版本验收见
-[发布清单](ops/runbooks/vortex-release-checklist.md)。
-
-第三方模型文件、数据集和外部服务名称仍受各自上游许可与服务条款约束；仓库根目录的
-Apache-2.0 许可证不自动覆盖这些第三方资产。重新分发或商业使用前，请核验对应模型和
-数据集的来源、许可证与 attribution 要求。
+[Apache-2.0](LICENSE)。模型和依赖保留各自上游许可，见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md)。

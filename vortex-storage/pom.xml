@@ -15,6 +15,16 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-core</artifactId>
+            <version>9.12.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-analysis-common</artifactId>
+            <version>9.12.2</version>
+        </dependency>
+        <dependency>
             <groupId>com.vortex</groupId>
             <artifactId>vortex-common</artifactId>
         </dependency>

@@ -26,14 +26,21 @@ jobs:
       - name: Unit tests and package verification
         run: mvn -B verify
 
+      - name: Download verified model for legacy integration and governance checks
+        run: python3 ops/download-model.py
+
       - name: Isolated app integration verify
         shell: pwsh
         run: ./ops/run-integration-tests.ps1
 
       - name: Baseline governance check
+        env:
+          SPRING_PROFILES_ACTIVE: distributed
         shell: pwsh
         run: ./ops/run-baseline-governance-check.ps1 -SkipMavenTest -SkipPackage
 
       - name: Learning governance check
+        env:
+          SPRING_PROFILES_ACTIVE: distributed
         shell: pwsh
         run: ./ops/run-learning-governance-check.ps1 -SkipMavenTest -SkipPackage -SkipLearningRun

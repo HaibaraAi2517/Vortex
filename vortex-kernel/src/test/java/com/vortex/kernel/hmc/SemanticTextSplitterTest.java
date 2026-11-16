@@ -9,6 +9,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class SemanticTextSplitterTest {
 
+    @Test
+    void longChineseWithoutPunctuationIsBoundedAndNoContentIsLost() {
+        var chinese = new SemanticTextSplitter(text -> text.codePointCount(0, text.length()), 30);
+        String content = "用户喜欢美式咖啡".repeat(50);
+        var chunks = chinese.split(content, "personal", List.of("profile"), null, null);
+        assertThat(chunks).hasSizeGreaterThan(1).allMatch(fragment -> fragment.getTokenCount() <= 30);
+        assertThat(chunks.stream().map(MemoryFragment::getContent).collect(java.util.stream.Collectors.joining())).isEqualTo(content);
+    }
+
+    @Test
+    void hardSplitsPreserveSupplementaryUnicodeCharacters() {
+        var unicode = new SemanticTextSplitter(text -> text.codePointCount(0, text.length()), 7);
+        String content = "𠮷😊".repeat(30);
+        var chunks = unicode.split(content, "personal", List.of(), null, null);
+        assertThat(chunks).allMatch(fragment -> fragment.getTokenCount() <= 7);
+        assertThat(chunks.stream().map(MemoryFragment::getContent).collect(java.util.stream.Collectors.joining())).isEqualTo(content);
+        assertThat(chunks).allMatch(fragment -> !Character.isLowSurrogate(fragment.getContent().charAt(0)));
+    }
+
     private final SemanticTextSplitter splitter = new SemanticTextSplitter(
             text -> text == null || text.isBlank() ? 0 : text.trim().split("\\s+").length,
             50

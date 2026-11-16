@@ -23,6 +23,32 @@ class MilvusWarmStoreTest {
     private final MilvusWarmStore store = new MilvusWarmStore(client, 2, "test", false, "", null, null);
     private final ObjectMapper mapper = new ObjectMapper();
 
+    @Test
+    void completeNamespaceListingVisitsEveryIteratorPageAndClosesIt() throws Exception {
+        var iterator = mock(io.milvus.orm.iterator.QueryIterator.class);
+        var first = new io.milvus.response.QueryResultsWrapper.RowRecord();
+        first.put("id", "first"); first.put("namespace", "ns"); first.put("content", "first page");
+        first.put("importance", 0.5); first.put("token_count", 2);
+        var last = new io.milvus.response.QueryResultsWrapper.RowRecord();
+        last.put("id", "last"); last.put("namespace", "ns"); last.put("content", "咖啡");
+        last.put("importance", 0.5); last.put("token_count", 2);
+        when(client.queryIterator(any(io.milvus.param.dml.QueryIteratorParam.class))).thenReturn(R.success(iterator));
+        when(iterator.next()).thenReturn(java.util.List.of(first), java.util.List.of(last), java.util.List.of());
+        assertThat(store.listByNamespace("ns", Integer.MAX_VALUE)).extracting(fragment -> fragment.getId()).containsExactly("first", "last");
+        verify(iterator, times(3)).next();
+        verify(iterator).close();
+        verify(client, never()).query(any(QueryParam.class));
+    }
+
+    @Test
+    void incompleteNamespaceScanFailsInsteadOfReturningSilentlyTruncatedResults() {
+        var iterator = mock(io.milvus.orm.iterator.QueryIterator.class);
+        when(client.queryIterator(any(io.milvus.param.dml.QueryIteratorParam.class))).thenReturn(R.success(iterator));
+        when(iterator.next()).thenThrow(new IllegalStateException("connection lost"));
+        assertThatThrownBy(() -> store.listByNamespace("ns", Integer.MAX_VALUE)).isInstanceOf(IllegalStateException.class);
+        verify(iterator).close();
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"ordinary", "quickstart-x\" or namespace != \"", "x\\\" or id != \"",
             "line\nbreak", "quote'and\\backslash"})

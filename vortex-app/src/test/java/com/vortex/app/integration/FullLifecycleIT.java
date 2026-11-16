@@ -52,6 +52,7 @@ import static org.awaitility.Awaitility.await;
  * Optional Testcontainers-backed lifecycle coverage.
  * Enable with -Drun.full.lifecycle.it=true when explicitly needed.
  */
+@org.springframework.test.context.ActiveProfiles("distributed")
 @SpringBootTest(
         classes = {VortexApplication.class, FullLifecycleIT.TestEmbeddingConfig.class},
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,

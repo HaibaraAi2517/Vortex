@@ -1,0 +1,45 @@
+# The default distribution is a single process with a durable local data directory.
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    redis:
+      enabled: false
+vortex:
+  storage:
+    backend: local
+    local:
+      path: ${VORTEX_DATA_DIR:./data/vortex}/index
+  runtime:
+    execution-id:
+      backend: MEMORY
+  kernel:
+    splitter:
+      max-tokens-per-chunk: 480
+    embedding:
+      cloud:
+        enabled: false
+    learning:
+      shadow-persistence-path: ${VORTEX_DATA_DIR:./data/vortex}/shadow-eval.json
+    persistence:
+      dlq:
+        path: ${VORTEX_DATA_DIR:./data/vortex}/persistence/dlq.jsonl
+      processed-keys:
+        path: ${VORTEX_DATA_DIR:./data/vortex}/persistence/processed-keys.txt
+    snapshot:
+      wal:
+        dir: ${VORTEX_DATA_DIR:./data/vortex}/wal
+      scheduler:
+        enabled: false
+    paging:
+      enabled: false
+logging:
+  level:
+    com.vortex: INFO

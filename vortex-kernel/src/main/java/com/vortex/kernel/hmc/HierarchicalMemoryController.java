@@ -14,6 +14,7 @@ import com.vortex.storage.api.L1HotStore;
 import com.vortex.storage.api.L1HotStoreAdmin;
 import com.vortex.storage.api.L2WarmStore;
 import com.vortex.storage.api.L3ColdStore;
+import com.vortex.storage.api.IndexedMemoryStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -234,10 +235,14 @@ public class HierarchicalMemoryController {
         populateOptionalL2Embedding(fragment);
         persistenceManager.withFragmentLock(fragment.getId(), () -> {
             persistenceManager.beginStore(fragment.getId());
-            evictionCoordinator.admitToL1(fragment, persistenceReason);
-            if (waitForPersistence) {
+            if (l2.synchronousDurability()) {
+                persistenceManager.persistBlocking(fragment, persistenceReason);
+                evictionCoordinator.admitToL1(fragment, persistenceReason);
+            } else if (waitForPersistence) {
+                evictionCoordinator.admitToL1(fragment, persistenceReason);
                 persistenceManager.persistBlocking(fragment, persistenceReason);
             } else {
+                evictionCoordinator.admitToL1(fragment, persistenceReason);
                 persistenceManager.persistAsync(fragment, persistenceReason);
             }
             return null;
@@ -361,6 +366,9 @@ public class HierarchicalMemoryController {
      * Three-tier fragment lookup: L1 → L3 → L2.
      */
     Optional<MemoryFragment> findFragment(String fragmentId) {
+        if (l2 instanceof IndexedMemoryStore indexed && !indexed.isRecallable(fragmentId)) {
+            return Optional.empty();
+        }
         Optional<MemoryFragment> l1Fragment = l1.peek(fragmentId);
         if (l1Fragment.isPresent()) {
             return l1Fragment;

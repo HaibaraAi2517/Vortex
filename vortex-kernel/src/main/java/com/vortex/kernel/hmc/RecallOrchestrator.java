@@ -15,6 +15,7 @@ import com.vortex.kernel.paging.SemanticPagingManager;
 import com.vortex.storage.api.L1HotStore;
 import com.vortex.storage.api.L2WarmStore;
 import com.vortex.storage.api.L3ColdStore;
+import com.vortex.storage.api.IndexedMemoryStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,9 +63,6 @@ public class RecallOrchestrator {
     private final RedundancyAnalyzer redundancyAnalyzer;
     private final FragmentPinManager pinManager;
     private final TieredEvictionCoordinator evictionCoordinator;
-
-    @Value("${vortex.kernel.recall.keyword-candidate-pool-limit:256}")
-    private int keywordCandidatePoolLimit = 256;
 
     @Value("${vortex.kernel.recall.cross-encoder-candidate-pool-limit:40}")
     private int crossEncoderCandidatePoolLimit = CrossEncoderReranker.DEFAULT_CANDIDATE_POOL_LIMIT;
@@ -169,23 +167,20 @@ public class RecallOrchestrator {
         boolean keywordRequested = retrievalMode != RetrievalMode.VECTOR_ONLY;
         ExactQueryFeatureDetector.KeywordSignal keywordSignal =
                 exactQueryFeatureDetector.analyze(query.getQuery());
-        boolean keywordEnabled = keywordRequested
-                && (rankingStrategy == RecallRankingStrategy.LEGACY
-                || retrievalMode == RetrievalMode.KEYWORD_ONLY
-                || keywordSignal.enabled());
+        boolean keywordEnabled = keywordRequested;
         double keywordFusionWeight = !keywordEnabled
                 ? 0.0d
                 : rankingStrategy == RecallRankingStrategy.LEGACY
                         || retrievalMode == RetrievalMode.KEYWORD_ONLY
                         ? 1.0d
-                        : keywordSignal.fusionWeight();
+                        : keywordSignal.enabled() ? keywordSignal.fusionWeight() : 1.0d;
         String keywordTriggerReason = !keywordEnabled
                 ? "NONE"
                 : rankingStrategy == RecallRankingStrategy.LEGACY
                         ? "LEGACY_REQUESTED"
                         : retrievalMode == RetrievalMode.KEYWORD_ONLY
                                 ? "KEYWORD_ONLY"
-                                : keywordSignal.reason();
+                                : keywordSignal.enabled() ? keywordSignal.reason() : "NATURAL_LANGUAGE";
         boolean rerankEnabled = query.isRerankEnabled();
         RerankerType rerankerType = resolveRerankerType(query);
         RecallDiagnosticsAccumulator diagnostics = new RecallDiagnosticsAccumulator(requiredTags);
@@ -197,7 +192,8 @@ public class RecallOrchestrator {
         AdaptiveWeightLearner.ProfileSelection profileSelection = adaptiveWeightLearner.selectProfiles(scenario);
         AdaptiveWeightProfile baselineProfile = evictionPolicy.defaultProfile();
 
-        float[] l1QueryEmbedding = requireEmbedding(l1EmbeddingService, query.getQuery(), "L1 recall query");
+        float[] l1QueryEmbedding = vectorEnabled
+                ? requireEmbedding(l1EmbeddingService, query.getQuery(), "L1 recall query") : null;
         float[] l2QueryEmbedding = vectorEnabled
                 ? resolveL2QueryEmbedding(query.getQuery(), l1QueryEmbedding)
                 : null;
@@ -211,6 +207,7 @@ public class RecallOrchestrator {
         List<MemoryFragment> l1Candidates = l1.getAll(query.getNamespace());
         diagnostics.setL1CandidateCount(l1Candidates.size());
         List<MemoryFragment> filteredL1Candidates = l1Candidates.stream()
+                .filter(this::isRecallable)
                 .filter(fragment -> matchesAllTags(fragment, requiredTags))
                 .toList();
         diagnostics.setL1TagMatchedCount(filteredL1Candidates.size());
@@ -219,7 +216,9 @@ public class RecallOrchestrator {
         if (vectorEnabled) {
             int l2SearchLimit = Math.max(16, query.getTopK() * 4);
             collectL2Candidates(
-                    l2.search(l2QueryEmbedding, query.getNamespace(), l2SearchLimit),
+                    l2 instanceof IndexedMemoryStore indexed
+                            ? indexed.searchVectors(l2QueryEmbedding, query.getNamespace(), requiredTags, l2SearchLimit)
+                            : l2.search(l2QueryEmbedding, query.getNamespace(), l2SearchLimit),
                     RecallCandidateSource.L2_SEARCH,
                     query,
                     requiredTags,
@@ -254,6 +253,7 @@ public class RecallOrchestrator {
                     diagnostics);
         }
 
+        if (!vectorEnabled) candidatesById.keySet().retainAll(keywordScoresById.keySet());
         List<MemoryFragment> evaluationPool = new ArrayList<>(candidatesById.values());
         List<ScoredCandidate> activeRanked;
         List<ScoredCandidate> shadowRanked;
@@ -308,6 +308,7 @@ public class RecallOrchestrator {
                 break;
             }
             MemoryFragment fragment = candidate.fragment();
+            if (!isRecallable(fragment)) continue;
             if (!selectedIds.add(fragment.getId())) {
                 continue;
             }
@@ -436,24 +437,32 @@ public class RecallOrchestrator {
         Map<String, MemoryFragment> keywordPool = new LinkedHashMap<>();
         filteredL1Candidates.forEach(fragment -> keywordPool.put(fragment.getId(), fragment));
         candidatesById.values().forEach(fragment -> keywordPool.put(fragment.getId(), fragment));
-        int namespaceLimit = Math.max(
-                Math.max(32, query.getTopK() * 8),
-                Math.max(1, keywordCandidatePoolLimit));
-        for (MemoryFragment namespaceCandidate : l2.listByNamespace(query.getNamespace(), namespaceLimit)) {
-            if (namespaceCandidate != null
-                    && Objects.equals(query.getNamespace(), namespaceCandidate.getNamespace())
-                    && matchesAllTags(namespaceCandidate, requiredTags)) {
-                keywordPool.putIfAbsent(namespaceCandidate.getId(), namespaceCandidate);
+        int hitLimit = Math.max(16, query.getTopK() * 4);
+        List<KeywordRecallIndex.KeywordCandidate> keywordHits;
+        if (l2 instanceof IndexedMemoryStore indexed) {
+            // BM25 ranks the complete committed corpus; the limit caps results, never the corpus.
+            keywordHits = new ArrayList<>(indexed.searchKeywords(query.getQuery(), query.getNamespace(), requiredTags, hitLimit)
+                    .stream().map(hit -> new KeywordRecallIndex.KeywordCandidate(hit.fragment(), hit.score(), List.of())).toList());
+            Set<String> durableIds = keywordHits.stream().map(hit -> hit.fragment().getId()).collect(Collectors.toSet());
+            // Also include writes still staged by the explicit asynchronous ingestion API.
+            keywordHits.addAll(keywordRecallIndex.search(query.getQuery(), filteredL1Candidates.stream()
+                    .filter(fragment -> !durableIds.contains(fragment.getId()) && l2.get(fragment.getId()).isEmpty())
+                    .toList(), hitLimit));
+        } else {
+            // Compatibility path: scan all pages, never an arbitrary 256-row sample.
+            for (MemoryFragment namespaceCandidate : l2.listByNamespace(query.getNamespace(), Integer.MAX_VALUE)) {
+                if (namespaceCandidate != null
+                        && Objects.equals(query.getNamespace(), namespaceCandidate.getNamespace())
+                        && matchesAllTags(namespaceCandidate, requiredTags)) {
+                    keywordPool.putIfAbsent(namespaceCandidate.getId(), namespaceCandidate);
+                }
             }
+            keywordHits = keywordRecallIndex.search(query.getQuery(), new ArrayList<>(keywordPool.values()), hitLimit);
         }
-
-        List<KeywordRecallIndex.KeywordCandidate> keywordHits = keywordRecallIndex.search(
-                query.getQuery(),
-                new ArrayList<>(keywordPool.values()),
-                Math.max(16, query.getTopK() * 4));
         diagnostics.setKeywordCandidateCount(keywordHits.size());
         for (KeywordRecallIndex.KeywordCandidate hit : keywordHits) {
             MemoryFragment fragment = hit.fragment();
+            if (!isRecallable(fragment)) continue;
             if (!matchesAllTags(fragment, requiredTags)) {
                 diagnostics.incrementKeywordTagRejectedCount();
                 continue;
@@ -477,6 +486,7 @@ public class RecallOrchestrator {
             Map<String, String> tierById,
             MemoryFragment fragment,
             String tier) {
+        if (!isRecallable(fragment)) return;
         candidatesById.putIfAbsent(fragment.getId(), fragment);
         tierById.putIfAbsent(fragment.getId(), tier);
     }
@@ -633,6 +643,7 @@ public class RecallOrchestrator {
             String namespace,
             List<String> requiredTags,
             RecallDiagnosticsAccumulator diagnostics) {
+        if (!isRecallable(candidate)) return null;
         MemoryFragment fragment = findFragment(candidate.getId(), diagnostics).orElse(candidate);
         if (!Objects.equals(namespace, fragment.getNamespace())) {
             return null;
@@ -656,6 +667,7 @@ public class RecallOrchestrator {
     }
 
     private Optional<MemoryFragment> findFragment(String fragmentId, RecallDiagnosticsAccumulator diagnostics) {
+        if (l2 instanceof IndexedMemoryStore indexed && !indexed.isRecallable(fragmentId)) return Optional.empty();
         Optional<MemoryFragment> l1Fragment = l1.peek(fragmentId);
         if (l1Fragment.isPresent()) {
             diagnostics.incrementFindFragmentL1HitCount();
@@ -676,6 +688,10 @@ public class RecallOrchestrator {
     }
 
     // ---- Embedding helpers ----
+
+    private boolean isRecallable(MemoryFragment fragment) {
+        return !(l2 instanceof IndexedMemoryStore indexed) || indexed.isRecallable(fragment.getId());
+    }
 
     private void ensureL1Embedding(MemoryFragment fragment) {
         if (fragment.getEmbedding() == null) {

@@ -1,0 +1,21 @@
+services:
+  vortex:
+    build: .
+    # Build this checkout: the published 0.2.0 image does not contain local memory.
+    image: vortex-local:0.3.0-alpha
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SERVER_ADDRESS: 0.0.0.0
+      VORTEX_DATA_DIR: /var/lib/vortex
+      VORTEX_SECURITY_ENABLED: ${VORTEX_SECURITY_ENABLED:-false}
+      VORTEX_SECURITY_BEARER_TOKEN: ${VORTEX_SECURITY_BEARER_TOKEN:-}
+      VORTEX_SECURITY_NAMESPACE_PATTERNS: ${VORTEX_SECURITY_NAMESPACE_PATTERNS:-personal}
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx768m
+    ports:
+      - "127.0.0.1:${VORTEX_HTTP_PORT:-8080}:8080"
+    volumes:
+      - vortex-local-data:/var/lib/vortex
+    stop_grace_period: 30s
+    restart: unless-stopped
+volumes:
+  vortex-local-data:

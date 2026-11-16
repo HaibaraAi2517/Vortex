@@ -67,6 +67,17 @@ public class SemanticTextSplitter {
                 StringBuilder buf = new StringBuilder();
                 int bufTokens = 0;
                 for (String sentence : sentences) {
+                    if (countTokens(sentence) > maxTokensPerChunk) {
+                        if (buf.length() > 0) {
+                            result.add(buildFragment(buf.toString().strip(), namespace, tags, reasoningChainId, pinTtlMillis));
+                            buf.setLength(0);
+                            bufTokens = 0;
+                        }
+                        for (String part : splitOversizedSentence(sentence)) {
+                            result.add(buildFragment(part, namespace, tags, reasoningChainId, pinTtlMillis));
+                        }
+                        continue;
+                    }
                     int st = countTokens(sentence);
                     if (bufTokens + st > maxTokensPerChunk && buf.length() > 0) {
                         result.add(buildFragment(buf.toString().strip(), namespace, tags, reasoningChainId, pinTtlMillis));
@@ -82,6 +93,33 @@ public class SemanticTextSplitter {
             }
         }
         return result;
+    }
+
+    /** Long unpunctuated text must not become one silently truncated embedding. */
+    private List<String> splitOversizedSentence(String sentence) {
+        List<String> parts = new ArrayList<>();
+        String remaining = sentence.strip();
+        while (!remaining.isEmpty() && countTokens(remaining) > maxTokensPerChunk) {
+            int low = 1;
+            int high = remaining.codePointCount(0, remaining.length());
+            int fittingEnd = 0;
+            while (low <= high) {
+                int middle = low + (high - low) / 2;
+                int end = remaining.offsetByCodePoints(0, middle);
+                if (countTokens(remaining.substring(0, end)) <= maxTokensPerChunk) {
+                    fittingEnd = end;
+                    low = middle + 1;
+                } else {
+                    high = middle - 1;
+                }
+            }
+            if (fittingEnd == 0) throw new IllegalArgumentException("Chunk token budget cannot fit a single code point");
+            String part = remaining.substring(0, fittingEnd).strip();
+            if (!part.isEmpty()) parts.add(part);
+            remaining = remaining.substring(fittingEnd).strip();
+        }
+        if (!remaining.isEmpty()) parts.add(remaining);
+        return parts;
     }
 
     private MemoryFragment buildFragment(

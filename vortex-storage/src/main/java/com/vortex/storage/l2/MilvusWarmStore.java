@@ -51,6 +51,8 @@ import java.util.*;
  */
 @Slf4j
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        name = "vortex.storage.backend", havingValue = "milvus", matchIfMissing = true)
 public class MilvusWarmStore implements L2WarmStore {
     private static final com.fasterxml.jackson.databind.ObjectMapper EXPRESSION_MAPPER =
             new com.fasterxml.jackson.databind.ObjectMapper();
@@ -325,6 +327,7 @@ public class MilvusWarmStore implements L2WarmStore {
 
     @Override
     public List<MemoryFragment> listByNamespace(String namespace, int limit) {
+        if (limit == Integer.MAX_VALUE) return scanNamespace(namespace);
         int boundedLimit = Math.max(1, limit);
         R<QueryResults> result = client.query(QueryParam.newBuilder()
                 .withCollectionName(collectionName)
@@ -352,6 +355,39 @@ public class MilvusWarmStore implements L2WarmStore {
                     .tags(readTags(wrapper, i))
                     .lastAccessTime(System.currentTimeMillis())
                     .build());
+        }
+        return fragments;
+    }
+
+    /** Compatibility lexical retrieval must visit every page, including namespaces beyond 16K rows. */
+    private List<MemoryFragment> scanNamespace(String namespace) {
+        var result = client.queryIterator(io.milvus.param.dml.QueryIteratorParam.newBuilder()
+                .withCollectionName(collectionName)
+                .withExpr(FIELD_NS + " == " + expressionLiteral(namespace))
+                .withOutFields(outFields())
+                .withBatchSize(1000L)
+                .build());
+        if (result.getStatus() != 0 || result.getData() == null) {
+            throw new IllegalStateException("Milvus full namespace scan failed: " + result.getMessage());
+        }
+        var iterator = result.getData();
+        List<MemoryFragment> fragments = new ArrayList<>();
+        try {
+            while (true) {
+                var rows = iterator.next();
+                if (rows.isEmpty()) break;
+                for (var row : rows) {
+                    fragments.add(MemoryFragment.builder()
+                            .id((String) row.get(FIELD_ID)).namespace((String) row.get(FIELD_NS))
+                            .content((String) row.get(FIELD_CONTENT))
+                            .importance(((Number) row.get(FIELD_IMPORTANCE)).doubleValue())
+                            .tokenCount(((Number) row.get(FIELD_TOKEN_COUNT)).intValue())
+                            .tags(tagsFieldAvailable ? deserializeTags(row.get(FIELD_TAGS)) : List.of())
+                            .build());
+                }
+            }
+        } finally {
+            iterator.close();
         }
         return fragments;
     }

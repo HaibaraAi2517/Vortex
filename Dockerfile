@@ -1,3 +1,9 @@
+FROM python:3.12-slim AS model
+WORKDIR /workspace
+COPY models/manifest.json models/manifest.json
+COPY ops/download-model.py ops/download-model.py
+RUN python ops/download-model.py
+
 FROM maven:3.9-eclipse-temurin-21 AS build
 
 WORKDIR /workspace
@@ -15,7 +21,6 @@ COPY vortex-common vortex-common
 COPY vortex-storage vortex-storage
 COPY vortex-kernel vortex-kernel
 COPY vortex-app vortex-app
-COPY models models
 
 RUN mvn -B -DskipTests package -pl vortex-app -am
 
@@ -39,7 +44,7 @@ RUN groupadd --gid 10001 vortex \
     && chown -R vortex:vortex /app /var/lib/vortex
 
 COPY --from=build --chown=vortex:vortex /workspace/vortex-app/target/vortex-app-*-exec.jar /app/vortex-app.jar
-COPY --from=build --chown=vortex:vortex /workspace/models /app/models
+COPY --from=model --chown=vortex:vortex /workspace/models/bge-small-zh /app/models/bge-small-zh
 
 USER 10001:10001
 

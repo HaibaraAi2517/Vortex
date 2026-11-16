@@ -31,6 +31,7 @@ public class SecurityConfig {
         if (properties.isEnabled()) {
             http.authorizeHttpRequests(authorize -> authorize
                             .requestMatchers(
+                                    "/", "/index.html", "/workbench/**",
                                     "/actuator/health",
                                     "/actuator/health/liveness",
                                     "/actuator/health/readiness",
@@ -44,6 +45,7 @@ public class SecurityConfig {
                     .addFilterAfter(apiRateLimitFilter, BearerTokenAuthenticationFilter.class)
                     .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint((request, response, ex) -> {
                         response.setStatus(401);
+                        response.setHeader("WWW-Authenticate", "Bearer realm=\"vortex\"");
                         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
                         objectMapper.writeValue(response.getOutputStream(), Map.of(
                                 "error", "AUTHENTICATION_REQUIRED",

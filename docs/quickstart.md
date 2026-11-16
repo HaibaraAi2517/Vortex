@@ -1,5 +1,11 @@
 # Vortex Quickstart
 
+This is the **distributed compatibility** quickstart. New personal Agent integrations should
+start with [local memory](local-memory.md), which needs no external storage services.
+When building current source, Compose explicitly selects the `distributed` profile;
+manual launches and historical benchmark scripts must use `--spring.profiles.active=distributed`
+or `SPRING_PROFILES_ACTIVE=distributed`. The default application profile is now `local`.
+
 This quickstart is the container-first path for trying Vortex without any LLM
 API key. It starts Vortex plus Milvus, MinIO, Redis, and etcd.
 

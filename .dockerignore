@@ -11,3 +11,8 @@ ops/eval-reports
 ops/eval-fixtures
 *.log
 *.tmp
+data
+sdk/python/.venv
+sdk/python/dist
+**/__pycache__
+**/*.egg-info

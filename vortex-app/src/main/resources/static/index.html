@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Vortex 本地记忆工作台：保存事实、追踪更新、检索可供 Agent 使用的当前记忆。">
+  <title>Vortex · 记忆工作台</title>
+  <link rel="icon" href="/workbench/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/workbench/app.css">
+  <script src="/workbench/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Vortex 首页"><span class="brand-icon">v</span>vortex<span class="alpha">LOCAL</span></a>
+    <p class="sidebar-label">你的 AGENT，拥有记忆</p>
+    <nav aria-label="主导航">
+      <a class="nav-link active" href="#workspace"><span>◈</span> 记忆工作台</a>
+      <button class="nav-link" id="guide-open"><span>⌘</span> 接入你的 Agent <span class="nav-arrow">↗</span></button>
+      <a class="nav-link" href="/swagger-ui.html" target="_blank" rel="noopener"><span>≡</span> API 文档 <span class="nav-arrow">↗</span></a>
+    </nav>
+    <div class="namespace-card">
+      <label for="namespace">当前记忆空间</label>
+      <form id="namespace-form"><input id="namespace" value="personal" maxlength="128" required autocomplete="off" spellcheck="false"><button type="submit" aria-label="切换记忆空间" title="切换记忆空间">↵</button></form>
+      <p>不同空间的记忆相互隔离。</p>
+    </div>
+    <div class="sidebar-bottom"><span class="local-orbit">◎</span><strong>记忆留在本机</strong><p>一个进程 · 持久保存<br>无需 LLM API Key</p><button id="connection-open" class="subtle-button">连接设置 <span>↗</span></button></div>
+  </aside>
+
+  <main id="workspace">
+    <header class="topbar"><div><span class="eyebrow">WORKSPACE</span><span class="breadcrumb"> / </span><span id="space-name">personal</span></div><div class="topbar-right"><button class="connection-state" id="connection-state" aria-label="连接状态与设置" aria-live="polite"><i></i> 正在连接</button><span class="version">本地预览版</span></div></header>
+    <section class="intro"><div><p class="eyebrow">A LITTLE MEMORY. A BETTER AGENT.</p><h1>让下一次对话，<br class="mobile-break">记得这一次<span>。</span></h1><p>保存偏好与事实，在变化时更新，让 Agent 取回此刻有效的记忆。</p></div><button class="button primary" id="new-memory">＋ 新建记忆</button></section>
+
+    <section class="demo-banner" aria-labelledby="demo-title">
+      <div class="demo-copy"><span class="badge">亲手试一下</span><h2 id="demo-title">30 秒，看见记忆生效</h2><p>从北京搬到上海，Agent 下一次会记住哪里？</p><div class="demo-steps"><span><b>1</b> 记住北京</span><i>→</i><span><b>2</b> 更新上海</span><i>→</i><span><b>3</b> 召回当前版本</span></div></div>
+      <div class="demo-action"><div class="orbit-art" aria-hidden="true"><span class="orbit one"></span><span class="orbit two"></span><span class="orbit-dot"></span><span class="orbit-center">v</span></div><button class="button dark" id="run-demo">运行真实演示 <span>↗</span></button><span class="fine-print">使用独立演示空间，实际写入与检索</span></div>
+      <ol id="demo-log" class="demo-log" aria-live="polite" hidden></ol>
+    </section>
+
+    <div id="notice" class="notice" role="status" hidden></div>
+    <div class="workspace-grid">
+      <section class="panel library" aria-labelledby="library-title"><div class="panel-header"><div><span class="section-number">01</span><h2 id="library-title">记忆库</h2><span class="count-badge" id="memory-count">0</span></div><button id="refresh" class="icon-button" aria-label="刷新记忆库" title="刷新记忆库">↻</button></div>
+        <div class="library-toolbar"><span id="library-description">当前有效的事实</span><label class="toggle-label"><input type="checkbox" id="include-inactive"> 含已失效</label></div>
+        <div id="memory-list" class="memory-list" aria-live="polite"><div class="empty-state"><span>◈</span><h3>正在读取记忆</h3><p>连接本地服务后即可查看。</p></div></div>
+        <button id="load-more" class="load-more" hidden>加载更多</button>
+        <div class="panel-foot">同一个事实使用同一个 key，更新后只召回当前版本。</div>
+      </section>
+      <section class="panel recall-panel" aria-labelledby="recall-title"><div class="panel-header"><div><span class="section-number">02</span><h2 id="recall-title">试着唤起记忆</h2></div><span class="small-label">真实检索</span></div>
+        <form id="recall-form"><label class="sr-only" for="query">想让 Agent 回忆什么？</label><textarea id="query" rows="3" maxlength="4000" placeholder="用户喜欢什么咖啡？" required></textarea><div class="query-options"><label for="retrieval-mode" class="sr-only">检索方式</label><select id="retrieval-mode"><option value="HYBRID">混合检索</option><option value="KEYWORD_ONLY">中文关键词</option><option value="VECTOR_ONLY">向量检索</option></select><button class="button primary" type="submit" id="recall-submit">检索记忆 <span>↗</span></button></div></form>
+        <div class="suggestions"><span>试试</span><button data-query="用户喜欢什么咖啡？">咖啡偏好</button><button data-query="用户现在住在哪里？">当前住所</button><button data-query="这个项目用什么技术栈？">项目技术栈</button></div>
+        <div class="result-header"><span id="result-meta">等待一次回忆</span><button id="copy-context" class="text-button" hidden>复制给 Agent</button></div>
+        <div id="recall-results"><div class="empty-state recall-empty"><span>⌕</span><h3>记忆会在这里浮现</h3><p>用自然语言提问，查看可交给 Agent 的参考片段。<br>这里展示检索结果，不生成聊天答案。</p></div></div>
+      </section>
+    </div>
+    <footer class="page-footer"><span><span class="footer-dot"></span> 本地保存，随时取回。</span><span>VORTEX / PERSONAL MEMORY</span></footer>
+  </main>
+
+  <dialog id="editor-dialog" class="editor-dialog"><div class="dialog-heading"><div><p class="eyebrow">MEMORY DETAIL</p><h2 id="editor-title">新建记忆</h2></div><button class="icon-button" data-close="editor-dialog" aria-label="关闭记忆编辑">×</button></div>
+    <form id="memory-form"><div class="key-label"><label for="fact-key">事实标识 <span>key</span></label><button id="load-key" type="button" class="text-button">读取已有记忆</button></div><input id="fact-key" maxlength="128" placeholder="例如 user.home.city" required autocomplete="off"><p class="field-help">用稳定的名称标识一个事实。修改住所时，继续更新这个 key。</p><label for="fact-content">记住什么</label><textarea id="fact-content" rows="4" maxlength="2000" placeholder="例如：我喜欢喝美式咖啡，不加糖。" required></textarea><div class="field-row"><div><label for="fact-tags">标签 <span>可选</span></label><input id="fact-tags" placeholder="偏好, 生活"></div><div><label for="fact-expiry">有效期至 <span>可选</span></label><input id="fact-expiry" type="datetime-local"></div></div><p class="field-help">留空则长期保存。单条事实最多 480 个模型 token。</p><div id="editor-error" class="inline-error" role="alert" hidden></div><div class="editor-actions"><span id="revision-label">首次保存 · v1</span><button class="button primary" id="save-memory" type="submit">保存记忆</button></div></form>
+    <section id="history-section" hidden><div class="history-heading"><h3>版本历史</h3><span>旧版本不参与普通召回</span></div><ol id="history-list" class="history-list"></ol><button id="history-more" class="text-button" hidden>更早的版本 ↓</button><div class="danger-actions"><button id="retract-memory" class="text-button">撤回记忆</button><button id="delete-memory" class="text-button danger">删除内容与历史</button></div><div id="delete-confirmation" class="delete-confirmation" hidden><p>删除此事实的内容和历史，仅保留版本标记。已有备份不会一起删除。</p><button id="confirm-delete" class="button danger-button">确认删除</button><button id="cancel-delete" class="text-button">取消</button></div></section>
+  </dialog>
+
+  <dialog id="connection-dialog"><div class="dialog-heading"><h2>连接设置</h2><button class="icon-button" data-close="connection-dialog" aria-label="关闭连接设置">×</button></div><p class="dialog-intro">工作台连接当前服务。若启用了鉴权，输入对应的 Bearer token。</p><form id="connection-form"><label for="bearer-token">Bearer token <span>未启用鉴权时留空</span></label><input id="bearer-token" type="password" autocomplete="off" placeholder="仅保存在当前页面内存中"><p class="field-help">刷新页面后需要重新输入；不会写入浏览器持久存储。</p><button class="button primary" type="submit">连接服务</button></form></dialog>
+
+  <dialog id="guide-dialog"><div class="dialog-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h2>接入你的 Agent</h2></div><button class="icon-button" data-close="guide-dialog" aria-label="关闭接入指南">×</button></div><p class="dialog-intro">工作台和你的 Agent 共用同一个记忆空间。把检索到的片段作为参考数据加入上下文。</p><h3>Python · 从仓库安装</h3><pre><code>python -m pip install ./sdk/python</code></pre><pre><code id="python-example"></code></pre><h3>MCP · stdio 配置</h3><p class="field-help">先安装 <code>python -m pip install "./sdk/python[mcp]"</code>，再将下面配置加入支持 MCP 的客户端。服务需保持运行。</p><pre><code id="mcp-example"></code></pre><p class="field-help">如果启用了鉴权，在环境变量中加入 VORTEX_SECURITY_BEARER_TOKEN。恢复链路和更多接口见 API 文档。</p></dialog>
+</body>
+</html>

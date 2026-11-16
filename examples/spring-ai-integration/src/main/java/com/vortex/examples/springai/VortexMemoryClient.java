@@ -5,10 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +27,11 @@ public final class VortexMemoryClient {
     }
 
     public VortexMemoryClient(URI baseUri, String bearerToken) {
+        if (baseUri == null || !("http".equals(baseUri.getScheme()) || "https".equals(baseUri.getScheme()))
+                || baseUri.getHost() == null || baseUri.getUserInfo() != null
+                || baseUri.getQuery() != null || baseUri.getFragment() != null) {
+            throw new IllegalArgumentException("An HTTP(S) base URI without credentials, query or fragment is required");
+        }
         this.baseUri = baseUri;
         this.bearerToken = bearerToken;
         this.httpClient = HttpClient.newBuilder()
@@ -76,19 +83,58 @@ public final class VortexMemoryClient {
     }
 
     private JsonNode postJson(String path, Map<String, Object> body) throws IOException, InterruptedException {
-        String payload = objectMapper.writeValueAsString(body);
+        return request("POST", path, body);
+    }
+
+    public JsonNode getFact(String namespace, String key) throws IOException, InterruptedException {
+        try {
+            return request("GET", "/api/v1/memory/facts?namespace=" + encode(namespace) + "&key=" + encode(key), null);
+        } catch (ApiException e) {
+            if (e.status() == 404) return null;
+            throw e;
+        }
+    }
+
+    public JsonNode remember(String namespace, String key, String content, long expectedRevision,
+            List<String> tags, String expiresAt) throws IOException, InterruptedException {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("namespace", namespace);
+        body.put("key", key);
+        body.put("content", content);
+        body.put("expectedRevision", expectedRevision);
+        body.put("tags", tags);
+        body.put("expiresAt", expiresAt);
+        return request("PUT", "/api/v1/memory/facts", body);
+    }
+
+    public JsonNode retract(String namespace, String key, long expectedRevision) throws IOException, InterruptedException {
+        return postJson("/api/v1/memory/facts/retract", Map.of("namespace", namespace, "key", key,
+                "expectedRevision", expectedRevision));
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private JsonNode request(String method, String path, Map<String, Object> body) throws IOException, InterruptedException {
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(baseUri.resolve(path))
                 .timeout(Duration.ofSeconds(60))
-                .header("Content-Type", "application/json");
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json");
         if (bearerToken != null && !bearerToken.isBlank()) {
             requestBuilder.header("Authorization", "Bearer " + bearerToken);
         }
         HttpRequest request = requestBuilder
-                .POST(HttpRequest.BodyPublishers.ofString(payload))
+                .method(method, body == null ? HttpRequest.BodyPublishers.noBody()
+                        : HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
                 .build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IOException("Vortex API returned HTTP " + response.statusCode() + ": " + response.body());
+            long revision = -1;
+            try {
+                revision = objectMapper.readTree(response.body()).path("currentRevision").asLong(-1);
+            } catch (IOException ignored) { }
+            throw new ApiException(response.statusCode(), revision);
         }
         return objectMapper.readTree(response.body());
     }
@@ -98,5 +144,17 @@ public final class VortexMemoryClient {
     }
 
     public record RecallFragment(String fragmentId, String content, double score) {
+    }
+
+    public static final class ApiException extends IOException {
+        private final int status;
+        private final long currentRevision;
+        ApiException(int status, long currentRevision) {
+            super("Vortex API returned HTTP " + status);
+            this.status = status;
+            this.currentRevision = currentRevision;
+        }
+        public int status() { return status; }
+        public long currentRevision() { return currentRevision; }
     }
 }

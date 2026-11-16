@@ -33,6 +33,8 @@ import java.util.*;
  */
 @Slf4j
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        name = "vortex.storage.backend", havingValue = "milvus", matchIfMissing = true)
 public class MinioColdStore implements L3ColdStore {
 
     private static final String PREFIX_FRAGMENT = "fragments/";

@@ -1,5 +1,11 @@
 # Vortex Architecture
 
+The default personal-memory distribution now uses the `local` profile: one Lucene index
+contains BM25 text, CJK bigrams, HNSW vectors, immutable fact revisions and checkpoint objects.
+Fact replacement commits the current fact, searchable fragment and history together; recall
+checks the authoritative lifecycle before admitting cached candidates. See [local memory](local-memory.md).
+The tiered Milvus/MinIO diagrams below describe the retained `distributed` compatibility path.
+
 Vortex is organized around three runtime concerns for long-running agents:
 memory recall, memory durability, and task recovery. The diagrams below are
 GitHub-native Mermaid diagrams and do not depend on external image hosting.

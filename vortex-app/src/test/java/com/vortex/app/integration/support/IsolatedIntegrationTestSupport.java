@@ -54,6 +54,8 @@ public final class IsolatedIntegrationTestSupport {
                     .normalize();
 
             TestPropertyValues.of(
+                    "spring.profiles.active=distributed",
+                    "vortex.storage.backend=milvus",
                     "vortex.test.run-id=" + runId,
                     "vortex.test.root-dir=" + normalizePath(rootDir),
                     "vortex.storage.l3.minio.bucket=" + TEST_BUCKET,

@@ -1,30 +1,25 @@
 package com.vortex.kernel.hmc;
 
 import com.vortex.common.model.MemoryFragment;
+import com.vortex.storage.local.LexicalAnalysis;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
  * Lightweight lexical retriever used as the keyword branch of hybrid recall.
  *
- * The implementation intentionally stays local and dependency-free: it scores
- * query/content token overlap with an IDF-style rarity boost, then lets the
- * recall reranker combine lexical and semantic evidence.
+ * Scores transient L1 writes and the external-store compatibility scan.
+ * Durable local memory uses Lucene BM25 directly. Both paths share CJK analysis.
  */
 @Component
 public class KeywordRecallIndex {
-
-    private static final Pattern TOKEN_SPLIT = Pattern.compile("[^\\p{IsAlphabetic}\\p{IsDigit}_:-]+");
 
     public List<KeywordCandidate> search(String query, List<MemoryFragment> candidates, int limit) {
         if (query == null || query.isBlank() || candidates == null || candidates.isEmpty() || limit <= 0) {
@@ -89,17 +84,7 @@ public class KeywordRecallIndex {
     }
 
     static Set<String> tokenize(String text) {
-        if (text == null || text.isBlank()) {
-            return new HashSet<>();
-        }
-        Set<String> terms = new HashSet<>();
-        for (String raw : TOKEN_SPLIT.split(text.toLowerCase(Locale.ROOT))) {
-            String token = raw.trim();
-            if (token.length() >= 2) {
-                terms.add(token);
-            }
-        }
-        return terms;
+        return LexicalAnalysis.terms(text);
     }
 
     public record KeywordCandidate(MemoryFragment fragment, double score, List<String> matchedTerms) {

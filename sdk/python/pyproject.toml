@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vortex-agent-memory"
+version = "0.3.0a1"
+description = "Durable local memory for personal agents, with a Python client and MCP tools"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{name = "Vortex contributors"}]
+dependencies = []
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.12,<2"]
+
+[project.scripts]
+vortex-memory-mcp = "vortex_memory.mcp:main"
+
+[project.urls]
+Repository = "https://github.com/HaibaraAi2517/Vortex"
+
+[tool.setuptools.packages.find]
+where = ["src"]
