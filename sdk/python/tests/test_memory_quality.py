@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -208,6 +209,113 @@ class MemoryQualityTest(unittest.TestCase):
                 self.assertNotIn("http_status", encoded)
                 self.assertNotIn("HTTP 429", encoded)
                 self.assertEqual(result["call_totals"]["count"], 1)
+
+    def test_fatal_model_error_stops_queue_and_preserves_pending_denominator(self):
+        original_run = runner.run_case_arm
+        for status in (401, 402):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                cases = [dict(case(), id=f"case-{index}") for index in range(4)]
+                dataset, output = Path(directory) / "cases.json", Path(directory) / "report.json"
+                dataset.write_text(json.dumps({"schema_version": 1, "name": "fixture", "cases": cases}), encoding="utf-8")
+
+                def unavailable(*args, **kwargs):
+                    raise ModelError(f"Model endpoint returned HTTP {status}")
+
+                def execute(*args, **kwargs):
+                    return original_run(*args, **kwargs, model_factory=lambda: unavailable)
+
+                with patch.object(runner.CompatibleChatModel, "from_env", return_value=object()), \
+                     patch.object(runner, "provenance", return_value={"source_sha256": {}}), \
+                     patch.object(runner, "run_case_arm", side_effect=execute), patch("builtins.print"):
+                    code = runner.main(["--dataset", str(dataset), "--arms", "none", "--workers", "1", "--output", str(output)])
+                report = json.loads(output.read_text(encoding="utf-8"))
+                self.assertEqual(code, 2)
+                self.assertEqual(report["status"], "interrupted_model_error")
+                self.assertEqual(report["stop_reason"]["http_status"], status)
+                self.assertEqual(len(report["results"]), 1)
+                metrics = report["metrics"]["none"]
+                self.assertEqual((metrics["requested"], metrics["pending"], metrics["not_judged"]), (4, 3, 4))
+                self.assertEqual(metrics["model_calls"], 1)
+                self.assertEqual(metrics["answer_correct_rate_all_requested"], 0)
+                row = report["results"][0]
+                evidence = output.parent / row["evidence_file"]
+                self.assertEqual(runner.digest_file(evidence), row["evidence_sha256"])
+                trace = json.loads(evidence.read_text(encoding="utf-8"))
+                self.assertEqual(trace["model_calls"][0]["error"]["http_status"], status)
+
+    def test_fatal_failure_in_learning_or_judge_blocks_other_workers_and_followup_calls(self):
+        for arm, prompt, expected_calls in (("vortex", LEARNING_PROMPT, 2),
+                                             ("summary", runner.SUMMARY_RULES, 2),
+                                             ("none", runner.JUDGE_RULES, 5)):
+            with self.subTest(arm=arm):
+                control, fallback = runner.RunControl(), Model()
+
+                def unavailable(messages, **kwargs):
+                    if messages[0]["content"] == prompt:
+                        raise ModelError("Model endpoint returned HTTP 402")
+                    return fallback(messages, **kwargs)
+
+                result = runner.run_case_arm(case(), arm, url="http://127.0.0.1:1",
+                                             model_factory=lambda: unavailable, memory_factory=Memory, control=control)
+                self.assertFalse(result["success"])
+                self.assertEqual(result["call_totals"]["count"], expected_calls)
+                self.assertEqual(control.reason["http_status"], 402)
+                blocked = runner.run_case_arm(case(), "none", url="http://127.0.0.1:1",
+                                              model_factory=lambda: self.fail("must not start another model"), control=control)
+                self.assertEqual(blocked["call_totals"]["count"], 0)
+                self.assertEqual(blocked["errors"], [{"stage": "execution", "code": "RunStopped"}])
+
+    def test_nonfatal_errors_do_not_stop_other_case_arms(self):
+        control = runner.RunControl()
+        for message in ("Model endpoint returned HTTP 429", "Model endpoint returned HTTP 402 secret"):
+            def unavailable(*args, **kwargs):
+                raise ModelError(message)
+            result = runner.run_case_arm(case(), "none", url="http://127.0.0.1:1",
+                                         model_factory=lambda: unavailable, control=control)
+            self.assertFalse(result["success"])
+            self.assertIsNone(control.reason)
+        result = runner.run_case_arm(case(), "none", url="http://127.0.0.1:1", model_factory=Model, control=control)
+        self.assertTrue(result["success"])
+
+    def test_fatal_stop_saves_other_inflight_worker_and_prevents_further_requests(self):
+        original_run = runner.run_case_arm
+        second_inflight, failure_seen = threading.Event(), threading.Event()
+
+        class ObservedControl(runner.RunControl):
+            def stop(self, reason):
+                super().stop(reason)
+                failure_seen.set()
+
+        def execute(current, arm, **kwargs):
+            def model(*args, **options):
+                if current["id"] == "case-0":
+                    self.assertTrue(second_inflight.wait(5), "the other worker must already be in flight")
+                    raise ModelError("Model endpoint returned HTTP 402")
+                self.assertEqual(current["id"], "case-1", "unstarted cases must stay pending")
+                second_inflight.set()
+                self.assertTrue(failure_seen.wait(5), "fatal failure must arrive before this response")
+                return "already in flight answer"
+            return original_run(current, arm, **kwargs, model_factory=lambda: model)
+
+        with tempfile.TemporaryDirectory() as directory:
+            cases = [dict(case(), id=f"case-{index}") for index in range(4)]
+            dataset, output = Path(directory) / "cases.json", Path(directory) / "report.json"
+            dataset.write_text(json.dumps({"schema_version": 1, "name": "fixture", "cases": cases}), encoding="utf-8")
+            with patch.object(runner.CompatibleChatModel, "from_env", return_value=object()), \
+                 patch.object(runner, "provenance", return_value={"source_sha256": {}}), \
+                 patch.object(runner, "RunControl", ObservedControl), \
+                 patch.object(runner, "run_case_arm", side_effect=execute), patch("builtins.print"):
+                self.assertEqual(runner.main(["--dataset", str(dataset), "--arms", "none", "--workers", "2", "--output", str(output)]), 2)
+            report = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "interrupted_model_error")
+            self.assertEqual(report["metrics"]["none"]["pending"], 2)
+            self.assertEqual(report["metrics"]["none"]["model_calls"], 2)
+            self.assertEqual({row["case_id"] for row in report["results"]}, {"case-0", "case-1"})
+            second = next(row for row in report["results"] if row["case_id"] == "case-1")
+            trace = json.loads((output.parent / second["evidence_file"]).read_text(encoding="utf-8"))
+            self.assertEqual(trace["model_calls"][0]["response"], "already in flight answer")
+            self.assertEqual(trace["turns"][0]["answer"], "already in flight answer")
+            self.assertEqual(trace["errors"], [{"stage": "execution", "code": "RunStopped"}])
 
     def test_empty_baselines_do_not_receive_perfect_fact_precision(self):
         for arm in ("none", "summary"):

@@ -1,0 +1,2503 @@
+{
+  "dataset": {
+    "path": "ops/datasets/memory-quality-zh-v1.json",
+    "sha256": "5699531fa71ae264ce7f5aea76d790e45a5959b45e19dcc3e6e28c2e29243415",
+    "cases": 100,
+    "dev": 60,
+    "test": 40
+  },
+  "runs": {
+    "first": {
+      "report_file": "memory-quality-baseline-20261117.json",
+      "report_sha256": "018c46519152e0253343cb51b095aa67f4571d641689f048a2f415189d5f43c9",
+      "original_report_status": "completed_with_errors",
+      "publication_status": "completed_with_errors",
+      "generator_provenance": {
+        "git_head": "38736a60068f43612856096571b7f99cacb328b4",
+        "source_sha256": {
+          "ops\\eval-memory-quality.py": "58bf98e373e9d04320d7746683e556aff03e2470475f2217287417427d4e6ca7",
+          "ops\\datasets\\memory-quality-zh-v1.json": "5699531fa71ae264ce7f5aea76d790e45a5959b45e19dcc3e6e28c2e29243415",
+          "sdk\\python\\src\\vortex_memory\\__init__.py": "73c085d000f1749d2cc9e537f03f11a3f513b53db5119f05b2b91d3e9ae0438a",
+          "sdk\\python\\src\\vortex_memory\\agent.py": "0ff038c7a7f927791749eee7b89901d37149f6161a96c07f8dd93fa07193a29a",
+          "sdk\\python\\src\\vortex_memory\\client.py": "26e88541a5f2ab8f5b0beede640f3cbd5f762af73d52726e436ee37b912a1106",
+          "sdk\\python\\src\\vortex_memory\\mcp.py": "5077e8285af8d1265e80ee7b4a01c184f59fad43b77439f3c8aca40417e37ceb",
+          "sdk\\python\\src\\vortex_memory\\model.py": "4127e64595d83a658cca1f74bc2bd1ff5fa3d2c790be571b613f17bd97f06b55",
+          "models\\bge-small-zh\\model.onnx": "69a0b846f4f116b5e6aabf9546ea6754d02264f3211a13a1bd69b31b8040749a",
+          "models\\bge-small-zh\\tokenizer.json": "48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26",
+          "vortex-app\\target\\vortex-app-0.2.0-exec.jar": "686ada3e584a5b6ad9374884dbd5cd7de10b3bfd2b3b6482f47a02b982677623"
+        },
+        "model_configuration": {
+          "adapter": "CompatibleChatModel",
+          "model": "deepseek-chat",
+          "temperature": 0,
+          "max_tokens": 2048,
+          "timeout_seconds": 120,
+          "endpoint_sha256": "45cf67066d4f1cabb601c45bf99ddbd513037f5c4e608d3ac3689937804db451"
+        },
+        "model_configuration_sha256": "1925039e6f88563cf073dacb0af9f6c85642aa6cdf098c49806c5a58c851a1fa",
+        "artifact_note": "Local files fingerprinted; the running REST service identity must be verified separately."
+      }
+    },
+    "confirmation": {
+      "report_file": "memory-quality-confirmation-20261117.json",
+      "report_sha256": "4b5db2bb167d70f24e2c11c2fd9f13be03c7852390a0b941f765d58de5a81905",
+      "original_report_status": "running",
+      "publication_status": "interrupted_http_402",
+      "generator_provenance": {
+        "git_head": "6d0c3abd929940e6596d4fe0c66b9c456dd28377",
+        "source_sha256": {
+          "ops\\eval-memory-quality.py": "da8d7d499b3e66c15f376a012355da1eb39becb70fb675d401cf8c77339d446f",
+          "ops\\datasets\\memory-quality-zh-v1.json": "5699531fa71ae264ce7f5aea76d790e45a5959b45e19dcc3e6e28c2e29243415",
+          "sdk\\python\\src\\vortex_memory\\__init__.py": "73c085d000f1749d2cc9e537f03f11a3f513b53db5119f05b2b91d3e9ae0438a",
+          "sdk\\python\\src\\vortex_memory\\agent.py": "0ff038c7a7f927791749eee7b89901d37149f6161a96c07f8dd93fa07193a29a",
+          "sdk\\python\\src\\vortex_memory\\client.py": "26e88541a5f2ab8f5b0beede640f3cbd5f762af73d52726e436ee37b912a1106",
+          "sdk\\python\\src\\vortex_memory\\mcp.py": "5077e8285af8d1265e80ee7b4a01c184f59fad43b77439f3c8aca40417e37ceb",
+          "sdk\\python\\src\\vortex_memory\\model.py": "4127e64595d83a658cca1f74bc2bd1ff5fa3d2c790be571b613f17bd97f06b55",
+          "models\\bge-small-zh\\model.onnx": "69a0b846f4f116b5e6aabf9546ea6754d02264f3211a13a1bd69b31b8040749a",
+          "models\\bge-small-zh\\tokenizer.json": "48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26",
+          "vortex-app\\target\\vortex-app-0.2.0-exec.jar": "686ada3e584a5b6ad9374884dbd5cd7de10b3bfd2b3b6482f47a02b982677623"
+        },
+        "model_configuration": {
+          "adapter": "CompatibleChatModel",
+          "model": "deepseek-chat",
+          "temperature": 0,
+          "max_tokens": 2048,
+          "timeout_seconds": 120,
+          "endpoint_sha256": "45cf67066d4f1cabb601c45bf99ddbd513037f5c4e608d3ac3689937804db451"
+        },
+        "model_configuration_sha256": "1925039e6f88563cf073dacb0af9f6c85642aa6cdf098c49806c5a58c851a1fa",
+        "artifact_note": "Local files fingerprinted; the running REST service identity must be verified separately."
+      }
+    }
+  },
+  "running_service": {
+    "profile": "local",
+    "bound_to": "loopback; isolated evaluation data directory",
+    "source_tree": "38f03e4c9939153bfb4288f1fcf2c5905e766610",
+    "jar_sha256": "e4c76f7f56d0931e659f049b25d4f08b3eaad02c7f01349136c426f0b9ef3191",
+    "model_artifacts": {
+      "model.onnx": "69a0b846f4f116b5e6aabf9546ea6754d02264f3211a13a1bd69b31b8040749a",
+      "tokenizer.json": "48cea5d44424912a6fd1ea647bf4fe50b55ab8b1e5879c3275f80e339e8fae26"
+    },
+    "java": "21.0.10",
+    "build_maven": "3.9.9",
+    "python": "3.13.7",
+    "local_java_test_counts": {
+      "vortex-common": {
+        "tests": 38,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "vortex-storage": {
+        "tests": 43,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "vortex-kernel": {
+        "tests": 384,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "vortex-langchain4j": {
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "vortex-app": {
+        "tests": 172,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "examples/spring-ai-integration": {
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "note": "This is the fresh archive JAR actually launched for both runs; workspace JAR fingerprints in generator_provenance are local-file observations only."
+  },
+  "publication": {
+    "aggregator_source_sha256": "90dcdac6eb17a2cb391126e03fabb923827cfba13e881ab784a64da0aa9a2788",
+    "confirmation_stop_file": "memory-quality-confirmation-stop.json",
+    "confirmation_original_checkpoint_unchanged": true
+  },
+  "published_files": {
+    "summary.json": {
+      "sha256": "4ee69db900fd9f4c2b0e4335cf5939e7613ae0d0b368198b479bd61520909959",
+      "bytes": 387495
+    },
+    "evidence.tar.gz": {
+      "sha256": "b4c0bb5c79bc557acb9f57b58849a124e9c7c771dfb9de99105215f3290bb1f1",
+      "bytes": 798554
+    }
+  },
+  "archive_files": {
+    "memory-quality-baseline-20261117.json": {
+      "sha256": "018c46519152e0253343cb51b095aa67f4571d641689f048a2f415189d5f43c9",
+      "bytes": 895335
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_01--none.json": {
+      "sha256": "790c2a6afa85da8559def576c5193ea35824665c743c786577be2344681a86c6",
+      "bytes": 11169
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_01--summary.json": {
+      "sha256": "63427d9d91ff8c1edbefe8fba91be6be54c7d8b6a0c8ed5ff9ab2d32f7a0bc2d",
+      "bytes": 16428
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_01--vortex.json": {
+      "sha256": "476d4eb8b701aa29b75fc5f71e03d72b948ef6d2ee33af995ba58928abed7374",
+      "bytes": 24242
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_02--none.json": {
+      "sha256": "b18c1cbba68844f429138a47caacdc334d78170558c97620f9bb91cdd4cad654",
+      "bytes": 9427
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_02--summary.json": {
+      "sha256": "0bff6ac0fa2308349e7309e988ebb334f86423e6a8c4cb12621f86b13f078b6c",
+      "bytes": 14314
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_02--vortex.json": {
+      "sha256": "b80e4798ee82ab9763f06d2434b4b0fc8fbcdabde8b92ec7a38334fa36d80e5e",
+      "bytes": 3434
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_03--none.json": {
+      "sha256": "8295a81dcad264b19927e75b87cc0af8c9c6403960de9d89b4753228fa743766",
+      "bytes": 5738
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_03--summary.json": {
+      "sha256": "7e3ed9422a15bdd8cc176e0b28c4b3adfbb261f103592c64368c79ce4f618afb",
+      "bytes": 2490
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_03--vortex.json": {
+      "sha256": "051c906c3f3bf95a99f0fec787af47708b0510104969fe2a6ea5b9b2c98b3e80",
+      "bytes": 19696
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_04--none.json": {
+      "sha256": "9a666866a63eb542a63eff15637d77784fb1811a3e284f212599b6b89ddc00a6",
+      "bytes": 2499
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_04--summary.json": {
+      "sha256": "a2ed4d55c7c73649189ee3e27e4d86d45861c679dd82a716ddcf6eabe9afed12",
+      "bytes": 15227
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_04--vortex.json": {
+      "sha256": "3c7e24f9b2bb101bb7eed4e46dfc1103d6ada9ff0619ae61e77983597026989d",
+      "bytes": 28420
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_05--none.json": {
+      "sha256": "e9f434087f9c1e55ec9502efffbeb76735338bd64f2532d79233e29e8209c40d",
+      "bytes": 11721
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_05--summary.json": {
+      "sha256": "35352956adede7108431f17a7d1d0cd1f0f61adfca24700a381e7998ecbca850",
+      "bytes": 18294
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_05--vortex.json": {
+      "sha256": "a67c1dfa28638adf71afe5649da3fa6749381c66f73f9718df8d988e7707c267",
+      "bytes": 3450
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_06--none.json": {
+      "sha256": "fa032ebb9cdc711013dee832e2609b6394eddb74d30a1db99546ccf95e15936b",
+      "bytes": 8372
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_06--summary.json": {
+      "sha256": "cca23df2d26a1fe6a71b9586b25c6c32102e977e11fba90e2ea3b419cc6d7ad0",
+      "bytes": 13164
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_06--vortex.json": {
+      "sha256": "3d0f4cd45557bc1a99e3d1b13594245099ec27599c6e09d4b250e1b667f29aa2",
+      "bytes": 17635
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_07--none.json": {
+      "sha256": "49749f4d02a974d9de4e4a7056d150e0bce12b2eddd6a0618470cee96221c8a8",
+      "bytes": 4019
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_07--summary.json": {
+      "sha256": "406cffe878f0b36dcbb1c5e5985ab30cf8d8a10b006d17195bf1f14ceef8cb0c",
+      "bytes": 2519
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_07--vortex.json": {
+      "sha256": "3f9436005120fe36096b5832c141565dcb9e0ec2b54bd37ea3fb4a86bd69066a",
+      "bytes": 22591
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_08--none.json": {
+      "sha256": "0cf55ed3f03890c5cb5015f75cb80f456232d0aa9686fa41e67b1d34444a0a04",
+      "bytes": 9838
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_08--summary.json": {
+      "sha256": "2247919bd33d82ac5e8137de485cdab5a4a244da2f3959a63259bea56e39a066",
+      "bytes": 16218
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_08--vortex.json": {
+      "sha256": "ec19a877ec662a8a6989fe21fb537b41104804590f4669df6dd6dbe3d83c59b7",
+      "bytes": 23263
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_09--none.json": {
+      "sha256": "69e762d67f270cdad25ee60dc5f921e612565d4f01b45633f29c1e4c39b33044",
+      "bytes": 11043
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_09--summary.json": {
+      "sha256": "46c99e416fefa8ded7ec2c5c4d27b354386ac599b9565cc55b54b5805ec01158",
+      "bytes": 6256
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_09--vortex.json": {
+      "sha256": "cd8d781cd0addc33cc27ea6f7081b443e7fd881c217931f6559b6aea90581777",
+      "bytes": 24196
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_10--none.json": {
+      "sha256": "4c10340171e3fe0992390d0bdcc6f94cee8adf7d641b9ca277888826eeda2a62",
+      "bytes": 9942
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_10--summary.json": {
+      "sha256": "b27112520bf1d307b70d2962d9b419f0c930a9f1a81ab756b205f44e2125a806",
+      "bytes": 15115
+    },
+    "memory-quality-baseline-20261117-evidence/abstention_10--vortex.json": {
+      "sha256": "35b69f2b058de1c4bd1b8e40db851bcd134c38709cb434a816c9dc01fd83d2d1",
+      "bytes": 3426
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_01--none.json": {
+      "sha256": "288219fae629e7a32fae664f5632287ca61302e996dfa1b67b71a85134944aa1",
+      "bytes": 8716
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_01--summary.json": {
+      "sha256": "8299f7d487ce6e1bd4417e6a7147cab48730875f13a1ed7249b262857a858d86",
+      "bytes": 13993
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_01--vortex.json": {
+      "sha256": "1d53b32e7097d35bf86afcee29d05eae5993d5dd7a2b7bad21316184485506a2",
+      "bytes": 26911
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_02--none.json": {
+      "sha256": "6d6b5ddedd62aee36963dae6f7d4af0fcdfe187b3d470e7116e7102919eb2980",
+      "bytes": 10977
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_02--summary.json": {
+      "sha256": "cc1e544b7026bb56006390bf3d3fcb50a503491ec9798f8424bb89e777f5f912",
+      "bytes": 16585
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_02--vortex.json": {
+      "sha256": "cb7ee2f68d39065084132f28a1d8e828d6945f1dae18edd5b82dd1c41c9ee717",
+      "bytes": 24626
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_03--none.json": {
+      "sha256": "5466ffc9869ecb886f0b625f64ccc6db620db924c6f7efc298e52a9df3814f8f",
+      "bytes": 9082
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_03--summary.json": {
+      "sha256": "b262829895963675291c6aa8ff04507a3239b834f6296e1163f67f2bc91c6877",
+      "bytes": 14881
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_03--vortex.json": {
+      "sha256": "3cfa13faf3e93b8559b648c1f27d10530bb7e2e40dafa4f116453851e61d702f",
+      "bytes": 27440
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_04--none.json": {
+      "sha256": "2799023494e357b6c6ee7ed330e6a7937890d3bf5e3a4b6034b7c4a8e308301a",
+      "bytes": 9903
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_04--summary.json": {
+      "sha256": "7526da28e56b38bf8ae2663f5477d9ae284c1d5941218e239b6de69b947612c5",
+      "bytes": 15763
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_04--vortex.json": {
+      "sha256": "a853ffabfcfe6bec7524ea2c67188abdaa4fa645cef67613e4fc22e8fcd5ed42",
+      "bytes": 37569
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_05--none.json": {
+      "sha256": "9f0f123dbd27c8057d4d8769bf5330da1b628a98aa4c6c085f24c6014515f1f0",
+      "bytes": 9907
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_05--summary.json": {
+      "sha256": "5ca1654219ef9484f0554463d1109c9d95266ccad4fe4e0542be013bda5c851a",
+      "bytes": 15458
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_05--vortex.json": {
+      "sha256": "69f3ed81bda856c335ce5863c7703d33285e10cbaeaa05a252b0478331428ed9",
+      "bytes": 29165
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_06--none.json": {
+      "sha256": "6cdfb7b3646f6bc1ec4110dd1ff4903a4fdff94158da47ff0f025be302ef7f6d",
+      "bytes": 8729
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_06--summary.json": {
+      "sha256": "3ae26dd8f84ac49831424a3376534ffef378b5c61975961b5f2ebb1d7e8ab5db",
+      "bytes": 14106
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_06--vortex.json": {
+      "sha256": "ce3e45efe53edc2d3579bbc07587aea151905e187f5a01243209da67b70b5e2b",
+      "bytes": 26555
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_07--none.json": {
+      "sha256": "c03d666586c44b3fcfb3bf6ec8d99f1e79e78e26d4ef2856a909307045736538",
+      "bytes": 13206
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_07--summary.json": {
+      "sha256": "75532025be7acb38e0a69953fe5c78df28dd281b7d043bae3c1992f6f9ef7aa9",
+      "bytes": 16197
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_07--vortex.json": {
+      "sha256": "d4f3fdd8f2a38d16cc6bf6172ecf39dd45db4e0c2e5502eda1789ebbf4dbc6d1",
+      "bytes": 30016
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_08--none.json": {
+      "sha256": "d3fdeb2fad0575a33483bc7a22cbe53a5af70f37816adc69f104b322261cae10",
+      "bytes": 9504
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_08--summary.json": {
+      "sha256": "511a1e0656eafad06452623d2dde786c2328e700cb13ce0edf4ef72cf399e19e",
+      "bytes": 15032
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_08--vortex.json": {
+      "sha256": "2ea9d3457bf10cd2131b3e545b2c7ea8adf7692560e23433b3666530a1b8c7f6",
+      "bytes": 22546
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_09--none.json": {
+      "sha256": "ffb961234814ed8081f1789f2fb83a9869628364a88b7319279a594853cd3b17",
+      "bytes": 12281
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_09--summary.json": {
+      "sha256": "7ada3906158320febdb8c9af512e2411f51cbdfc1cbaa7aae2e41164aada846e",
+      "bytes": 16415
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_09--vortex.json": {
+      "sha256": "781abe98b7088ea2d72e7548008305f64f03a664287a1a9431e0ab0a0e628ee5",
+      "bytes": 29485
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_10--none.json": {
+      "sha256": "3935f7a661db8257fa2260c2337f8a4ef2d5b7a1bb58241d89208280b35118c5",
+      "bytes": 10173
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_10--summary.json": {
+      "sha256": "2b5fe12fa497468902f6b1076010e039e24facadd873e2c20d4d95b2775cf0ca",
+      "bytes": 16023
+    },
+    "memory-quality-baseline-20261117-evidence/attribution_10--vortex.json": {
+      "sha256": "c693e41508ca1b1c4a2e416a9a216653498b2463eaf1e3e2eba8661f9aad9466",
+      "bytes": 23322
+    },
+    "memory-quality-baseline-20261117-evidence/basic_01--none.json": {
+      "sha256": "fdfb18372d26e87e17c67de9defd3875006301c9ac00c76fde18c328f80d23de",
+      "bytes": 8884
+    },
+    "memory-quality-baseline-20261117-evidence/basic_01--summary.json": {
+      "sha256": "5a4b08977048befb1b1aa9f92d9cfcb0bc00eb0179681e621eb04ca131d5a632",
+      "bytes": 14127
+    },
+    "memory-quality-baseline-20261117-evidence/basic_01--vortex.json": {
+      "sha256": "74b6b3c5bec59cdf68e63cb8c08835f4c739a6d0ddbf9967cbbfbe5f77eab338",
+      "bytes": 30560
+    },
+    "memory-quality-baseline-20261117-evidence/basic_02--none.json": {
+      "sha256": "318b8289e057b5a1ec61e4732e1352b353112db471912623fc8f22ffc9014063",
+      "bytes": 9093
+    },
+    "memory-quality-baseline-20261117-evidence/basic_02--summary.json": {
+      "sha256": "1e9b2d9cd772f2cb78c455b3c9ca1c592252fca267a8bbcc826368e76590beb9",
+      "bytes": 14822
+    },
+    "memory-quality-baseline-20261117-evidence/basic_02--vortex.json": {
+      "sha256": "fa5c484f4fa25b09e42a07a6853831a6328a4c036fd511a9a65bfbfc02d43d17",
+      "bytes": 31674
+    },
+    "memory-quality-baseline-20261117-evidence/basic_03--none.json": {
+      "sha256": "efab01ae452651a7ce3701736a454bf5ec902497682f534639b332cadc2c1cbc",
+      "bytes": 9066
+    },
+    "memory-quality-baseline-20261117-evidence/basic_03--summary.json": {
+      "sha256": "7a7ac9302b644dea696a1e01ec0578a416b495d66052486f02476de99e529fb3",
+      "bytes": 15125
+    },
+    "memory-quality-baseline-20261117-evidence/basic_03--vortex.json": {
+      "sha256": "f1576dbd12e71e45a6b2cc6ea4cd356efa55eeedd7fd52d8119d18ef94211e19",
+      "bytes": 31255
+    },
+    "memory-quality-baseline-20261117-evidence/basic_04--none.json": {
+      "sha256": "dc7b95978f848ee7688bf818859fe41a4d67b5ac8ab0430646fd1f1d5b913694",
+      "bytes": 11078
+    },
+    "memory-quality-baseline-20261117-evidence/basic_04--summary.json": {
+      "sha256": "5545b67528acbc9070b0c803dfb56ba8ce9ff1548bcb81bd934f31228ce08366",
+      "bytes": 18108
+    },
+    "memory-quality-baseline-20261117-evidence/basic_04--vortex.json": {
+      "sha256": "f1f256e63bf4dc1e556f381c20db5b165ae33dda9b5a43074b6b5db6b55bbe07",
+      "bytes": 36197
+    },
+    "memory-quality-baseline-20261117-evidence/basic_05--none.json": {
+      "sha256": "6c050b667c3bca7721b7451e2864950d588adcbecbd9cd35f9ebd0341ada3e12",
+      "bytes": 9222
+    },
+    "memory-quality-baseline-20261117-evidence/basic_05--summary.json": {
+      "sha256": "60b98b85862307948ba9112c518d613f8ad8036bf42e34d9e6e2d4382e9b538b",
+      "bytes": 15075
+    },
+    "memory-quality-baseline-20261117-evidence/basic_05--vortex.json": {
+      "sha256": "2d4aba383c8fc27ea0eaa97397185477c6e7de1ef65b3f28a75dea0b2fba5214",
+      "bytes": 31796
+    },
+    "memory-quality-baseline-20261117-evidence/basic_06--none.json": {
+      "sha256": "e438ecb297ba8d391ba39bdaaddecf0b1535490b9f8c0abc63e7f7f7cec8ac4b",
+      "bytes": 8959
+    },
+    "memory-quality-baseline-20261117-evidence/basic_06--summary.json": {
+      "sha256": "f4524af26e164214d80bd57aaaa58f04b5d72c95c3d613407a4cbb7138e28fb8",
+      "bytes": 14787
+    },
+    "memory-quality-baseline-20261117-evidence/basic_06--vortex.json": {
+      "sha256": "faf24f73f0fa683da4e298af4bb3db3915d8ca286689778e187be3f412bd68df",
+      "bytes": 31241
+    },
+    "memory-quality-baseline-20261117-evidence/basic_07--none.json": {
+      "sha256": "bde4aa08d1d2818cad8064573cbbf8cd6b4ff1a080ac925d2d1be88fd9f21ebf",
+      "bytes": 9448
+    },
+    "memory-quality-baseline-20261117-evidence/basic_07--summary.json": {
+      "sha256": "fc4f070d2387ac0d178e70f25383d700102cf8d67583374b28628fa25844b7a2",
+      "bytes": 14819
+    },
+    "memory-quality-baseline-20261117-evidence/basic_07--vortex.json": {
+      "sha256": "a3618b6fb1c5b164e2b0f46eea68c06a4605107219a35edf89c660dbc93487ec",
+      "bytes": 31847
+    },
+    "memory-quality-baseline-20261117-evidence/basic_08--none.json": {
+      "sha256": "ead9925328f9999c88aa4c7caa420e0f2007f80f60936bafb81b6c693fe1308d",
+      "bytes": 8885
+    },
+    "memory-quality-baseline-20261117-evidence/basic_08--summary.json": {
+      "sha256": "60f0167994b34d4e51a129604573eac80bb7bb13d768f2fa42585420a746e86c",
+      "bytes": 14072
+    },
+    "memory-quality-baseline-20261117-evidence/basic_08--vortex.json": {
+      "sha256": "0a0944621b04ab5215ed72865b88b0fec89b2d36d2ae3f2a586e58fcaf2fa919",
+      "bytes": 26937
+    },
+    "memory-quality-baseline-20261117-evidence/basic_09--none.json": {
+      "sha256": "4c38aee504bcb4c27292645e816b64520baa2db2b2d5aeb8e371887a1d8aa2b9",
+      "bytes": 9135
+    },
+    "memory-quality-baseline-20261117-evidence/basic_09--summary.json": {
+      "sha256": "4fe0787e098e1347048cfe6619e8df1acc174b7e49855d0ca5297c2b4431945e",
+      "bytes": 15307
+    },
+    "memory-quality-baseline-20261117-evidence/basic_09--vortex.json": {
+      "sha256": "a2ea8f76f5562bfcc488f9f1dfe09b14f28272aa0af0724f3fbd012782972d22",
+      "bytes": 31663
+    },
+    "memory-quality-baseline-20261117-evidence/basic_10--none.json": {
+      "sha256": "ecf1c07ff1e29a4d7951918568daf4f7c98fe93077b9e1fb19b7a7bc3db981bb",
+      "bytes": 9415
+    },
+    "memory-quality-baseline-20261117-evidence/basic_10--summary.json": {
+      "sha256": "9dbbb137360353b9eb032a90160376e2a41b055d18953e6a4b4d8836294a622b",
+      "bytes": 15074
+    },
+    "memory-quality-baseline-20261117-evidence/basic_10--vortex.json": {
+      "sha256": "e1e50a8ab45f64dfd62cb22fffc693e052dfdd33b4dd76df821ef1702c76ddc6",
+      "bytes": 31798
+    },
+    "memory-quality-baseline-20261117-evidence/correction_01--none.json": {
+      "sha256": "e47294ac3f03d6cad3d3b0a797694a1e9edfc51675c72a7b5983f3d990346c30",
+      "bytes": 9367
+    },
+    "memory-quality-baseline-20261117-evidence/correction_01--summary.json": {
+      "sha256": "afb9772b404ecc072b2a934e3429adf16b4730f575cfea60111ce34b2fdb829f",
+      "bytes": 14383
+    },
+    "memory-quality-baseline-20261117-evidence/correction_01--vortex.json": {
+      "sha256": "5d28d776eb7818042976edaef0b278daed25e9052f5c71f1e3270f13d4c6d0be",
+      "bytes": 33509
+    },
+    "memory-quality-baseline-20261117-evidence/correction_02--none.json": {
+      "sha256": "62421e5405a7e869363297c25a289f5692d51caf605593cec803cd638a478203",
+      "bytes": 8912
+    },
+    "memory-quality-baseline-20261117-evidence/correction_02--summary.json": {
+      "sha256": "da67b47d8beaf18031ad2eeb35669a6d20a888a01b38d57931030df05a00bd4b",
+      "bytes": 13686
+    },
+    "memory-quality-baseline-20261117-evidence/correction_02--vortex.json": {
+      "sha256": "e299839cb86752faa58102b1efe0627632423cfdf4af2768d67a04636bbcc259",
+      "bytes": 27424
+    },
+    "memory-quality-baseline-20261117-evidence/correction_03--none.json": {
+      "sha256": "fa6d9956f0ad266257ce39ec34f6dd38f6f2857a23f19ae1ce9e544e50c665cb",
+      "bytes": 9179
+    },
+    "memory-quality-baseline-20261117-evidence/correction_03--summary.json": {
+      "sha256": "73027c667a034a02559d6a4ff43cc7916f8dc57ad1058c099b95cee0e57270e8",
+      "bytes": 15134
+    },
+    "memory-quality-baseline-20261117-evidence/correction_03--vortex.json": {
+      "sha256": "0bd6f64de3a795be8cdfae101c255c8ff264480099d31f578ce7ab21d8e84fed",
+      "bytes": 27844
+    },
+    "memory-quality-baseline-20261117-evidence/correction_04--none.json": {
+      "sha256": "3fb8f33218d880196f69fb7ff4739ad0785e41adc52de0b9e0d612f326779bba",
+      "bytes": 9474
+    },
+    "memory-quality-baseline-20261117-evidence/correction_04--summary.json": {
+      "sha256": "231f9026c8177f4957ea696fa2a0f88be7d741df75871b2b4fe7966e48797a58",
+      "bytes": 14246
+    },
+    "memory-quality-baseline-20261117-evidence/correction_04--vortex.json": {
+      "sha256": "4a99a2e25dc3db97d945152fd0196b94dade3af0328923c799048f743df95dbf",
+      "bytes": 27950
+    },
+    "memory-quality-baseline-20261117-evidence/correction_05--none.json": {
+      "sha256": "ffbb7d1db634cbcca0281924d65c9e2be2c070298f2e37e368d8b93b3df03bb4",
+      "bytes": 9293
+    },
+    "memory-quality-baseline-20261117-evidence/correction_05--summary.json": {
+      "sha256": "a2d00afe6fb1e69170bff49287d3c07763bc4ee00110bc2bbd28a88a78496c5a",
+      "bytes": 14411
+    },
+    "memory-quality-baseline-20261117-evidence/correction_05--vortex.json": {
+      "sha256": "7d544a8a6cdb06cb26a759ac7bcb3b1c91aa246922b8c9dbb26582baccb73e0e",
+      "bytes": 28331
+    },
+    "memory-quality-baseline-20261117-evidence/correction_06--none.json": {
+      "sha256": "25b4f703e5afbbce72fe3e32e2506ba8ae51c820f4800a730abf2ec07a95a46d",
+      "bytes": 8734
+    },
+    "memory-quality-baseline-20261117-evidence/correction_06--summary.json": {
+      "sha256": "c7efc11cc85dab69f3ec77c9963fd5ae2eb03247f58460c0b6699f4343022d6e",
+      "bytes": 13696
+    },
+    "memory-quality-baseline-20261117-evidence/correction_06--vortex.json": {
+      "sha256": "fef2c95deb2f07d1c607edcce90f9c6b610961a2f40528248d27b7d0682f8802",
+      "bytes": 27418
+    },
+    "memory-quality-baseline-20261117-evidence/correction_07--none.json": {
+      "sha256": "8dfa3c7ed1ae39cc04701e1b4c2fd92dc771142ff73ae5c3c6d54d6aed8a7dea",
+      "bytes": 9531
+    },
+    "memory-quality-baseline-20261117-evidence/correction_07--summary.json": {
+      "sha256": "045ad1aaba4955a1a1eb8b6b7e757b122e79c8b6d87900bfc46ce2ca4b781000",
+      "bytes": 14776
+    },
+    "memory-quality-baseline-20261117-evidence/correction_07--vortex.json": {
+      "sha256": "c5bab1fcbdfdf996a281b0d09fa1af4616f6554e106e6cc487c8e7cbb3cff6f3",
+      "bytes": 28563
+    },
+    "memory-quality-baseline-20261117-evidence/correction_08--none.json": {
+      "sha256": "bd39f255e8ad8c9562dfeea6c7ee416a7f826f4c47235448f498e61fea2b79b9",
+      "bytes": 11051
+    },
+    "memory-quality-baseline-20261117-evidence/correction_08--summary.json": {
+      "sha256": "517ec7c60e2015cbcb1c0137a71de8d6c80b8c4631f2b7dea941444c29b5d4c1",
+      "bytes": 18243
+    },
+    "memory-quality-baseline-20261117-evidence/correction_08--vortex.json": {
+      "sha256": "dfb90e0f6c60de591bf8e9db642f35b888d3df45ddc75f5625b8e99e23917d70",
+      "bytes": 34784
+    },
+    "memory-quality-baseline-20261117-evidence/correction_09--none.json": {
+      "sha256": "b9c06f2a0cb6852c2499f391c331394d86d4deb5e62c9a1429741d7bcdf477de",
+      "bytes": 8748
+    },
+    "memory-quality-baseline-20261117-evidence/correction_09--summary.json": {
+      "sha256": "6b38e4227bfd15104f0de07c618383abc3185f73a68a7bd9a2d96d9e405557c7",
+      "bytes": 14369
+    },
+    "memory-quality-baseline-20261117-evidence/correction_09--vortex.json": {
+      "sha256": "dcd3060b190e4dc43d57ad0ab6c08f2e5385b3ad9c09c0d2570e6068ed7e97b4",
+      "bytes": 27563
+    },
+    "memory-quality-baseline-20261117-evidence/correction_10--none.json": {
+      "sha256": "0a33ba75b49565d885c114f3aa4a94266a75c9e05ed23e83e935b1d41b38ece7",
+      "bytes": 9226
+    },
+    "memory-quality-baseline-20261117-evidence/correction_10--summary.json": {
+      "sha256": "39f02c2ab3eb349f5bb6966dcda0d9f30c4fcf32917cef79be638e678d7446f1",
+      "bytes": 14508
+    },
+    "memory-quality-baseline-20261117-evidence/correction_10--vortex.json": {
+      "sha256": "56781ade3b4efd152f32a802a3b0353a9a0b7cde2f09808a766941a27af56567",
+      "bytes": 34306
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_01--none.json": {
+      "sha256": "3cae17d245ba0c00ad6dc50749fdde8149e85d7fe2a9a562f67e6f51e05a2403",
+      "bytes": 23392
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_01--summary.json": {
+      "sha256": "9f9209b0f33d5d32736467ecea87030d5826b8f8908a895b77f6c734eaee726a",
+      "bytes": 41048
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_01--vortex.json": {
+      "sha256": "b0756871ebfa49420ba2e4ef35d961806a63a2a7ea1442bc4be9efd01e22f1d8",
+      "bytes": 82836
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_02--none.json": {
+      "sha256": "db9c88e7c68939c045316545bfbef51e62e588364c6e43c59d4bbef3fdd9c4d4",
+      "bytes": 25666
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_02--summary.json": {
+      "sha256": "59ea0bb760b7b123d0d97ecce10c33a433796d95c985dc100e814ddb16ecd010",
+      "bytes": 40884
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_02--vortex.json": {
+      "sha256": "8b26580bb15e74aaeefd08504ae91001294afe493f36b4493805041d03c45615",
+      "bytes": 70216
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_03--none.json": {
+      "sha256": "a5a3f45065f98ed504bfbfe263e471ce22aea1281983cebe3cb58c89a81a6b9f",
+      "bytes": 23620
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_03--summary.json": {
+      "sha256": "1250c6511aa6599f7141c0fbc1d6cd9f5aac36e60687908b04dc80a31516b18a",
+      "bytes": 40764
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_03--vortex.json": {
+      "sha256": "930e960a008e6e3c01ef5152e191a37493d40357ad28a0afd93c181d13d22f59",
+      "bytes": 68823
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_04--none.json": {
+      "sha256": "7723a2ff31cda3dd7e747fb7a8174096f40ed64a86bca0a555da27100426ced8",
+      "bytes": 23623
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_04--summary.json": {
+      "sha256": "b0c061812ec39aca4bb7336258f3179f85b6550921f85b64312e18eea0c8ad28",
+      "bytes": 40639
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_04--vortex.json": {
+      "sha256": "8f88f575b9a19466e42a7a212ad3b95a05b3624814af20575657e41c6155c24b",
+      "bytes": 80476
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_05--none.json": {
+      "sha256": "861a3cb84e131703a2a7b3a5e33c284d386c76e925582e56c90f8e638a3573da",
+      "bytes": 28006
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_05--summary.json": {
+      "sha256": "43d862a82767d4231e7c08e1bc850b96c9e4e64af5f806903a12a8b7f87e1fd3",
+      "bytes": 42938
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_05--vortex.json": {
+      "sha256": "488d1026e75307a05232cf6db981110e16b54b61cc79cee5212b4dfbac0bdd63",
+      "bytes": 84075
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_06--none.json": {
+      "sha256": "3f60f5b1a63f502b9f2480ee0b550517cd309c40aa218f368efbba5b3d42f53b",
+      "bytes": 26386
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_06--summary.json": {
+      "sha256": "4c85200eb102aaf324bc25b489b1eee7d14d688d0407d72bdfa63aa844b802e6",
+      "bytes": 42053
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_06--vortex.json": {
+      "sha256": "b9c04d21d52d4b2a6ee68402c3d9e310e78b7f000ea68d76f20aab7074c9740a",
+      "bytes": 69463
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_07--none.json": {
+      "sha256": "3cf3bdada25d1951b25e2eb6d10892d90d22a0901397d5487885a2d2c6485c66",
+      "bytes": 26440
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_07--summary.json": {
+      "sha256": "b10f2d43363d9752288f3f5ace877099456a2043a5e7e2fc96b28c7f1fdc9a6c",
+      "bytes": 44918
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_07--vortex.json": {
+      "sha256": "37fa145d735a92697242cd7bf7410f5c42d04988c78c1a7e287127d0d4168c51",
+      "bytes": 125513
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_08--none.json": {
+      "sha256": "b1b8fddab614bc17051b8a17c48ed10989eeff9d46ea0e36b80b5a9d251576f5",
+      "bytes": 26330
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_08--summary.json": {
+      "sha256": "e8f017d123bb4d0890a7fe1073f260b8b65e053a1c097a0cebf60385fa5a6b59",
+      "bytes": 41484
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_08--vortex.json": {
+      "sha256": "2c3ced998417b469c760a48960cdeb72e6003129d163b53ea03ada6ab6a6a5d8",
+      "bytes": 71738
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_09--none.json": {
+      "sha256": "1376981989635079bcf0754ed283a65f994fd8c714f17606e331b98221a606a6",
+      "bytes": 28609
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_09--summary.json": {
+      "sha256": "e853e63e0fe5bcefe099a0a1390a9bb9283da1c772f5e4eccf56c0acde13e6fb",
+      "bytes": 41076
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_09--vortex.json": {
+      "sha256": "0842b2d8e49570bbf3d6142290efff82585f0c93ef8b44eeaf2ddc5c5f6eacd3",
+      "bytes": 70303
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_10--none.json": {
+      "sha256": "8fbc00e5b648730b18ebce8a1e3b2056c70f104751432c34bf2f3541eef5a47d",
+      "bytes": 26787
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_10--summary.json": {
+      "sha256": "66a44e76b1ce40724ce93be3a458d8bc4f8ad1e19d7bae827e62ca6d906a0d45",
+      "bytes": 42375
+    },
+    "memory-quality-baseline-20261117-evidence/distraction_10--vortex.json": {
+      "sha256": "dd621c7bd24bd976e4772b8e7acc0cd1696ab06abf94438774329e283705ba0e",
+      "bytes": 70995
+    },
+    "memory-quality-baseline-20261117-evidence/partial_01--none.json": {
+      "sha256": "68616239ff5cc0c4e280661aef03492c3712455baa9c4b8779421c5e029d5339",
+      "bytes": 10028
+    },
+    "memory-quality-baseline-20261117-evidence/partial_01--summary.json": {
+      "sha256": "83110be0594827783a843c9525477fc9c2aced2951e761f44d7716535e23ed83",
+      "bytes": 14832
+    },
+    "memory-quality-baseline-20261117-evidence/partial_01--vortex.json": {
+      "sha256": "308efd8afbd9a65be882b8f4fbc0ccd2ea2940603a86b1f6bd8c664f6ecb3d18",
+      "bytes": 28613
+    },
+    "memory-quality-baseline-20261117-evidence/partial_02--none.json": {
+      "sha256": "6d4b294233e066afeccd61222c32f5a2276e0f2cb686a1b4af380b46ec196ad3",
+      "bytes": 9164
+    },
+    "memory-quality-baseline-20261117-evidence/partial_02--summary.json": {
+      "sha256": "35c87792ef6d576f39cd5bc8b692fcfcbd217826a23b7565dd66a0945711ef95",
+      "bytes": 14289
+    },
+    "memory-quality-baseline-20261117-evidence/partial_02--vortex.json": {
+      "sha256": "d1b0888c955fa6b408ebd155a27e62e348e5a1985c900aaf00b58c0fa785d091",
+      "bytes": 28178
+    },
+    "memory-quality-baseline-20261117-evidence/partial_03--none.json": {
+      "sha256": "bc72213f0dd90ed5c08562f5e726f66be1a8db6dd55992b1ed2c4c395daa05f1",
+      "bytes": 9433
+    },
+    "memory-quality-baseline-20261117-evidence/partial_03--summary.json": {
+      "sha256": "8197b504de197692ce4e83ea008dd43ac39d2e70f33097b31666420d6cda415a",
+      "bytes": 14849
+    },
+    "memory-quality-baseline-20261117-evidence/partial_03--vortex.json": {
+      "sha256": "4ab5123209985e7becafc663055e12ba6e127edfe84fb8c2b663f78497b9a0f4",
+      "bytes": 28755
+    },
+    "memory-quality-baseline-20261117-evidence/partial_04--none.json": {
+      "sha256": "17e389f674c4589a399964c0f8d4656883a488a7d3d58847d92f5373ae546b05",
+      "bytes": 9225
+    },
+    "memory-quality-baseline-20261117-evidence/partial_04--summary.json": {
+      "sha256": "a318c65e69fb42ac5d7349a33d6b548934119d1b827048e8c1eb982052a7ec17",
+      "bytes": 14915
+    },
+    "memory-quality-baseline-20261117-evidence/partial_04--vortex.json": {
+      "sha256": "3fbfef644c8a8347bd1267652683818c346a249a20403fa92b2c9fefd0e5c763",
+      "bytes": 28766
+    },
+    "memory-quality-baseline-20261117-evidence/partial_05--none.json": {
+      "sha256": "36d63479c114e36893fb0a6057f36e4b717770f42f43b5888d9072a4aad2ccc2",
+      "bytes": 9946
+    },
+    "memory-quality-baseline-20261117-evidence/partial_05--summary.json": {
+      "sha256": "b4e685a4ac078acc581c69a620432725b93e3b5793f525d08ad18262724e016b",
+      "bytes": 14560
+    },
+    "memory-quality-baseline-20261117-evidence/partial_05--vortex.json": {
+      "sha256": "6cc4038ee35473c4235232fd917d8c9b0f0fa816e1db544ee7574c2ec4e98d89",
+      "bytes": 28778
+    },
+    "memory-quality-baseline-20261117-evidence/partial_06--none.json": {
+      "sha256": "2c2c2b001538cb519c47837ac850c4e38a475198068e3cb8eef57bfd25f812b0",
+      "bytes": 9494
+    },
+    "memory-quality-baseline-20261117-evidence/partial_06--summary.json": {
+      "sha256": "0d44351e8256530ed61a6058acf27b5d9a7db1ef27d019e7578ee7a5e15a5fb9",
+      "bytes": 14264
+    },
+    "memory-quality-baseline-20261117-evidence/partial_06--vortex.json": {
+      "sha256": "d5c185ed888cff365467f0f1beb6ad69613b3a59be3142bd8752946a75a78f7e",
+      "bytes": 28417
+    },
+    "memory-quality-baseline-20261117-evidence/partial_07--none.json": {
+      "sha256": "39b368b4a0e3f035151b87c50dddb57de8a1ce3fdf92d5ef7fa3e73a5b4c82b4",
+      "bytes": 9728
+    },
+    "memory-quality-baseline-20261117-evidence/partial_07--summary.json": {
+      "sha256": "256fb88e3114f4a219804ce28aa31fb62f6188fee4a974da49ff262ec4c78bc5",
+      "bytes": 15483
+    },
+    "memory-quality-baseline-20261117-evidence/partial_07--vortex.json": {
+      "sha256": "59d23fa5c3a5cb714545d99f2941efe93271c6cf1390b382e2ea00c8b8babfe4",
+      "bytes": 29401
+    },
+    "memory-quality-baseline-20261117-evidence/partial_08--none.json": {
+      "sha256": "a69093d7e857da8467a800bb75ab6f7794118916d97af7319710199fe01aa6e5",
+      "bytes": 9080
+    },
+    "memory-quality-baseline-20261117-evidence/partial_08--summary.json": {
+      "sha256": "2c0062a7adc571d49b577225d1fec1787d19f55c22a92c862b038b2c2fe61e7b",
+      "bytes": 14557
+    },
+    "memory-quality-baseline-20261117-evidence/partial_08--vortex.json": {
+      "sha256": "d27b01b7626dd685a0344e5cf8f6d7a9adde10b494df994cd678bc4e330f3f84",
+      "bytes": 28236
+    },
+    "memory-quality-baseline-20261117-evidence/partial_09--none.json": {
+      "sha256": "5ef75d0c69c14cf3fdce2d73fd38c354952f487c489017f9bc88089d0c674345",
+      "bytes": 9534
+    },
+    "memory-quality-baseline-20261117-evidence/partial_09--summary.json": {
+      "sha256": "b14daf7b7c71afb4cf80ca5a5e42c03aa38f71c3244c4d89b3822e8e3224f2c2",
+      "bytes": 14786
+    },
+    "memory-quality-baseline-20261117-evidence/partial_09--vortex.json": {
+      "sha256": "2ab1f7d531a3f1493ef52e82a31d5ee53b08b445abaa54101222afa5e83bf201",
+      "bytes": 28615
+    },
+    "memory-quality-baseline-20261117-evidence/partial_10--none.json": {
+      "sha256": "d1a74b27451d150180bd23dc4df87f2fdf4f2519c9edf082970450d069ff8684",
+      "bytes": 9610
+    },
+    "memory-quality-baseline-20261117-evidence/partial_10--summary.json": {
+      "sha256": "3e3e40d1afdd8fda1f2ef0662f413d462be0bda848acc6931a1d075f19ba22f2",
+      "bytes": 14608
+    },
+    "memory-quality-baseline-20261117-evidence/partial_10--vortex.json": {
+      "sha256": "a3b7148ae2f6718e7c7088fe74b5c33faa691110f36045e9fcadede73c228af7",
+      "bytes": 28644
+    },
+    "memory-quality-baseline-20261117-evidence/reference_01--none.json": {
+      "sha256": "ae1f99534cb41094ed42eaa5e4a66f74ac6e314277c47d3e149d38a56aaa6fbc",
+      "bytes": 10066
+    },
+    "memory-quality-baseline-20261117-evidence/reference_01--summary.json": {
+      "sha256": "c7073a6b784023162af219c95bb68ba2e16c037300e5ea34c88ceca19cfd3f5f",
+      "bytes": 15918
+    },
+    "memory-quality-baseline-20261117-evidence/reference_01--vortex.json": {
+      "sha256": "e837f874ae9b5c0b716e2047064a4af4bf0f2e3005f43a30599536808a3be8d6",
+      "bytes": 22617
+    },
+    "memory-quality-baseline-20261117-evidence/reference_02--none.json": {
+      "sha256": "fdfdcfd320bd26729ea9dff537b012d6ec5e9c1f02a90b78f67a0176fa6f730f",
+      "bytes": 9686
+    },
+    "memory-quality-baseline-20261117-evidence/reference_02--summary.json": {
+      "sha256": "f874eb70ca35efa0449a789f3442de40999bf76eb4fca8c6529a3207ad7c5c0f",
+      "bytes": 15274
+    },
+    "memory-quality-baseline-20261117-evidence/reference_02--vortex.json": {
+      "sha256": "f065c753c2831d63a295da3d4f6f46feeb22287b2ba0c6d1b4413183f5eea859",
+      "bytes": 22684
+    },
+    "memory-quality-baseline-20261117-evidence/reference_03--none.json": {
+      "sha256": "37af0d35b49ba8ce2539d0a4e525f1e2413279b78d1a023a41a3b3f08e1215d9",
+      "bytes": 9087
+    },
+    "memory-quality-baseline-20261117-evidence/reference_03--summary.json": {
+      "sha256": "7b655005a76968ff391057666fd56e5e718238b867383caa77920e0ccc343a4b",
+      "bytes": 14265
+    },
+    "memory-quality-baseline-20261117-evidence/reference_03--vortex.json": {
+      "sha256": "4bc1cc3d82f418bd0a8517fd56e8754c1f5442b1afd210b6fcc5527184c858a9",
+      "bytes": 28160
+    },
+    "memory-quality-baseline-20261117-evidence/reference_04--none.json": {
+      "sha256": "3d74a5175297a2874e3279b0a85c661ddb80bbf43e08071fc87602cbe9942e88",
+      "bytes": 9052
+    },
+    "memory-quality-baseline-20261117-evidence/reference_04--summary.json": {
+      "sha256": "fc41b88053bef7e541d1d620180a828f3ce2c6a0025f11f89e082939bda2c03d",
+      "bytes": 14842
+    },
+    "memory-quality-baseline-20261117-evidence/reference_04--vortex.json": {
+      "sha256": "bd87169912e6c12ddf3d2e93ba1b5074dd72f96cb27b34366be736c30708f311",
+      "bytes": 28198
+    },
+    "memory-quality-baseline-20261117-evidence/reference_05--none.json": {
+      "sha256": "fe345b7f26c6365fe76832c826433522ed80025d18ae5eb0ed9e5adf02f8a28c",
+      "bytes": 9213
+    },
+    "memory-quality-baseline-20261117-evidence/reference_05--summary.json": {
+      "sha256": "e61c3d9cf9b8a991a2c6b513f2d5e6009a9154b24fc081246f92282c38ea8569",
+      "bytes": 15502
+    },
+    "memory-quality-baseline-20261117-evidence/reference_05--vortex.json": {
+      "sha256": "a625c6c23fbb22c09d6f2e418b14f6dbe9a53b9b84405db41459de619432f811",
+      "bytes": 22080
+    },
+    "memory-quality-baseline-20261117-evidence/reference_06--none.json": {
+      "sha256": "7bfd272bb9e7133e6aae9366d8827c26c0b1606814887b18d4d1a7326e7771a8",
+      "bytes": 9932
+    },
+    "memory-quality-baseline-20261117-evidence/reference_06--summary.json": {
+      "sha256": "3c17534744000294ab35527c6b1257c92048b2808d15f22469ec00e6aaa4dc2b",
+      "bytes": 15385
+    },
+    "memory-quality-baseline-20261117-evidence/reference_06--vortex.json": {
+      "sha256": "9abf0859c4acb4595ea6a71a9ad12c97d2c1d09760d6cf56c2cfecaaf38cd6df",
+      "bytes": 28926
+    },
+    "memory-quality-baseline-20261117-evidence/reference_07--none.json": {
+      "sha256": "1d9597733283aed16f4422f7425e14caa99289ab951ba350305c3f2d42fb17f3",
+      "bytes": 9169
+    },
+    "memory-quality-baseline-20261117-evidence/reference_07--summary.json": {
+      "sha256": "2892293c90d06e265e59d8b29a525836c7ce11f54ccbe6ba9978094c4afa3275",
+      "bytes": 15016
+    },
+    "memory-quality-baseline-20261117-evidence/reference_07--vortex.json": {
+      "sha256": "2e82d204d8640c58f8a0a57836cc6503d34fcfd2a276da97b5745fd981a5cc2a",
+      "bytes": 28898
+    },
+    "memory-quality-baseline-20261117-evidence/reference_08--none.json": {
+      "sha256": "0ed6237cf679c69ace4e0a1b152c72e080c221c51f62a19c3ebd206c7d0cbfa7",
+      "bytes": 9722
+    },
+    "memory-quality-baseline-20261117-evidence/reference_08--summary.json": {
+      "sha256": "cd63b9c9f096d3d8a26adda0636cde706b7473b66db0c05f29c3c6cd498f17db",
+      "bytes": 16002
+    },
+    "memory-quality-baseline-20261117-evidence/reference_08--vortex.json": {
+      "sha256": "8af9462db44381abe7e1f35e4a9fd524c650f616df3ac6e4ea1d2c86ec3da25a",
+      "bytes": 22694
+    },
+    "memory-quality-baseline-20261117-evidence/reference_09--none.json": {
+      "sha256": "7bb31a65c16fbc248a5a6489edb672928afabebcfe48ef57843757f3c21d2228",
+      "bytes": 9464
+    },
+    "memory-quality-baseline-20261117-evidence/reference_09--summary.json": {
+      "sha256": "e318b836a4b875a35685c2b0f8e7f2fb1eb27ce94f1140140ab30275cb787f62",
+      "bytes": 15069
+    },
+    "memory-quality-baseline-20261117-evidence/reference_09--vortex.json": {
+      "sha256": "d9ad4edc9d9943ddc686571269769698cf8503e048b94b58581129c7dae5ecd3",
+      "bytes": 22754
+    },
+    "memory-quality-baseline-20261117-evidence/reference_10--none.json": {
+      "sha256": "7922a15f8929c3570b8dbe42e2b8eec15c8ef489728b75879c10eece51483eaa",
+      "bytes": 9248
+    },
+    "memory-quality-baseline-20261117-evidence/reference_10--summary.json": {
+      "sha256": "f9476c60daa74ec07aa1d9dae7689756fa8c0310470084528ebd0e4165c8504b",
+      "bytes": 15067
+    },
+    "memory-quality-baseline-20261117-evidence/reference_10--vortex.json": {
+      "sha256": "b07603d81a80c13cf2c7cfc1fa8dfac8a1d79158aec6e751387636012ac056c5",
+      "bytes": 22217
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_01--none.json": {
+      "sha256": "8de57ec7d1b9051aa6d64eb8009fd2c823fbbd3483e0ed46ccfd0af15e392ea4",
+      "bytes": 8772
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_01--summary.json": {
+      "sha256": "f4c51459aaaa5e44494b2a2906066bf887f36709b3f1f4ae02433684130037a2",
+      "bytes": 14232
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_01--vortex.json": {
+      "sha256": "bef1b2f823f25b027b136a3062978928fde8a89f2fe05b9d23315a50749d61ba",
+      "bytes": 27157
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_02--none.json": {
+      "sha256": "ef84d1e406ac825b16515a94ea526bcbc744752c1bea715108ab67baa64010c4",
+      "bytes": 9261
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_02--summary.json": {
+      "sha256": "73e473e5c1dd845d43a1dd78ffd990af3b1c91992c3dd6aa1a212ac253abec68",
+      "bytes": 14661
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_02--vortex.json": {
+      "sha256": "b6f88547ed753ded45cca4b6d959f81fce0011b012af85ebfc6a9a65731bb9bb",
+      "bytes": 27536
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_03--none.json": {
+      "sha256": "57162fe7e7fad1de004a94061b2227071138bb35f367617c6dc5b111977e3b92",
+      "bytes": 9101
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_03--summary.json": {
+      "sha256": "0afae5a0600469c2719064819f5da5c12658332f649ca3c74b313bdab66cf9e2",
+      "bytes": 14976
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_03--vortex.json": {
+      "sha256": "4b6260e648fc2e2bc10dbd9ca8df86664e6f203f7094896284b88ad752c3f0a5",
+      "bytes": 32777
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_04--none.json": {
+      "sha256": "376d7176e89b5b6fe24236bdc4c02f90a4490616c02548bfcf3aad07fb6d50b4",
+      "bytes": 9219
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_04--summary.json": {
+      "sha256": "8d73f0eeeec66b4c03992e27264820cf70561518d3f39f34b3262da2450fd9f2",
+      "bytes": 14937
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_04--vortex.json": {
+      "sha256": "2ce5f0532a82a49287e2ac30be0ea1fef674e68c31864ddac6fcaa9745566b49",
+      "bytes": 32537
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_05--none.json": {
+      "sha256": "e77dce387591848216e939da55e5ff69c4b61e0924e85bfb74b9eb787cdd5a2a",
+      "bytes": 8841
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_05--summary.json": {
+      "sha256": "26c836dcc8002970504f0e8fc2d7f47d4494c38c7312571f88e187b5c4191c83",
+      "bytes": 14416
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_05--vortex.json": {
+      "sha256": "16a08ad4816be7c1e435912d89a6f434abea4d5622902a9cc5528546eb33ebdd",
+      "bytes": 27431
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_06--none.json": {
+      "sha256": "014cdebdfca004dd5882bb9b779f870a84f8b427352f59c6c68f694e4bc5ac43",
+      "bytes": 11430
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_06--summary.json": {
+      "sha256": "aaad70c1d4f7a95cc235744071476e301798c170571b1a5e56c8e20112c344b3",
+      "bytes": 19279
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_06--vortex.json": {
+      "sha256": "06bd1954760ecf7134431665aa5d99c8dcbeb1a054f2c81a7c014bf0eddef714",
+      "bytes": 52743
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_07--none.json": {
+      "sha256": "dd1db24ac93d7897a4dbe3b90851832039dd0d6b8f2704b5492b76af955695ff",
+      "bytes": 9367
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_07--summary.json": {
+      "sha256": "847c6e3a2bc601e65c2209a520fc95ab5418a92fae010e16549037fafeb5ae3e",
+      "bytes": 14750
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_07--vortex.json": {
+      "sha256": "cee86d287649506560df1c0c954821cf4a974de9366211866081e523f61c21e2",
+      "bytes": 28061
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_08--none.json": {
+      "sha256": "7dcb2802c765652a3c93a181d89d5dd652dcbd0d1548acb76243d44439af5287",
+      "bytes": 9517
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_08--summary.json": {
+      "sha256": "e43e9ca8824f3efe1a66b85b5c6ec2f9680b3dee3189492ef6683250375bb7b8",
+      "bytes": 15578
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_08--vortex.json": {
+      "sha256": "09ab9f2374169dc570aa98296884799ac78481927088d79af4fecc01f61ca482",
+      "bytes": 27599
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_09--none.json": {
+      "sha256": "fea2a4a5271a8f8d74e059f4aecd80f28aaac02906f9f6014fda21042eacf8c2",
+      "bytes": 9715
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_09--summary.json": {
+      "sha256": "e04a7bfc9bb3bda394753a34fdf732fe15c892f3f9f2e9c3407a6f118b7c14cc",
+      "bytes": 15114
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_09--vortex.json": {
+      "sha256": "df9f93442aab67f177736a881e886f46c276827bb74f38792d053fdf11fd721f",
+      "bytes": 28138
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_10--none.json": {
+      "sha256": "48678d377f69c02b8b41c68692b89bf81dfb6fceddca83695adf7dfe39f97115",
+      "bytes": 9753
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_10--summary.json": {
+      "sha256": "179e2a375eb4cb4126584da2764797c151685321b17452c1eb4eebacf77a8330",
+      "bytes": 16079
+    },
+    "memory-quality-baseline-20261117-evidence/retraction_10--vortex.json": {
+      "sha256": "93518a49163fda5ca9ff032e55e23fc3ed71ceb57809284a47e7b7392a25a19e",
+      "bytes": 33311
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_01--none.json": {
+      "sha256": "054a2f3ae5e1f609c9c2cb67193f18886755778db0838ae9f00901dd71ae9d99",
+      "bytes": 8866
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_01--summary.json": {
+      "sha256": "e821935d278f6647deaa0236c317629fd8b6d4278864efced83df924786dadf3",
+      "bytes": 14022
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_01--vortex.json": {
+      "sha256": "283317eb2ae068cfae9b013442471b4b4a70371e5da91137386e6a3fa83e5aff",
+      "bytes": 26665
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_02--none.json": {
+      "sha256": "c208543d419b2e50cf7cf366220c33c632c000b1d1334725dcf06629a059e436",
+      "bytes": 8684
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_02--summary.json": {
+      "sha256": "0963c97624efb7af466bd6cf979c3e51f0e3306470af0067c82c69ae3553fa3b",
+      "bytes": 14462
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_02--vortex.json": {
+      "sha256": "c375158e15f98feb212a0612a87bb6af914abca0332666603f9310f0f012986b",
+      "bytes": 26865
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_03--none.json": {
+      "sha256": "eec6930e0ea21672338f757d5750a702795a140e90d69d97e278c9d2e09b98f8",
+      "bytes": 9655
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_03--summary.json": {
+      "sha256": "5fa16a4a1f3842a22db7031e39b14e2dcb51f2801506d89417a3da5d9384580f",
+      "bytes": 14987
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_03--vortex.json": {
+      "sha256": "adaf427acbd47f1ab7da3a78f8bd31b54d3f0cbf5acb053889ec69f35ec86d47",
+      "bytes": 27349
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_04--none.json": {
+      "sha256": "d4873a6ee5c2debb97c4dc5a02c2e5a4090c26de0595c44c7cf2616d677d555e",
+      "bytes": 8517
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_04--summary.json": {
+      "sha256": "a08e2bb3953561db8201422370132a99db99cbfed61ca90f4466706a19ad23bc",
+      "bytes": 14149
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_04--vortex.json": {
+      "sha256": "e1b5ae959f0ab10587a97a512ccd0e5f336e80cd18aac151e424e82359c27928",
+      "bytes": 27226
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_05--none.json": {
+      "sha256": "ab64963df285137e6ba888c08dadd97e43c5e0cb1c8de4184a3504838502cee5",
+      "bytes": 8657
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_05--summary.json": {
+      "sha256": "96745e7b45ec041f94b014b09f65f657bd1da4e613cd6e733f82f96b60f08224",
+      "bytes": 14438
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_05--vortex.json": {
+      "sha256": "8f0e48528eb152c5b2bbd74e8e441f50e20ddc4fa39a15d427f2c4a9274f0a8c",
+      "bytes": 26494
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_06--none.json": {
+      "sha256": "8e469a85f8df8d89f52dbd7cdf7321541299c30edff0c5fca345363deb0b6b42",
+      "bytes": 8719
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_06--summary.json": {
+      "sha256": "8b46dd8a83dd215031f10ba0c69f367c355215f287b59845640d487ec3df10b5",
+      "bytes": 14754
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_06--vortex.json": {
+      "sha256": "f1d2985277bf8f6e5e7f4a67507a6df053f2857b5a3af1b11c772217c0a81fcb",
+      "bytes": 26738
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_07--none.json": {
+      "sha256": "139e64580b0f57becdd2dca52bc3330bc0b3edb03a585bc6879ae6755aed3f01",
+      "bytes": 9170
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_07--summary.json": {
+      "sha256": "e3ce6df65e143f2ece29f87a6ce1466b67ba60af484d058492c3c4cbd86dd786",
+      "bytes": 15358
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_07--vortex.json": {
+      "sha256": "4f320a6eccf347ab493635e1d46153df58d75624ae8976bbf70dc61d5f08a0f9",
+      "bytes": 27487
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_08--none.json": {
+      "sha256": "0ded608e0bb6ddaca76e7c7b49ef7af41347b7cb6d058b4992cbd98040b2a6c3",
+      "bytes": 9410
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_08--summary.json": {
+      "sha256": "ce60837b8be926709093a3cceb10d0719d340527db3840fc2a2f91cb372b05e3",
+      "bytes": 15153
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_08--vortex.json": {
+      "sha256": "6186e23da0ab0e6dab8ff77f744fd7abf2f4c68612d47e73507ebd966c975184",
+      "bytes": 27591
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_09--none.json": {
+      "sha256": "4ea2326d3bee4a8931b86f80722df403be757ebf04319f60c154b49a48277af1",
+      "bytes": 10599
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_09--summary.json": {
+      "sha256": "85cb0e8bda8f7aed7ed459b992f2937f9b601e9835a850a29829732084716dbf",
+      "bytes": 18799
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_09--vortex.json": {
+      "sha256": "f6887586f775845730904bf3956db9445d2064f99c8e0d77e846edf209454ad8",
+      "bytes": 33553
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_10--none.json": {
+      "sha256": "402ba25a7b7295ee6afb618d360002c2e281db3b8c283534294d949a766fe5f7",
+      "bytes": 9041
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_10--summary.json": {
+      "sha256": "6e464540c28d649de7f4e523bac4b5d6a0d8160e858c365acdd15f65a5f637eb",
+      "bytes": 14690
+    },
+    "memory-quality-baseline-20261117-evidence/temporal_10--vortex.json": {
+      "sha256": "28e9dfab9a1f417fcd060cc7df55bab117e354dfef979604a1013bf745d7f0a5",
+      "bytes": 26865
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_01--none.json": {
+      "sha256": "9380bc47a5163708e4f5e171d973daf2e2e13e0b5c4abb3256749850a0bbff71",
+      "bytes": 8723
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_01--summary.json": {
+      "sha256": "9a6f0522ca4f054c8f17b53d6ce62541e6fd8aae8d6b00e4f4616ba998f552d3",
+      "bytes": 13825
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_01--vortex.json": {
+      "sha256": "d5f3f1d8f832ecaa63337cee258e3dcdd69e22c69bc30aca08df0023af3255d8",
+      "bytes": 26723
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_02--none.json": {
+      "sha256": "a397e928691fea44c6560cf13ea38fea0e0cdb4c819b486142bbd4a532ab08e8",
+      "bytes": 9269
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_02--summary.json": {
+      "sha256": "c587e6304e7e18cb026d62cfd32a951b9f32276f9f12e158e09d364fa3fbd9de",
+      "bytes": 14807
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_02--vortex.json": {
+      "sha256": "c1d860d5b6f39603053a7a7cb1aca0a6e31a2aee6eb654a5409a8b184946b332",
+      "bytes": 27138
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_03--none.json": {
+      "sha256": "8c69526de043eae4a0c5de83fab8dbbd3a8f798b73ab0ae80ec426c6b14fa61a",
+      "bytes": 9247
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_03--summary.json": {
+      "sha256": "68af189f3475b6d7b70a98a055024653cc31e8e20414a1b562e02e3480a14bb0",
+      "bytes": 14210
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_03--vortex.json": {
+      "sha256": "8be4af945297a037768fec4a492c2505124a65f3e6686522eeb009bd95db6dda",
+      "bytes": 27221
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_04--none.json": {
+      "sha256": "3fc01bf97d35363a8f01a744ba1e7426f12c1e3176476210b1bf6c0b603e53a0",
+      "bytes": 9517
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_04--summary.json": {
+      "sha256": "10e0416086b229a8f9b8c54ea77ca977a7ce9399cbab50a3f50d6c89867b4819",
+      "bytes": 17316
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_04--vortex.json": {
+      "sha256": "6c89a89e9897aac194ef798847e14ee9e108552f22bbdf3e1f0f3aff4a7b4cc6",
+      "bytes": 22484
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_05--none.json": {
+      "sha256": "2f213d089c78259f1e6b6eb42e7d9f4f7146cc24a376b66957bf186b4c8cd35d",
+      "bytes": 9853
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_05--summary.json": {
+      "sha256": "3b91f8df0bdf1b9a10905417ba0a181739d02b86c5a9a5d49ba9e5c42e32a885",
+      "bytes": 14079
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_05--vortex.json": {
+      "sha256": "851836cdeb7d023bdb9c62d419b075e3c8f00288df3f1bb6c750738e427ec48e",
+      "bytes": 27114
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_06--none.json": {
+      "sha256": "b67153ba10767642af184d392ee777d5786b0e148d07dea067fb88b39214dcfe",
+      "bytes": 9112
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_06--summary.json": {
+      "sha256": "27117efb042e642180fce1fc6dbe6586b95808a71d2ecace8a17d6adf347bdd8",
+      "bytes": 15788
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_06--vortex.json": {
+      "sha256": "db005696706b4215d82ea205754d2e99a70e2b3bd890c3065138435deaa66dff",
+      "bytes": 22473
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_07--none.json": {
+      "sha256": "fe84c743268a5ebe3c66bbff7ccab7b01ea4a28821c164dae9e348bbbf8e4a58",
+      "bytes": 9941
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_07--summary.json": {
+      "sha256": "f99514e4b3a29815f4dffc97fe8aa1465b9d57eb550ff68e1eda1c2011523e94",
+      "bytes": 15569
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_07--vortex.json": {
+      "sha256": "202032ac7585bab7d90b9d09777f9a71133fba3ca962d04fd596b41dafba0f1f",
+      "bytes": 28091
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_08--none.json": {
+      "sha256": "e87f0153f48a4b2833d51bf3fe3170e6fe6e6859c3938a87cf2a99f2d98ec527",
+      "bytes": 9764
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_08--summary.json": {
+      "sha256": "f7615250c4929d4259a742126eaa041c288cb39e9122016dc27d2b8504b4be11",
+      "bytes": 16198
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_08--vortex.json": {
+      "sha256": "3b575e5b5e9df4d25d82e78eb203cfd538525fd5bcf123833ae8c9ea627251af",
+      "bytes": 22566
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_09--none.json": {
+      "sha256": "06d977fb066f70af1af885afe3c620c32daa641a636f71331ca48e06609c3925",
+      "bytes": 9865
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_09--summary.json": {
+      "sha256": "542a4c5d581dfd1475649813b21b22b50aa3f4bed2f4ec051ec85918cccbcc8d",
+      "bytes": 17010
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_09--vortex.json": {
+      "sha256": "a7642e6cb1e4b3d16ee944288b4309af617a85650e8b442102d5758ca39f5b98",
+      "bytes": 22648
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_10--none.json": {
+      "sha256": "b92ab442407ebeffb1d2c3b5b616e9d7cc509bc36f0d2be61d04c02322a3f611",
+      "bytes": 9240
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_10--summary.json": {
+      "sha256": "e1299bc6267dbed83607568e6ca1bf427240c69a8e0fb2195535b7c71681b54d",
+      "bytes": 14656
+    },
+    "memory-quality-baseline-20261117-evidence/tentative_10--vortex.json": {
+      "sha256": "79a08b51bbb16162f5efe6658615649bad7ae0f3859d90d5d697909471355477",
+      "bytes": 27081
+    },
+    "memory-quality-confirmation-20261117.json": {
+      "sha256": "4b5db2bb167d70f24e2c11c2fd9f13be03c7852390a0b941f765d58de5a81905",
+      "bytes": 604849
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_01--none.json": {
+      "sha256": "6c781f156aca77687e049db81adce1dbdb359d639994dcbb285470406836068c",
+      "bytes": 2623
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_01--summary.json": {
+      "sha256": "8e0237d4237f084839f2392bf4053596dcb4e7732b523ff47bfd636fd2eb9307",
+      "bytes": 2621
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_01--vortex.json": {
+      "sha256": "8b6357604f2477fc9e1441374aa5ee9559f7e52fce884a79ece146fc7afdb93c",
+      "bytes": 3564
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_02--none.json": {
+      "sha256": "6f789b57ca35ada75a1339ba4cc36d0bba3762d9a87daeae29a1f3df9a2d6bad",
+      "bytes": 2619
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_02--summary.json": {
+      "sha256": "4c9a43897191b8d9a9ef5c24c5acd22404d5c7c3f1181d60c0a07b3617b6c926",
+      "bytes": 2616
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_02--vortex.json": {
+      "sha256": "066e102597cbeb9be309dc3ebc130972df9fa7eb55b411db7b679277acd8ea9a",
+      "bytes": 3557
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_03--none.json": {
+      "sha256": "22aed5db6627dd4d9bd4e2c1beaf951074a86b3834b86afb2eb89b9c93c9aec5",
+      "bytes": 2613
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_03--summary.json": {
+      "sha256": "36b1e156fe33e9ceeb9bd29c582188e139e110e9c08b8527c714f3ede098110f",
+      "bytes": 2610
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_03--vortex.json": {
+      "sha256": "54b9143be91ac1370cc90f91aa64e585dd7d98deb7f68733812a522df64ac89d",
+      "bytes": 3552
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_04--none.json": {
+      "sha256": "27efb82c63479e2b6a22ab2acbe2f2fcaa0c8ce8554fcda54312d9b769800f8d",
+      "bytes": 2619
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_04--summary.json": {
+      "sha256": "0e339276073296b6d710b8e9ee6f6b3fd1cf872d5eb4883d1cb4d756fb873725",
+      "bytes": 2616
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_04--vortex.json": {
+      "sha256": "96ccda1eed2ca4ad54b0c19f3d2b590bbb5e18977f36fbd317017a0604421bbf",
+      "bytes": 3558
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_05--none.json": {
+      "sha256": "eb7e397ca7acbf6de601d36cd25301c14b63430e8abcde9122f7c3e84173cd77",
+      "bytes": 2631
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_05--summary.json": {
+      "sha256": "de1dce42b392d7f0d146e825c3a77f7f81e0cb8194506e184ec373a53ae21b47",
+      "bytes": 2628
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_05--vortex.json": {
+      "sha256": "bae8e07b7f366e1fbcfdde0d1e9559ff3c1f77a9a048a47368393f684c6831db",
+      "bytes": 3570
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_06--none.json": {
+      "sha256": "039d211396697f528adfa58908756b7138024827b1d252924cc6585b32ae8e12",
+      "bytes": 2703
+    },
+    "memory-quality-confirmation-20261117-evidence/abstention_06--summary.json": {
+      "sha256": "724147a46337a9630ece95bae7811d3e76e7d2bcd94eb05634a551f7a5c128be",
+      "bytes": 2700
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_01--none.json": {
+      "sha256": "7d5c494554fd670dc81bd850434316ed5982c069a66949d4ae38e100d850f728",
+      "bytes": 8663
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_01--summary.json": {
+      "sha256": "7d5d1dd0f713caf4b433cea5c18aa652a118cf0691dcd5f799f4d23d4497ca71",
+      "bytes": 14022
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_01--vortex.json": {
+      "sha256": "91332e2072fc2675795a562176f582a39d7da74704aaaf399e9cdbffc0816b95",
+      "bytes": 27048
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_02--none.json": {
+      "sha256": "0878bf624da978635d3dfff2e0467b410622e3aed1f5ccc2c48b2905000702f6",
+      "bytes": 4483
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_02--summary.json": {
+      "sha256": "f86f9b5971c9c48bfd07f821547b73a945b0c77a7e3c4846b4a75013eb0d2d40",
+      "bytes": 2678
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_02--vortex.json": {
+      "sha256": "d9de9746afc515d51ce1fc170e89c51cd1fbff89cfa0a6ec725791b7741dd82a",
+      "bytes": 3617
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_03--none.json": {
+      "sha256": "e3f078bb282aa9d39787fc39e2a217286ba5521552fa842a5aa3342737b42da6",
+      "bytes": 2634
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_03--summary.json": {
+      "sha256": "dffc634a9494791a0e5d8958155cfa15f274010defd89f260945b0372cbd7622",
+      "bytes": 2631
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_03--vortex.json": {
+      "sha256": "059026844e46836a01581aebbf59714ae178fcef2848669fc386fa9eeeff7255",
+      "bytes": 3573
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_04--none.json": {
+      "sha256": "7f8962b0c34f0725b76c023b39cc2cce93217fd9dd2dffcf1c8f63175ec1276b",
+      "bytes": 2723
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_04--summary.json": {
+      "sha256": "9bffa9c3c488455c9508d9b24c2153173176952bcba9ccf231bfbb003e49f3cb",
+      "bytes": 2718
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_04--vortex.json": {
+      "sha256": "7662322ed375157dea2cc7dbc11a994ec8465c453db6f9699fefd58670276a70",
+      "bytes": 3661
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_05--none.json": {
+      "sha256": "b1bf2a4f9bf54cbbe5a83a3dc30cb830dc5c071bf5984244ab791eac601ff4c0",
+      "bytes": 2771
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_05--summary.json": {
+      "sha256": "55818ffb59ab0ad3b3991d379f28432df58c342bc6c4e82110736fcfd530c44a",
+      "bytes": 2768
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_05--vortex.json": {
+      "sha256": "de5862101cb8f3303e635c2755bf5669946ec3121eb5aaae1636ab03779ab170",
+      "bytes": 3710
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_06--none.json": {
+      "sha256": "a12f1f795ff83ff1722ae67c7fcdefaf2f8f17aec955ed8a0637374693e01345",
+      "bytes": 2610
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_06--summary.json": {
+      "sha256": "7cd171b2af65dbc8135ca2d4df780becfd9657df492c3fe02a30f7b194386408",
+      "bytes": 2607
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_06--vortex.json": {
+      "sha256": "27ef8503403c1b0a93a4f457e17f90fc741273cba873fae7f89530a205421ebf",
+      "bytes": 3549
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_07--none.json": {
+      "sha256": "72a40a428f70f8da6a88b9d90ae5745ab42bb868e0bce4704be46cf9b2d3be62",
+      "bytes": 2608
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_07--summary.json": {
+      "sha256": "22c302bd5a859a4d224e87156bc67e35a83ff313d1f05347a4222b0b0a027fde",
+      "bytes": 2607
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_07--vortex.json": {
+      "sha256": "565b18f2fdf8e2869da3fe4747506ac44178bb062f3a49395b705f1832a9bce8",
+      "bytes": 3548
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_08--none.json": {
+      "sha256": "b3611ac23da95fb774e48bc0278b71247dbf95da38ed278ec0dce1259d33d780",
+      "bytes": 2760
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_08--summary.json": {
+      "sha256": "1ee9d5355bf5c53b02ea760857822bf08efcdabc1f9116ab1a56b2be1c88bc38",
+      "bytes": 2757
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_08--vortex.json": {
+      "sha256": "d6761073d889e4cb20aff0f5dcf35e1fa3d7978e320d09494620db3c8dbf83e4",
+      "bytes": 3699
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_09--none.json": {
+      "sha256": "e31f9a88f1f66a1c5ed08054ee3d2a6363c16bff4fa643c6265ffebbaf928902",
+      "bytes": 2639
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_09--summary.json": {
+      "sha256": "4485bdbbe62dd5574d80fc7115adc0dd7db82045d5cd9fd89943e019c085c40c",
+      "bytes": 2637
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_09--vortex.json": {
+      "sha256": "05cce9a593bb894e8ce9a676f8da6093aec08b946592ee7ba96e20f7cf1632b7",
+      "bytes": 3580
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_10--none.json": {
+      "sha256": "dcf89f83e89551565637a7fb75366bc372d02eb6725b970c448095f52c8c5c38",
+      "bytes": 2795
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_10--summary.json": {
+      "sha256": "b5e223625879227fe7057783b44be5fc8a5fc984f663c7d5f91f709e6aa9c79d",
+      "bytes": 2791
+    },
+    "memory-quality-confirmation-20261117-evidence/attribution_10--vortex.json": {
+      "sha256": "58b790ea602a54741a0bebad3f0fa72c97bcb4347f3bfdc981f71e9f98fdd3f3",
+      "bytes": 3735
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_01--none.json": {
+      "sha256": "7bccbbcad3bc9f351728b1e0df342813fd9424c3ad2c4970cf72e3692cee33b7",
+      "bytes": 8882
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_01--summary.json": {
+      "sha256": "603aca1e277b865305ab772c6a3e1645aa12c358d1a0cf10635f5c801570e8fc",
+      "bytes": 14151
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_01--vortex.json": {
+      "sha256": "38b925cc4b610980bf0135d522c2b498cb511eb54c24fc35da0aa03b862d3559",
+      "bytes": 30558
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_02--none.json": {
+      "sha256": "87ee0c87cdff038d466b383c69c811f746514895055d7ab4395dbc3153cc1d14",
+      "bytes": 8829
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_02--summary.json": {
+      "sha256": "baa34c66dadd08300f0857cc7d776161634c537a5e3b108c8b1ce47875462547",
+      "bytes": 14832
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_02--vortex.json": {
+      "sha256": "20474562f314fe021968f7c0e1cd24ee8279743b1fb7bbbaac3ddbd22b3c9b13",
+      "bytes": 31679
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_03--none.json": {
+      "sha256": "ab6ac03d87d9ed9531639d5fabc0500ed23384174017cd5b6cc9faa693c27cad",
+      "bytes": 9090
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_03--summary.json": {
+      "sha256": "87c05f8d36a51df2d2a94b69500bdea54152838b2f43a9d348a8610849538167",
+      "bytes": 15128
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_03--vortex.json": {
+      "sha256": "cf9ddbb71c9337a2d288b82f4d24687607136d6814c355675cbb178e9bafb196",
+      "bytes": 31335
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_04--none.json": {
+      "sha256": "3444840d7a7206f82b5d3b7bbf21026b4c2ecb7e643028a4eb342c07e5f4fe2e",
+      "bytes": 11022
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_04--summary.json": {
+      "sha256": "c3dfa8a60c8d0ee476874d8032a21e1765b0aeca1be287f43b480faf9d7a46e6",
+      "bytes": 18107
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_04--vortex.json": {
+      "sha256": "f482e8b5757e3185c7ad9db89bae5a842585f0e30bef8fa2a19ed1b881c95d67",
+      "bytes": 36192
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_05--none.json": {
+      "sha256": "542804ad513b54ea1cbe56fc876cd6caaaf89e14f1db836aaaa0831419f34d19",
+      "bytes": 9251
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_05--summary.json": {
+      "sha256": "286d6384065dacddcaee82a586347ab6b67acd53f71ed8737c1167e4964955cf",
+      "bytes": 15076
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_05--vortex.json": {
+      "sha256": "27fbee8d9b545f39205f5a1596976d797e340ded9187e3bcb4502190293d65d1",
+      "bytes": 31715
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_06--none.json": {
+      "sha256": "f187b1aef102c281b763e4a23d106cc4caa2c17583e18bc0d5b886135404cc4a",
+      "bytes": 8851
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_06--summary.json": {
+      "sha256": "42b5575a9832be09d5ae5ea3fdc634a930d6ac9d163fa3379dd7099737250a9b",
+      "bytes": 14753
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_06--vortex.json": {
+      "sha256": "cea4acfb8a695eaf3623b408242a3874c48755fa8b0fe2e22b539f08511c9225",
+      "bytes": 31333
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_07--none.json": {
+      "sha256": "daec485b6282f24b2d27fefd0fd5577b542c5473bd2adb57708f263858cfbda8",
+      "bytes": 9447
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_07--summary.json": {
+      "sha256": "df766a39d55994652285650d2567cbd197e52156186a1cdbcfdcc601b39de221",
+      "bytes": 14814
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_07--vortex.json": {
+      "sha256": "c0e15ade815747ed828e58ba4954d2a0793a5e5ad83756e3c463da2188945991",
+      "bytes": 31855
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_08--none.json": {
+      "sha256": "770fb817ce44ee102e748451c89b1c4a1972d8c0e21a5cc400bb667bbc05945c",
+      "bytes": 8866
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_08--summary.json": {
+      "sha256": "366d7a6d4c2a10328cfb967b592d57d4cee050931b8a28c75be3b4413170465b",
+      "bytes": 14070
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_08--vortex.json": {
+      "sha256": "a3d085ee6f9d76506b39c6b5a8543c90b5d5e22603f2459ebcc542db2f1363fd",
+      "bytes": 26933
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_09--none.json": {
+      "sha256": "c297a4dc371706524dd76af1c44ef838a3fbe3467921338314111340a9b1b759",
+      "bytes": 9166
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_09--summary.json": {
+      "sha256": "0cc2bdc98097a96d8030f4606d1ed2f8efff2b095b85c304ffe9613066c99f5e",
+      "bytes": 15088
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_09--vortex.json": {
+      "sha256": "0a6c20d8a8d345cc9eac188cc43a24e5fd1697d9e31f5add8370c37a0871f115",
+      "bytes": 31701
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_10--none.json": {
+      "sha256": "640cdfd57eb155c06a553c20c6034fcb28ad6f6e21b390a3354880e65dfd51d1",
+      "bytes": 8976
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_10--summary.json": {
+      "sha256": "04376d36825ba19aa5d098ebfbe2b4cc277f589bae86a045898e532a80985db5",
+      "bytes": 15068
+    },
+    "memory-quality-confirmation-20261117-evidence/basic_10--vortex.json": {
+      "sha256": "8e68dec0bb9ca5ff8f5f44136bfe19379c19fde52c05d7593fdb0703f01889a5",
+      "bytes": 31763
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_01--none.json": {
+      "sha256": "de1ed322664b0369059b407ca1fbb7dd106286edd677b4282d0eef17661f0143",
+      "bytes": 9445
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_01--summary.json": {
+      "sha256": "2a07f4f2f8b3e3b639ddbf9e8cd6506d0297396f9b8ce2b1786037d811cd93e7",
+      "bytes": 14837
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_01--vortex.json": {
+      "sha256": "fadd13a65e24b5a835024bd0abafcee095cc3c41e26b99d0fc2c4060b5392b5c",
+      "bytes": 33363
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_02--none.json": {
+      "sha256": "c77b700a04bb44e17d49b7dadbe3df4c9342aa22fbcb1a8bae6a04ceec61d5f2",
+      "bytes": 8893
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_02--summary.json": {
+      "sha256": "79fa52dc810ba5c8695d31b032b76cd7d5a16bd2bb9161fc9c3972816168bdab",
+      "bytes": 13686
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_02--vortex.json": {
+      "sha256": "c9adae482b1c9c7545901cca7d83584ca1f79e7b936394cfe6139959c12d8360",
+      "bytes": 27415
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_03--none.json": {
+      "sha256": "f2dfd25969303d2cd651a085888ab5db3c7e66c16fe0ce5e7ff9a99881303815",
+      "bytes": 9082
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_03--summary.json": {
+      "sha256": "c95a2ae9b3f80edcea2f2e78299059c17f47fb40489dc0970ee979cd84de2641",
+      "bytes": 14879
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_03--vortex.json": {
+      "sha256": "38fedec1d9f12d9f7123747b7226fe2b12d96b6424b06f01937eaac3578e011a",
+      "bytes": 27882
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_04--none.json": {
+      "sha256": "142c1c25f557c15724006b12a551d0e236b5e90df7e0681996f5756ef3ed22a5",
+      "bytes": 9621
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_04--summary.json": {
+      "sha256": "df6c2f8005043334fa00ef6c5a5cf2967eb85dd29695e2309c38890dcf3e78f6",
+      "bytes": 14288
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_04--vortex.json": {
+      "sha256": "62742750171b270e594947d9b42b1cfc988a8037d50be3a122c3b61cde4d7836",
+      "bytes": 27913
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_05--none.json": {
+      "sha256": "ddfd9110a4b31320f76e5465e0fe18bf11536f15268f73cb9dd5258b71a0ab61",
+      "bytes": 9310
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_05--summary.json": {
+      "sha256": "3ebe2b63af55178a2c1def1cc6c0dc56a2058eae158b6c1f5c0b97919a10247b",
+      "bytes": 14336
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_05--vortex.json": {
+      "sha256": "a403ea53e7053c0d20544303c56ec1e2ba87b82f304334e788550cc6ac1530ac",
+      "bytes": 28303
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_06--none.json": {
+      "sha256": "bab7e99d5fbc454bc50f9ea45251eec446689052351a2f5de82817bd701310f3",
+      "bytes": 8752
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_06--summary.json": {
+      "sha256": "180bcb05ac8d0fc9930c03e29cc2e1bb39237c604952f6a4f44f54887c81beb0",
+      "bytes": 13705
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_06--vortex.json": {
+      "sha256": "73d71b7dbcb99bda467f0aeb35078a08f7b8a920f262e8efe3b3e03abe8cade8",
+      "bytes": 27415
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_07--none.json": {
+      "sha256": "a9447971870dc976c341ebefb2fb32c6d6660e94ff3db02f1a3886cd4d8d1b73",
+      "bytes": 9373
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_07--summary.json": {
+      "sha256": "c7bd77a306a0cda514659c00a5371eb50cd721b7eae9a361f1ac919a9bda3c11",
+      "bytes": 15153
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_07--vortex.json": {
+      "sha256": "3404f44902e767aa30d327c3548840a734a6c4537689dc75b902b7965430263e",
+      "bytes": 28771
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_08--none.json": {
+      "sha256": "e7d4e9f78e27c3b5a4b0b3e7be52bfe1697397f1baef3e24f8db5bace433000f",
+      "bytes": 11038
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_08--summary.json": {
+      "sha256": "2fa322116cead04ef7b223c796a40833a101858322e9432909b03e8ef35220f3",
+      "bytes": 18070
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_08--vortex.json": {
+      "sha256": "561cec8c2a3d0b41742d12d07b09d1706bf84b337bda70b71b1909ef7e00e878",
+      "bytes": 34697
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_09--none.json": {
+      "sha256": "e9910eca3c2257d256fa1069d77985c0bde7865f91eeb49d5c221f456bb499cd",
+      "bytes": 8839
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_09--summary.json": {
+      "sha256": "1d39caa847f4ea8e97e09c3f61b952871523a6f4970dca9083081c41af84dc95",
+      "bytes": 14370
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_09--vortex.json": {
+      "sha256": "8ca78beffab8f294591264ace92471aa9956cbc144c2a7dabe46777d25ac7a52",
+      "bytes": 27564
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_10--none.json": {
+      "sha256": "eb4f3266950733d930d1e156ed50524145dbdfb76e3b263fc520d1fd99f72506",
+      "bytes": 9105
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_10--summary.json": {
+      "sha256": "75faafb859b5ed74e27cb4e976b43ff395e1bbdff53af0730f0d1efa023de63c",
+      "bytes": 14502
+    },
+    "memory-quality-confirmation-20261117-evidence/correction_10--vortex.json": {
+      "sha256": "eb9153702eaad32ff770fe8970b5b110522e3917c94660fb81554429f9310e63",
+      "bytes": 34268
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_01--none.json": {
+      "sha256": "b5c6c42f37cb1bbf446116a0d67de556289e759cf566914d1747c101b7e86551",
+      "bytes": 2646
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_01--summary.json": {
+      "sha256": "c7095e00c1736b6e59eab58e2446f9fb98b15dde6562ee245d6526b602556417",
+      "bytes": 2643
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_01--vortex.json": {
+      "sha256": "bbf4f032e7995d53cc77c300a413a39dfa14e7af90b66654ddbac03cb7a2ac0d",
+      "bytes": 21772
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_02--none.json": {
+      "sha256": "a21faa73389f6741b427bdbcf3604a59724d6dde3aea94b7afff006e78a86fe0",
+      "bytes": 9810
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_02--summary.json": {
+      "sha256": "61828d65573a2204a64a534d19aa667173bfbb7d5cf30796b69a9f861555e075",
+      "bytes": 2655
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_02--vortex.json": {
+      "sha256": "38a4c730f9259dc3270ba93080647fb9a62d83e246eda7d0dffc500700a7f4c0",
+      "bytes": 3597
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_03--none.json": {
+      "sha256": "b717258d15d079d3b879d63eeee08f224754d5af549ee429978fba69174aa343",
+      "bytes": 2650
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_03--summary.json": {
+      "sha256": "80f2db4d03ff95355dd8248f8553b6583102384e9811c9e1b5fe2b6fc2817379",
+      "bytes": 2649
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_03--vortex.json": {
+      "sha256": "72206afc935315612930ab3a0cb50464c6c5b7c55457fbc72ddd8b43ed4e490e",
+      "bytes": 3591
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_04--none.json": {
+      "sha256": "03b0bf529bd5e7663c64cc8e51550e5627a37b1de20814873379dffaa55554b5",
+      "bytes": 2664
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_04--summary.json": {
+      "sha256": "4688545ae97376780ccefb0fd2176ea467fd1c05e9437c4c45613948e8b59819",
+      "bytes": 2661
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_04--vortex.json": {
+      "sha256": "eda319266860290a5796d85b2d599b33c8c99865dc4ba270569736098cc63e58",
+      "bytes": 3602
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_05--none.json": {
+      "sha256": "e104bb7374fa1336d9b2366215fc7c3c94d197b3f1fe9374991699a3bda92374",
+      "bytes": 2652
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_05--summary.json": {
+      "sha256": "040b965953f3de1752203140abcd32774be2fe41c53e251d56827785cf3e3032",
+      "bytes": 2644
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_05--vortex.json": {
+      "sha256": "29ed86473f26b354d6297ecdc7baa6e2b58fc0f06ee51f021054925b16f789f3",
+      "bytes": 3591
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_06--none.json": {
+      "sha256": "4323641f6a6311054bd6ef9b6151b74ee9b41c632a7c3d57495d31d827b19515",
+      "bytes": 2618
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_06--summary.json": {
+      "sha256": "56e7cc434b6bbdd1acd9c6ac78b9c2011745b96babbb45306eb3f3d45d8b1b19",
+      "bytes": 2619
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_06--vortex.json": {
+      "sha256": "7c1f39e697da4607a7f1748d6622a881bae851da00f77444e67313f6cea3a643",
+      "bytes": 3561
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_07--none.json": {
+      "sha256": "e48029d3a6633b945d4b18218a10b257b9d2d30c2da12bf269b427532c9dbc32",
+      "bytes": 2701
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_07--summary.json": {
+      "sha256": "497467a075cd9a6eb602dfb908cfc6da580121faf80a0ce5b4f552cc7a1e68fc",
+      "bytes": 2698
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_07--vortex.json": {
+      "sha256": "d5810eb7fbd63ceeddea388e6a3bb6abf0de2d86c17cc2b33a2f328ebf6220be",
+      "bytes": 3639
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_08--none.json": {
+      "sha256": "f34afd25c766e4049bd06d3cb0d3c28e4a4683b9dd684f24e41043feb9c4be70",
+      "bytes": 2609
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_08--summary.json": {
+      "sha256": "198c413d3b49ebcca597b7580cbcdbf0c640e6f6b3ceb80d9bd3720abb8bbfe7",
+      "bytes": 2608
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_08--vortex.json": {
+      "sha256": "017897bdc2b0163c8202398bf321a6037eabe6c88c368763306f2274c57e1c18",
+      "bytes": 3549
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_09--none.json": {
+      "sha256": "918f6517e3aff281b028e6d332e81b8f863a4064255d303cd12b9c0b884596bf",
+      "bytes": 2653
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_09--summary.json": {
+      "sha256": "743198095b2ffd12901edacc7debe86eda0c4589295930eadf49f9d7a507c253",
+      "bytes": 2649
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_09--vortex.json": {
+      "sha256": "8035186bf02502b62a6a3d26171c6035045c5348e5ad183cd9a6016e0b179846",
+      "bytes": 3592
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_10--none.json": {
+      "sha256": "2dbed1e18c1793a11ca2cff90e65342b8555c9dd154026307a862ed3adffe972",
+      "bytes": 2610
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_10--summary.json": {
+      "sha256": "b9ac45a13f6dd1a90c7e71edf68ce623dd0af2baa9b00dd6418b9095b24cdc27",
+      "bytes": 2607
+    },
+    "memory-quality-confirmation-20261117-evidence/distraction_10--vortex.json": {
+      "sha256": "aaca7cd09dbf9ab11fd24edce7b0b9c99474f562e1245b419b315cce07a2e75f",
+      "bytes": 3547
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_01--none.json": {
+      "sha256": "90f1858a69043723eb1c9b7bba142c3adb7c48e55b3da955e39864ece0a53cd8",
+      "bytes": 2650
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_01--summary.json": {
+      "sha256": "98bc25f4c75f126b4edeeba1484dccfb02ae5b3a90e5030d03363d5c26a161ba",
+      "bytes": 2647
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_01--vortex.json": {
+      "sha256": "d0d1446192c5d3af384549397fbdd5f829ed07d53630f0f5221e45fbb8275d61",
+      "bytes": 3588
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_02--none.json": {
+      "sha256": "e45a984c544f480aa3a7a23b36b9b08feaa1f907bd2e8c33a77dbcdeb7c8ed38",
+      "bytes": 2630
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_02--summary.json": {
+      "sha256": "5adcfe01394550b2cd898c5d6c79facddba1c4c94654bf54e704c25e1b6255dc",
+      "bytes": 2627
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_02--vortex.json": {
+      "sha256": "fd8ae2f4f1c2a89653bb0f04a18653f3a6ea7e06db3439806ff8e79006cd118d",
+      "bytes": 3571
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_03--none.json": {
+      "sha256": "79a6159ff8c2498bb1eb54115d38ec23e0e6347e745554f31f657eac61d0b723",
+      "bytes": 2686
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_03--summary.json": {
+      "sha256": "c9e0e8a8473b39935e20bae210c36eeb28872efba3ab6229e910ba9f6d64a245",
+      "bytes": 2683
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_03--vortex.json": {
+      "sha256": "2e97560f54c3a3b0e36fe6e733497e6980ba9925444adc5dbce249d3f2245d97",
+      "bytes": 3623
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_04--none.json": {
+      "sha256": "c08376fda82c16335fe9be66e1357009301739fcde5ea8e9b4436db477078ffc",
+      "bytes": 2656
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_04--summary.json": {
+      "sha256": "cd92d730d83624600c622bea68248c9ab4f0c22b03eda0f1b243d05f39a2e3ae",
+      "bytes": 2653
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_04--vortex.json": {
+      "sha256": "4a7e9a3475bcbf8919ae653b2b8c48d0776755c9f9be6d187a0a1564909e8c31",
+      "bytes": 3595
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_05--none.json": {
+      "sha256": "894372fee1f78701d6ebd5a6ec869eed5b93bbf0a9805cef475035c4c940d6e9",
+      "bytes": 2650
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_05--summary.json": {
+      "sha256": "7b886103a8b6e5aa2f8028f94b3fae6810502e51265b58bd364785725b8d8ca8",
+      "bytes": 2647
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_05--vortex.json": {
+      "sha256": "40fe83a7507acd8e1f59206bfa80705c4cf280e056c76fe2ed4a4f3609aed563",
+      "bytes": 3589
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_06--none.json": {
+      "sha256": "8b897a5688b224920c2e0b1c49e2458f45edc9a3da4134c5aac3df972791f2de",
+      "bytes": 2632
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_06--summary.json": {
+      "sha256": "6f57f99cbb94dc2bd1464da3432c10ba9ef40567e8742849293f18ad68428241",
+      "bytes": 2629
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_06--vortex.json": {
+      "sha256": "aa8962a81e2595f9fe29ec7aad34e6e8f38cfcdd4ca64ae9b3bdc233af80e278",
+      "bytes": 3571
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_07--none.json": {
+      "sha256": "4d92660a4884ae4b7522293cf87b738e0bbca9051218671deed75a0ba5e16252",
+      "bytes": 2686
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_07--summary.json": {
+      "sha256": "f344dc2a2a5f220398615e7359a24a7ae176a5186d9647d429de25e158b6cd78",
+      "bytes": 2681
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_07--vortex.json": {
+      "sha256": "3ec66cf1a8c29b573130c77f9923a929cf205910a672deaf2a1bdde4063018c9",
+      "bytes": 3626
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_08--none.json": {
+      "sha256": "631a32eeac9c0897f57b22fc761a89d526c7604c30f14f94f4858752a76df934",
+      "bytes": 2645
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_08--summary.json": {
+      "sha256": "4de7fe8642b3a485ef101cf5e8fd0be77b7d866a3ee2cfc21cb99c89129a044b",
+      "bytes": 2642
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_08--vortex.json": {
+      "sha256": "3b888919c6fa91f1a03f58371f08da0106616af30c93c5e39df7a8cbcac597dd",
+      "bytes": 3583
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_09--none.json": {
+      "sha256": "18bfb31cb8c2c5928edeed5b7175b4cedb0290314539af061e189b5c420d27c9",
+      "bytes": 2673
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_09--summary.json": {
+      "sha256": "d90c73f36f509b914cefc88d2f12dcc2e888f0b6eb7560538f98117b2d79e432",
+      "bytes": 2670
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_09--vortex.json": {
+      "sha256": "25d1d7f36ce02c33c407595874e051767b520e55e60ac5df1d7b485c37292076",
+      "bytes": 3612
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_10--none.json": {
+      "sha256": "032917eda95aaad3abb50e81ef9f5c5c12dfc63239c2ddd080d1bb2ddb6127a4",
+      "bytes": 2651
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_10--summary.json": {
+      "sha256": "0b458c427b55be3c0ce7ba51cb201e7fdfdf02a3d5d4a8460c45d46074054e41",
+      "bytes": 2648
+    },
+    "memory-quality-confirmation-20261117-evidence/partial_10--vortex.json": {
+      "sha256": "6e49734f475bb22bd0ef889af2843911524b8b54fdf9e439431a7ed5d87c4ff1",
+      "bytes": 3590
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_01--none.json": {
+      "sha256": "d037145e3324a8d91bae609f7b5a3de61a57d17949b9e12631b5e6d4a253d596",
+      "bytes": 2702
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_01--summary.json": {
+      "sha256": "4c5ee26b61b999cd0c50bd70a279f5283b6383896b861e97a095edbe069955ba",
+      "bytes": 2698
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_01--vortex.json": {
+      "sha256": "aa7d4fa9632be44cad8c8e3fc0b4997a08434949be96d516361c752b90065d9f",
+      "bytes": 3641
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_02--none.json": {
+      "sha256": "a5b567d03edefda4e9b6ff939c6bafd699f7b2e5119797bd6c720840f4c06ddc",
+      "bytes": 2720
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_02--summary.json": {
+      "sha256": "4aa24107612506d2f8714f584d5c4d5adbe728220af46a0800330ad7b50eb5e4",
+      "bytes": 2717
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_02--vortex.json": {
+      "sha256": "132bb1aa83410a6106e663c8c937e0a03d7969705f4141425385d16f4aab7cd1",
+      "bytes": 3659
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_03--none.json": {
+      "sha256": "d444e7577a1165514231a1002e7680792f4dbfb71bd2dd3bc5a34a38ccd5d926",
+      "bytes": 2612
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_03--summary.json": {
+      "sha256": "22b6778279f6f21094d65c2d5d0bb91563f706e06fdfee144787c79ec0b23df5",
+      "bytes": 2608
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_03--vortex.json": {
+      "sha256": "c0cda19de1473f385ab9c429cec6f075498b9dd6dcd2e7d2fa482a5cf6fd3866",
+      "bytes": 3551
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_04--none.json": {
+      "sha256": "0bd75353c7d2f876dbaf10726e87e56143096b5a24d00bab144e1a1a10a5e20e",
+      "bytes": 2606
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_04--summary.json": {
+      "sha256": "5f447e2ec34f5c87781cd76d49999b2251b103c24fdc5059eb93f599c3f8cce4",
+      "bytes": 2602
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_04--vortex.json": {
+      "sha256": "701badadf716c6d8b3d29e4f2f8a013df7329f17232a09774a4e87d33c8fb47b",
+      "bytes": 3544
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_05--none.json": {
+      "sha256": "9a0e62e6e700f7074a676f0e4b8a858adbb745c7ceba85570d77699869868ed7",
+      "bytes": 2664
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_05--summary.json": {
+      "sha256": "2f0bae17344e4b27a4825c123580578b71a38d8449a2da3b1afa32d7cc5fe979",
+      "bytes": 2659
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_05--vortex.json": {
+      "sha256": "c13ef0c3424e6326f1635c91501ab642edeb86d84768614a78c97956b3d27a1b",
+      "bytes": 3603
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_06--none.json": {
+      "sha256": "d49855bb63c3174cf8eac92f65dcd5b0865b53fa5d0d22f09029e66cf5ef47be",
+      "bytes": 2702
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_06--summary.json": {
+      "sha256": "d4f8161d6fa9c2aa704496de4386d1ae2570f2678db70d6cafc966c8a5be6381",
+      "bytes": 2698
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_06--vortex.json": {
+      "sha256": "c260e58741c7cd4e361909946f1373f63d1678f29677b22417ea50f3185db107",
+      "bytes": 3641
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_07--none.json": {
+      "sha256": "5d06c607dc6b74f28dd8390f3fd2df70196719528be8fc2ba8c8020827ff7d9d",
+      "bytes": 2715
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_07--summary.json": {
+      "sha256": "f832d4d8ba98174cab21cc94962c3c159e77019baf3828a3705c9c58886ac011",
+      "bytes": 2712
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_07--vortex.json": {
+      "sha256": "c1361b537d84b6ec7e4164d5bcc0d4d86572de550b11f92c37923fb621bae753",
+      "bytes": 3654
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_08--none.json": {
+      "sha256": "d1234d3c2599912c43b3960f4f57aef1fe308f18db52a58d9686be9e817f0e02",
+      "bytes": 2763
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_08--summary.json": {
+      "sha256": "1d26d04f1514458c83ebbf939e26a9ed0355ebe7256660bef1c8c179b429542d",
+      "bytes": 2759
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_08--vortex.json": {
+      "sha256": "953ad557b5ffce9c8eaf35daa11a156a2a83a2b98ed3158cd08046b4ef5aa7bd",
+      "bytes": 3700
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_09--none.json": {
+      "sha256": "ebf88345c9dfa221e74a1279a92280d7076e8e72c6e81102b74c6c490d22feeb",
+      "bytes": 2696
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_09--summary.json": {
+      "sha256": "ac1e39f03294d759087a2e70bca0b732d307b9697e80458a22c828865e1d22b9",
+      "bytes": 2694
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_09--vortex.json": {
+      "sha256": "e971e9b3e2fe6aadd68e50ce7610f5a6f65e69be0008b6f46378c84a9ae81d09",
+      "bytes": 3634
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_10--none.json": {
+      "sha256": "69644105e9eb11494d7bf83edb3104308ae3d3e84b2ee320f2b7f1b88e63226c",
+      "bytes": 2703
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_10--summary.json": {
+      "sha256": "aeb699dbb0fb5fabaf6abe3311f3804b242d23b05e2c00fff59ff6cf44e5f14b",
+      "bytes": 2696
+    },
+    "memory-quality-confirmation-20261117-evidence/reference_10--vortex.json": {
+      "sha256": "e304cbc098d6fb641f1ebca1a339e11ed7a6c2c75ed41fd04ad0352b4f801ddc",
+      "bytes": 3642
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_01--none.json": {
+      "sha256": "de3bf73ff7380824f6184d91adb32c9c4c0e8c12a9e8ebb6145b26da4d7cd879",
+      "bytes": 8708
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_01--summary.json": {
+      "sha256": "0e9a664a17942e4a54895ecf6894fde470e86b87d9cc2b1662410e3f73e98e00",
+      "bytes": 14399
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_01--vortex.json": {
+      "sha256": "0c74fabb15e2d130e29abe42b017991ff3113fecf6f15cc1d232db0da95de8fa",
+      "bytes": 26917
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_02--none.json": {
+      "sha256": "509e2ab8d530ef6940065b2f271f3cd96b9fb2e894540d72a5246b42eb804159",
+      "bytes": 9355
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_02--summary.json": {
+      "sha256": "e4b78d107df6d6708e1f94fea8749e5cee6aabd967b88a4097a7ec008e3cb6c4",
+      "bytes": 14668
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_02--vortex.json": {
+      "sha256": "f521eb00c06919636daed217abf8683c51b492d80850a2e573f2b8b91a5f5ce4",
+      "bytes": 27790
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_03--none.json": {
+      "sha256": "23e99fcc1d390f6c535b02a4ed90883452f85e8f40a9296bf291d7c0b1c366a6",
+      "bytes": 9100
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_03--summary.json": {
+      "sha256": "8b1955f4a81445541a14733701f3d925d0358d0851d2f55e6c8297408a54441c",
+      "bytes": 14970
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_03--vortex.json": {
+      "sha256": "e44a0b0b593859fdf888cebc7d7e2e538c5c0679dafb278ebca22bcc4ae1d1eb",
+      "bytes": 32698
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_04--none.json": {
+      "sha256": "b9100453ed56c5d574b24c70397ef6a96126610391355c097ef412c23e8d2199",
+      "bytes": 9104
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_04--summary.json": {
+      "sha256": "30119148d5e2a153d5c44b37f0c8ce2c074e86eef57d2a7a338cd02d9fd40e7b",
+      "bytes": 14937
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_04--vortex.json": {
+      "sha256": "0e85b43fd9e1caa87bbbebfcf450c15f9df9a0548ff3cc4134e2a4c13f0ff9b9",
+      "bytes": 32633
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_05--none.json": {
+      "sha256": "ffdc822decfc114847a7f26290080493765b760ac316068bdccc621463f43cac",
+      "bytes": 8800
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_05--summary.json": {
+      "sha256": "b7a5735510241f90f78db60fe8ca7139386f205e28f91ec41e44cde8919831b3",
+      "bytes": 14366
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_05--vortex.json": {
+      "sha256": "c6c305aac4e7a1c49ddeacba7bd1399cea4ca54dc2364d8722ff10f1c3d3600b",
+      "bytes": 27500
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_06--none.json": {
+      "sha256": "ee25af14428fae12848d08238f8909156e2a10f3cc4168cde27083e20761503c",
+      "bytes": 11467
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_06--summary.json": {
+      "sha256": "c5fa43ba9f4d95392c1f316c1283c51e4b5e208257e6d27859bd0221ba850082",
+      "bytes": 19175
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_06--vortex.json": {
+      "sha256": "905ebf51e0f81de4772705879d08968ddf8ba398c54631b1f966d81de3e71f0a",
+      "bytes": 52496
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_07--none.json": {
+      "sha256": "c45c0ffb91a2eb9032567d0b92fca416f334d6bc8a2ec9b9aed3b262880c0c48",
+      "bytes": 9399
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_07--summary.json": {
+      "sha256": "964bd0df7f72efea19fd12a75133efa99cce4a5dac301480dbc18a42862c1ee5",
+      "bytes": 14750
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_07--vortex.json": {
+      "sha256": "f59e221c28578bb0b87c548655210d2d9d2e08e051d50f84cc447f76b7a7d737",
+      "bytes": 28023
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_08--none.json": {
+      "sha256": "15e6f811eb6df8e00143e39e69f84c7e59c9f5c305b4f9a84fe847a9770bd2ee",
+      "bytes": 9444
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_08--summary.json": {
+      "sha256": "7dfbafbc3cafff8063a5cb35d9d81946b681f56e627d733e616baae2cbb74cb4",
+      "bytes": 15587
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_08--vortex.json": {
+      "sha256": "e3f2cc2ee3bb76bcb606b59dbee7db5f762d475cd80ea40fb49b0c7737efde30",
+      "bytes": 27529
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_09--none.json": {
+      "sha256": "ea1a830587abe291798ecdac3a183f8e5b6773d9bc4eea631292e1f909e50b2c",
+      "bytes": 9656
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_09--summary.json": {
+      "sha256": "34ddedfc76621bde0f5c3eb27c2b225a1ab80982fc26e2cdf3a2d297fa39c1f7",
+      "bytes": 14947
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_09--vortex.json": {
+      "sha256": "9c58151313a9966da87edb2c793f6a1ee95357f0abd70ab26c5d92af506063c1",
+      "bytes": 27967
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_10--none.json": {
+      "sha256": "576439a1f42e3b7b28664b27cf067b96b36ec88eadc2c0b6cfb160d3a872c4b9",
+      "bytes": 9465
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_10--summary.json": {
+      "sha256": "d09c5f28c5a5653e2403ce2e5d58adcf5428196378b564afa2bf444e7e6e4895",
+      "bytes": 15775
+    },
+    "memory-quality-confirmation-20261117-evidence/retraction_10--vortex.json": {
+      "sha256": "3b442a6887a91d220065cf7716c4775ff5f9150306adbb79c898cbdce5668194",
+      "bytes": 34347
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_01--none.json": {
+      "sha256": "409651922c67c79f41235b6d394efa347fcdd7c95e5ada50eb9fccc558773f3a",
+      "bytes": 8757
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_01--summary.json": {
+      "sha256": "61461b6a636561ead3ca8cf005602713159912e4732f111e1f262a347e5e0b1d",
+      "bytes": 14125
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_01--vortex.json": {
+      "sha256": "d21a1497c76d4b2217ce1ba16485f20325f53362fe2cf49eca0f07a2805e13b2",
+      "bytes": 26646
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_02--none.json": {
+      "sha256": "f39357a77d60945f7cbbd9174976f8aaf84b3b8d14bccc35f627f10606d5dbd0",
+      "bytes": 8713
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_02--summary.json": {
+      "sha256": "08b46317d26822e93ab5cb5cb5a6b94f165aba0667797d597a1e01ab2b7944d7",
+      "bytes": 14462
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_02--vortex.json": {
+      "sha256": "e170ee327ea008b59903bdf0f6cb4ac67a9aebe46e31fa85635cacbad61e98bd",
+      "bytes": 26863
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_03--none.json": {
+      "sha256": "97c496f0f2b7134abc256c2545ffd781037dc8575f757916be79a871267b6bed",
+      "bytes": 9420
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_03--summary.json": {
+      "sha256": "a1a27a91202f59bc166a3a3d76bf4e84145f2b790895917d2e98ef083d281891",
+      "bytes": 14960
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_03--vortex.json": {
+      "sha256": "bc8a0ea555ca0aabdc669b38fd6feec85f6a1d5708e86fdfac95b6d6e13fef85",
+      "bytes": 27519
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_04--none.json": {
+      "sha256": "c684f4c0411e81c71a8233cfcaef9a3cd64e4da915c0cfae2aec1a65594d40a4",
+      "bytes": 8497
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_04--summary.json": {
+      "sha256": "973d1930c507a477f949034b7af6cf5585ded37e4adf865b1920abeed5956f9a",
+      "bytes": 14161
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_04--vortex.json": {
+      "sha256": "f66ad0686169d1c6c35ed9b6b147802ce03964b2e244a0a60d51e157e165a2a4",
+      "bytes": 27363
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_05--none.json": {
+      "sha256": "5f32a3d6b42083240cd8d79548cafbcb6671a6b8140285f897cc23bf8467451c",
+      "bytes": 8654
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_05--summary.json": {
+      "sha256": "664079722ee9bea2d386053812dfc78287fd0a24714d02e262897863bdb6f4f1",
+      "bytes": 14469
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_05--vortex.json": {
+      "sha256": "d3f9abc894df7b2bdf0711435ff28c9396750fc5866f8486298c44cd3e0c4e64",
+      "bytes": 26523
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_06--none.json": {
+      "sha256": "ce7c2d5d494cfed171949287af00249bff728dd1bef76cba483a5309a87e51cc",
+      "bytes": 8994
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_06--summary.json": {
+      "sha256": "b5330cff74cfc98c49677f9dbe04e96eb5245724318a04d181ce0f36d07c72b7",
+      "bytes": 14754
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_06--vortex.json": {
+      "sha256": "320d1afbe2c4b03d7ef8161cc6b0fea28ed3f8449600dbebec63fb94b7f93fdd",
+      "bytes": 26739
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_07--none.json": {
+      "sha256": "1f78e24a060608e0864279f510a86c8a6cf6660c712d2b34ba3e8dfb036e2e5b",
+      "bytes": 9146
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_07--summary.json": {
+      "sha256": "10f25644e2c1a0713f7fc4ecc920743d379b0d8079e4071fb9c9442f3fc754ae",
+      "bytes": 15358
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_07--vortex.json": {
+      "sha256": "2b5ceba6ff84454b4d6bc1e69a9f23d6509cf10307ebc0b097544f07ad800472",
+      "bytes": 27457
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_08--none.json": {
+      "sha256": "f326d8a33dfbdcf4ac72be8803e5198cc30b538aec1a178df5e95cb59122c0ba",
+      "bytes": 9425
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_08--summary.json": {
+      "sha256": "16f2c6346fa99d3ec4922edf28182fb25a97d9d6e7ba2db26795bff8819a011f",
+      "bytes": 15154
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_08--vortex.json": {
+      "sha256": "ea7bd09199de0f5d7b0c78fd71dc696fec3e4ef4b13f7b8d11dd9efc4e2d5897",
+      "bytes": 27638
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_09--none.json": {
+      "sha256": "8792142025d1a5aa8242fe9d8d36030aee356a0530184bb7bc9406ea70ffc62a",
+      "bytes": 10910
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_09--summary.json": {
+      "sha256": "3654601eedb4c2f065a86caee3b1eaf45782eeee89a5b466c1bb917c595b02e9",
+      "bytes": 18821
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_09--vortex.json": {
+      "sha256": "56a935cb20d46c9a5134033eb34c823a41286d781c29ed56ea57010afd9d0e1e",
+      "bytes": 33793
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_10--none.json": {
+      "sha256": "c35f60cbbca82dd940132461ff0e7764261bb21048404f22d8c1853c6accfdc8",
+      "bytes": 8982
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_10--summary.json": {
+      "sha256": "018059b6f1ccb6add472c7b00542ded8ec4257d48a14ccd7733c256b45ac1ba6",
+      "bytes": 14761
+    },
+    "memory-quality-confirmation-20261117-evidence/temporal_10--vortex.json": {
+      "sha256": "dfc93e5cd41de487cddd1a83eb1db92c7cd046b3f579c84c302ca36a4f80ce48",
+      "bytes": 26925
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_01--none.json": {
+      "sha256": "2740ee02079098f8d5cc11a4bb19bec0f345c19eae55b11c3206a6109bcad7dc",
+      "bytes": 2606
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_01--summary.json": {
+      "sha256": "c45d5c8dcfe5a8be4e81100c55a40741e6e2ba109c70e6980cbdd7c7395c2beb",
+      "bytes": 2603
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_01--vortex.json": {
+      "sha256": "de9371f06041dfbe111a00badbd44a7699ad0b7ec295cfca843e6d8fc9af401c",
+      "bytes": 3545
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_02--none.json": {
+      "sha256": "4f5013eb69f1a60c130dd08b758d0a2bcdb0c1a537108121349f632e68fdebe8",
+      "bytes": 2618
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_02--summary.json": {
+      "sha256": "7da8a843e7b57a09056422522d8d00a6bc1da010c8c3d0de1d3a030a945056ce",
+      "bytes": 2613
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_02--vortex.json": {
+      "sha256": "d692fce0e1008f74b2b3d958e679f9c48507e3d8cc8174e5f574b00c91535ebb",
+      "bytes": 3557
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_03--none.json": {
+      "sha256": "96dd7f1084b5c2d1b7915f6027355b3e15e4924306b1b533f99cb025504d0e3c",
+      "bytes": 2629
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_03--summary.json": {
+      "sha256": "a5c8da3a5c8e9729290160696b88924770656a1e3778e91e770ad3741544e948",
+      "bytes": 2627
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_03--vortex.json": {
+      "sha256": "2847faff9a1ce36462764e43b5b34ca926ce12d28abd2a747d86115f77841e65",
+      "bytes": 3569
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_04--none.json": {
+      "sha256": "5d9612c2ba0162ac71b85b9a77a43787f3ad318fd6b856b4911f6ceca97392e7",
+      "bytes": 2688
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_04--summary.json": {
+      "sha256": "3bcee35f647ac6a0328358d69e643e37bc2f6e1d615a4cf39ee28ce917166299",
+      "bytes": 2686
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_04--vortex.json": {
+      "sha256": "5bf974520fdc95845fcab36f54151ea0aec1b294fd8ab83b37062dacb7f02203",
+      "bytes": 3628
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_05--none.json": {
+      "sha256": "0363e22df3d3fe88b4a267ac9d8f88bdd5a85e93a6902e7ca3ccd5aac77e56c8",
+      "bytes": 2635
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_05--summary.json": {
+      "sha256": "51d989d6dc28f7acc9dbd362a60ad17758a607bc9332946bf6276cff38070f28",
+      "bytes": 2631
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_05--vortex.json": {
+      "sha256": "7c45095f821c47ddf185aee3f215d69bb9f505eef46248fc880afca06d57774a",
+      "bytes": 3575
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_06--none.json": {
+      "sha256": "202122ec525733ca85e6557280dcc523d422faaf9e8734b78966ded6bac6b21b",
+      "bytes": 2675
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_06--summary.json": {
+      "sha256": "0915291ea190163d4457950a66bd187109c150e73a8476b0476911e048deb524",
+      "bytes": 2672
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_06--vortex.json": {
+      "sha256": "ccd257c94a7cc5cb231bd4935402c8f96d6e4ee1bb6cedd09fd88c99ffa686f8",
+      "bytes": 3616
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_07--none.json": {
+      "sha256": "79385bbf5f397b07d4c595fac341fc7f4c21ef075117b5f884e4c18a8f88355a",
+      "bytes": 2631
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_07--summary.json": {
+      "sha256": "f2ecb059b483de366f0e6fc691a2cb064a27f54bf105d0deabb91165e598b3ef",
+      "bytes": 2628
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_07--vortex.json": {
+      "sha256": "0a94fe0aa0c1ef33b1b248d7a07eea877de6945b11f331eee5204684c83aa6e5",
+      "bytes": 3570
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_08--none.json": {
+      "sha256": "4e9eaff905fe4f938bdac2820715ea6b0824b63ee536a01a224a8f6dc87a4ea8",
+      "bytes": 2695
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_08--summary.json": {
+      "sha256": "98b78a45bfa0b80c87cb1507b9cb19f0287ea1dcb317f5674c77ecd461a9ce5e",
+      "bytes": 2691
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_08--vortex.json": {
+      "sha256": "a8db76117487ee0afe41326f67f7578cc861167154cfd9e932d61da1772a9db4",
+      "bytes": 3635
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_09--none.json": {
+      "sha256": "6edab5399ddf52df6cc0c99f209d5e319b3db3d47c99c44582f52ca9142e1503",
+      "bytes": 2700
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_09--summary.json": {
+      "sha256": "90f6c41d9491f5543127ffef86f95565dcf48003e5a7a21e35402f0e94bb827d",
+      "bytes": 2699
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_09--vortex.json": {
+      "sha256": "4e5bdf6461d2e0f8167a4b67e2e230c33f544bf076d54e912650261dec8ab600",
+      "bytes": 3641
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_10--none.json": {
+      "sha256": "f95d216ea3dd370c81bb45b53dd93d8ae53740929c42faf353033c6b0c298c1c",
+      "bytes": 2619
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_10--summary.json": {
+      "sha256": "c239f50b04783cdff1e8688e2838bdacd4458256be31b55a5e6e2ef80f5037ee",
+      "bytes": 2616
+    },
+    "memory-quality-confirmation-20261117-evidence/tentative_10--vortex.json": {
+      "sha256": "3ffccad74d1de0f185703e22d8b56f3320c19fc6896bd7456d033cba997408dd",
+      "bytes": 3558
+    },
+    "memory-quality-confirmation-stop.json": {
+      "sha256": "7975647ae4a918e2ec28046a09062a77a25f25732ebd1295ce035ff1bcda3017",
+      "bytes": 354
+    }
+  },
+  "review": "Synthetic conversations and same-model automatic judgments. No independent human annotation or production-user accuracy estimate. First completed with errors; confirmation was interrupted, not a clean full quality estimate."
+}

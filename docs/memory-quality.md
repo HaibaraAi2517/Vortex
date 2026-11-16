@@ -47,6 +47,8 @@ python ops/eval-memory-quality.py --split all --workers 4 `
 
 输出路径或其 `*-evidence` 目录已经存在时拒绝覆盖。每完成一个 case/arm，就先保存独立证据文件，再原子更新汇总报告。运行中不要修改 SDK、runner、数据集、本地模型或 JAR；结束时指纹变化会标记 `SOURCE_CHANGED_DURING_RUN`。中断后的已完成证据保留，但当前版本没有自动续跑功能，重跑需选择新的输出路径。
 
+模型返回已识别的 HTTP 401（鉴权）或 402（付款/额度）时，脚本停止派发新案例，并阻止所有 worker 的后续模型请求。已经发出的并行请求会结束并保存证据，不会自动重试。报告状态为 `interrupted_model_error`，`stop_reason` 保存安全的错误类型和 HTTP 状态码；未执行案例仍显示为 `pending` 并留在请求分母中。其他错误按原样保留，供应商响应体和任意异常文本不会写入错误诊断。
+
 ## 如何读结果
 
 报告包含最终答案、分类汇总、执行错误和每个证据文件的路径与 SHA-256。`*-evidence/<case>--<arm>.json` 保存：

@@ -7,7 +7,7 @@ Evidence is saved per case/arm before the aggregate checkpoint is replaced.
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import copy
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -18,6 +18,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import threading
 import time
 from typing import Callable
 import uuid
@@ -167,12 +168,40 @@ def safe_error_metadata(exc: Exception) -> dict:
     return metadata
 
 
+class RunStopped(Exception):
+    """No model request was attempted because the run has already stopped."""
+
+
+class RunControl:
+    """Share the first fatal failure across workers; never retry paid requests."""
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._reason = None
+
+    @property
+    def reason(self) -> dict | None:
+        with self._lock:
+            return dict(self._reason) if self._reason else None
+
+    def stop(self, reason: dict) -> None:
+        with self._lock:
+            if self._reason is None:
+                self._reason = {**reason, "detected_at": utc_now()}
+
+    def check(self) -> None:
+        if self.reason:
+            raise RunStopped()
+
+
 class RecordedModel:
     """Preserve exact synthetic inputs and outputs without touching SDK transport."""
-    def __init__(self, model: Callable, kind: str, calls: list[dict]):
+    def __init__(self, model: Callable, kind: str, calls: list[dict], control: RunControl | None = None):
         self.model, self.kind, self.calls = model, kind, calls
+        self.control = control
 
     def __call__(self, messages: list[dict], *, json_mode: bool = False) -> str:
+        if self.control:
+            self.control.check()  # Blocked requests are not counted as attempted model calls.
         record = {"index": len(self.calls), "kind": self.kind, "messages": copy.deepcopy(messages),
                   "json_mode": json_mode, "started_at": utc_now(), "response": None, "error": None}
         self.calls.append(record)
@@ -185,6 +214,8 @@ class RecordedModel:
             return result
         except Exception as exc:
             record["error"] = safe_error_metadata(exc)
+            if self.control and record["error"].get("http_status") in {401, 402}:
+                self.control.stop({"stage": "model", **record["error"]})
             raise
         finally:
             record["latency_seconds"] = round(time.perf_counter() - started, 6)
@@ -289,7 +320,7 @@ def call_totals(calls: list[dict]) -> dict:
 
 def run_case_arm(case: dict, arm: str, *, url: str, summary_chars: int = 2048,
                  model_factory: Callable = CompatibleChatModel.from_env,
-                 memory_factory: Callable = VortexClient) -> dict:
+                 memory_factory: Callable = VortexClient, control: RunControl | None = None) -> dict:
     """Generation receives only explicit sessions/question; gold is used afterwards."""
     if arm not in ARMS:
         raise ValueError("Unknown arm")
@@ -302,10 +333,12 @@ def run_case_arm(case: dict, arm: str, *, url: str, summary_chars: int = 2048,
               "facts_before_question": None, "facts_after_question": None, "history": None}
     memory, state = None, {"summary": ""}
     try:
+        if control:
+            control.check()
         raw_model = model_factory()  # Separate opener per job; shared only within a sequential case/arm.
-        answer_model = RecordedModel(raw_model, "answer", result["model_calls"])
-        extractor = RecordedModel(raw_model, "extract", result["model_calls"])
-        summarizer = RecordedModel(raw_model, "summarize", result["model_calls"]) if arm == "summary" else None
+        answer_model = RecordedModel(raw_model, "answer", result["model_calls"], control)
+        extractor = RecordedModel(raw_model, "extract", result["model_calls"], control)
+        summarizer = RecordedModel(raw_model, "summarize", result["model_calls"], control) if arm == "summary" else None
         if arm == "vortex":
             result["namespace"] = "eval-quality-" + uuid.uuid4().hex
             memory = memory_factory(url, namespace=result["namespace"], token=os.environ.get("VORTEX_SECURITY_BEARER_TOKEN"))
@@ -319,6 +352,8 @@ def run_case_arm(case: dict, arm: str, *, url: str, summary_chars: int = 2048,
             session = MemorySession(memory, answer_model, extractor=extractor, system_prompt=SYSTEM_PROMPT) if memory else \
                 BaselineSession(answer_model, summarizer, state, summary_chars)
             for user_message in messages:
+                if control:
+                    control.check()
                 turn_start = time.perf_counter()
                 turn = {"session_index": session_index, "phase": phase, "user_message": user_message,
                         "facts_before": snapshot(memory) if memory else None,
@@ -352,7 +387,7 @@ def run_case_arm(case: dict, arm: str, *, url: str, summary_chars: int = 2048,
                         result["summary_question_changed"] = turn["summary_before"] != turn["summary_after"]
         if result["answer"] is not None:
             try:
-                judge = RecordedModel(raw_model, "judge", result["model_calls"])
+                judge = RecordedModel(raw_model, "judge", result["model_calls"], control)
                 raw = judge(judge_messages(case, result["answer"]), json_mode=True)
                 result["judge_verdict"] = parse_judgment(raw)
             except Exception as exc:
@@ -515,23 +550,45 @@ def main(argv: list[str] | None = None) -> int:
     with output.open("x", encoding="utf-8") as stream:
         json.dump(report, stream, ensure_ascii=False, indent=2)
     run_start = time.perf_counter()
+    control = RunControl()
     try:
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            futures = {executor.submit(run_case_arm, case, arm, url=args.url, summary_chars=args.summary_chars): (case, arm)
-                       for case in cases for arm in args.arms}
-            for future in as_completed(futures):
-                case, arm = futures[future]
-                result = future.result()
-                evidence = evidence_dir / f"{case['id']}--{arm}.json"
-                atomic_json(evidence, result)
-                report["results"].append(compact_result(result, evidence, output))
-                report["metrics"] = aggregate(report["results"], cases, args.arms)
-                report["updated_at"] = utc_now()
-                atomic_json(output, report)
-                verdict = result["judge_verdict"]
-                outcome = "correct" if verdict and verdict["answer_correct"] else "incorrect" if verdict else "unjudged"
-                print(f"[{len(report['results'])}/{estimate['case_arms']}] {case['id']} {arm}: {outcome}; "
-                      f"errors={len(result['errors'])}, calls={result['call_totals']['count']}", flush=True)
+            jobs = iter((case, arm) for case in cases for arm in args.arms)
+            futures = {}
+
+            def submit_next():
+                if control.reason:
+                    return
+                job = next(jobs, None)
+                if job is not None:
+                    case, arm = job
+                    futures[executor.submit(run_case_arm, case, arm, url=args.url,
+                                            summary_chars=args.summary_chars, control=control)] = job
+
+            try:
+                for _ in range(args.workers):
+                    submit_next()
+                while futures:
+                    done, _ = wait(futures, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        case, arm = futures.pop(future)
+                        result = future.result()
+                        evidence = evidence_dir / f"{case['id']}--{arm}.json"
+                        atomic_json(evidence, result)
+                        report["results"].append(compact_result(result, evidence, output))
+                        report["metrics"] = aggregate(report["results"], cases, args.arms)
+                        report["updated_at"] = utc_now()
+                        if control.reason:
+                            report["stop_reason"] = control.reason
+                        atomic_json(output, report)
+                        verdict = result["judge_verdict"]
+                        outcome = "correct" if verdict and verdict["answer_correct"] else "incorrect" if verdict else "unjudged"
+                        print(f"[{len(report['results'])}/{estimate['case_arms']}] {case['id']} {arm}: {outcome}; "
+                              f"errors={len(result['errors'])}, calls={result['call_totals']['count']}", flush=True)
+                        submit_next()
+            except (Exception, KeyboardInterrupt) as exc:
+                control.stop({"stage": "runner", "code": type(exc).__name__})
+                raise
     except (Exception, KeyboardInterrupt) as exc:
         report["errors"].append({"stage": "runner", "code": type(exc).__name__})
     finally:
@@ -543,6 +600,10 @@ def main(argv: list[str] | None = None) -> int:
         report["wall_seconds"] = round(time.perf_counter() - run_start, 6)
         completed = len(report["results"]) == estimate["case_arms"]
         report["status"] = "completed" if completed and not report["errors"] and all(row["success"] for row in report["results"]) else "completed_with_errors" if completed else "incomplete"
+        if control.reason:
+            report["stop_reason"] = control.reason
+            if control.reason.get("http_status") in {401, 402}:
+                report["status"] = "interrupted_model_error"
         atomic_json(output, report)
     print(json.dumps({"status": report["status"], "output": str(output), "metrics": report["metrics"]}, ensure_ascii=False, indent=2))
     return 0 if report["status"] == "completed" else 2
