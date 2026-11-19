@@ -28,6 +28,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.*;
+import java.util.function.Predicate;
 
 /**
  * Single-process durable memory: BM25, CJK bigrams, HNSW vectors and archives in one index.
@@ -229,6 +230,17 @@ public class LuceneMemoryStore implements L2WarmStore, L3ColdStore, IndexedMemor
     public Optional<MemoryFact> getFact(String namespace, String key) {
         validateIdentity(namespace, key);
         return document("fact:" + factIdentity(namespace, key)).map(doc -> decode(doc, MemoryFact.class));
+    }
+
+    @Override
+    public Predicate<String> excludeFactKeys(String namespace, Set<String> keys) {
+        var excluded = new TermInSetQuery("current", keys.stream()
+                .map(key -> new BytesRef(factIdentity(namespace, key))).toList());
+        return fragmentId -> !fragmentId.startsWith(FACT_PREFIX) || withSearcher(searcher -> searcher.count(
+                new BooleanQuery.Builder().add(new TermQuery(id("fragment:" + fragmentId)), BooleanClause.Occur.FILTER)
+                        .add(new TermQuery(new Term("namespace", namespace)), BooleanClause.Occur.FILTER)
+                        .add(unexpired(), BooleanClause.Occur.FILTER)
+                        .add(excluded, BooleanClause.Occur.MUST_NOT).build()) > 0);
     }
 
     @Override

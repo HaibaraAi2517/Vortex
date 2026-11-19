@@ -1,0 +1,72 @@
+name: Draft Local Alpha
+
+on:
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  draft:
+    concurrency:
+      group: draft-local-alpha-${{ inputs.release_tag || github.run_number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: vortex-local-windows-release
+          path: assets/windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: vortex-local-ubuntu-latest
+          path: assets/universal
+      - name: Verify the six downloads and the tested commit
+        run: python3 ops/local-package/verify-release-assets.py assets "$GITHUB_SHA"
+      - name: Create a draft marked as a prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag || format('local-alpha-{0}', github.run_number) }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^local-([0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+|alpha-[0-9]+)$ ]]; then
+            echo 'Use a tag such as local-0.3.0-alpha.1, or leave the tag empty for a run number.' >&2
+            exit 1
+          fi
+          existing_tags=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$TAG" --jq '.[].ref')
+          existing_releases=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
+          if grep -Fxq "refs/tags/$TAG" <<< "$existing_tags" || grep -Fxq "$TAG" <<< "$existing_releases"; then
+            echo "Tag or release $TAG already exists. Review that release, or start a new workflow run." >&2
+            exit 1
+          fi
+          cat > "$RUNNER_TEMP/notes.md" <<'NOTES'
+          Vortex 个人记忆工作台可在本机保存偏好、更新事实，并把当前任务用得上的片段交给 Agent。
+
+          - **Windows x64**：下载 `vortex-local-windows-x64.zip`，解压整个文件夹，双击 `Start Vortex.cmd`。包内包含 Java 21 和本地模型。
+          - **已安装 Java 21 的电脑**：下载 `vortex-local-alpha.zip`，解压后在 Linux/macOS 运行 `bash start.sh`，Windows 运行 `Start Vortex.cmd`。
+          - 启动后访问窗口显示的本机地址，使用工作台中的演示。数据目录显示在启动窗口。升级前请停止服务并备份该目录。
+          - 每位用户在本机独立使用。Codex 接入见包内 `docs/codex-memory.md`，豆包网页版可使用工作台的“复制给 Agent”带入选中的片段。
+          - 同名 `.sha256` 文件可用于核对下载。Windows 包对应的 Temurin 运行时源码随版本提供。
+          NOTES
+          printf '\n构建提交：`%s`。\n' "$GITHUB_SHA" >> "$RUNNER_TEMP/notes.md"
+          draft_url=$(gh release create "$TAG" assets/windows/* assets/universal/* \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --prerelease --latest=false \
+            --title "Vortex 本地试用版 · $TAG" --notes-file "$RUNNER_TEMP/notes.md")
+          release_id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" | jq -r --arg tag "$TAG" --arg sha "$GITHUB_SHA" '.[] | select(.tag_name == $tag and .draft and .prerelease and .target_commitish == $sha) | .id')
+          test -n "$release_id"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets" --jq '.[] | [.digest, .name] | @tsv' | LC_ALL=C sort > "$RUNNER_TEMP/remote-digests"
+          for asset in assets/{windows,universal}/*; do
+            printf 'sha256:%s\t%s\n' "$(sha256sum "$asset" | cut -d' ' -f1)" "${asset##*/}"
+          done | LC_ALL=C sort > "$RUNNER_TEMP/local-digests"
+          diff -u "$RUNNER_TEMP/local-digests" "$RUNNER_TEMP/remote-digests"
+          printf '已创建[预发布草稿](%s)。\n' "$draft_url" >> "$GITHUB_STEP_SUMMARY"

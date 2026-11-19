@@ -24,6 +24,33 @@ Runtime files (fetched at pinned revisions with SHA-256 verification; ONNX binar
 The ONNX file SHA-256 matches the Git LFS object referenced by the direct artifact revision. The
 tokenizer SHA-256 matches the upstream base revision.
 
+The pinned BAAI model card identifies the FlagEmbedding [MIT license](https://raw.githubusercontent.com/FlagOpen/FlagEmbedding/897baa67c0ffddbfccf4e6776ff55310d67809d4/LICENSE).
+The following upstream notice applies to the bundled model and tokenizer.
+
+```text
+MIT License
+
+Copyright (c) 2022 staoxiao
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## MS MARCO MiniLM Cross Encoder
 
 - Upstream model: `cross-encoder/ms-marco-MiniLM-L6-v2`
@@ -41,6 +68,12 @@ Optional runtime files (`python ops/download-model.py --model ms-marco-MiniLM-L6
 | `models/ms-marco-MiniLM-L6-v2-c5ee24cb/tokenizer.json` | `d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66` |
 
 The model SHA-256 matches the Git LFS object referenced by the pinned upstream revision.
+
+## Eclipse Temurin (Windows x64 bundle)
+
+The Windows x64 download includes the Eclipse Adoptium Java runtime. The runtime retains its original
+`runtime/NOTICE`, `runtime/legal/` license files and `runtime/release` build metadata. `runtime-source.txt`
+identifies the matching upstream source archive provided alongside the Windows download.
 
 ## Evaluation Data
 

@@ -48,7 +48,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Location", "/api/v1/memory/facts?namespace=leak&key=bad")
             self.end_headers()
             return
-        elif path.endswith("/recall"):
+        elif path.endswith(("/recall", "/context")):
             result = {"fragments": [{"fragment": {"id": "m1", "content": "上海", "tags": [], "embedding": [1, 0]}, "score": 0.9}], "totalTokens": 2}
         elif path.endswith("/history"):
             result = [{"key": "city", "revision": 1, "content": "北京"}]

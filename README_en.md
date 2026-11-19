@@ -6,64 +6,31 @@
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](pom.xml)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-**Durable local memory for personal AI agents. Remember preferences and project facts, update them when they change, and recall their current versions.**
+**Share your personal memory across agents.** Save a fact in Codex, update it when it changes, and carry its current version into a new conversation in Doubao. Vortex stores the facts, their revisions and the search index on your computer.
 
-One Java process, one data directory. Connect through Python, Spring AI, MCP or REST.
-The default local mode embeds Lucene BM25, CJK bigrams and HNSW vectors, backed by a local BGE model.
-Storage and retrieval need no external database, Docker or chat-model API key.
-Automatic chat and fact extraction require a configured chat model; Codex uses its existing model and login.
+## Start on Windows
 
-Local memory is an **alpha in the current source tree**. The published [v0.2.0](docs/releases/v0.2.0.md)
-image uses Milvus/MinIO and does **not** include these features. The Python package is source-installable;
-it is not on PyPI, and Maven artifacts are not published yet.
+1. Find a preview with a tag starting with `local-` and download `vortex-local-windows-x64.zip` from its Assets. It includes Java 21 and the Chinese retrieval model. [GitHub Releases](https://github.com/HaibaraAi2517/Vortex/releases)
+2. Extract the entire ZIP into a new folder and double-click **`Start Vortex.cmd`**. The launcher opens the workbench in your browser when it is ready. Keep the launch window open. [Default workbench address](http://127.0.0.1:8080/)
+3. Click **运行真实演示** (run demo). It saves Beijing as the home city in a separate space, then updates it to Shanghai. Click **当前住所** (current address), select just the Shanghai fact, check the preview, and click **复制任务和所选记忆** (copy the task and selected memories). Paste it into a fresh Doubao chat and send it. Check whether Doubao answers with the current city. To add your own facts, click **新建记忆** (new memory).
+
+The workbench can store, retrieve and copy facts without an API key. You choose which facts to send. Codex CLI can access the same space directly through MCP using its existing login. Automatic fact extraction in Python or Spring AI requires a configured chat model.
+
+If there is no `local-` preview in Releases, sign in to GitHub and open a successful Local Memory workflow run containing this launcher. Download the `vortex-local-windows-release` artifact, extract it, then extract the Windows ZIP inside. The older `v0.2.0` deployment uses Milvus and MinIO. [Local Memory workflow](https://github.com/HaibaraAi2517/Vortex/actions/workflows/local-memory.yml)
+
+New Windows installations store memory in `%LOCALAPPDATA%\Vortex\data`. To upgrade, stop the server with `Ctrl+C`, back up that directory, and extract the new version into another folder. Older ZIPs may use `data/vortex` inside the old folder. The launcher prints the actual location. On Linux, use the universal `vortex-local-alpha.zip` with Java 21 and run `bash start.sh`. [Data and upgrade guide (Chinese)](docs/local-memory.md#持久化边界与备份)
+
+## Choose an integration
 
 | Start with | Entry point |
 | --- | --- |
-| See updates and recall in action | Start the service and open the workbench below |
-| Automatic memory in Python | [MemorySession and model configuration](docs/automatic-agent-memory.md) |
 | Shared Codex and Python facts | [Codex CLI guide](docs/codex-memory.md) |
+| Automatic memory in Python | [MemorySession and model configuration](docs/automatic-agent-memory.md) |
 | Automatic memory in Spring AI | [ChatClient Advisor example](examples/spring-ai-integration/README.md) |
 | Other MCP clients or a custom agent | [Python SDK and MCP configuration](sdk/python/README.md) |
+| Run from source or in a container | [Local setup (Chinese)](docs/local-memory.md#从源码启动) |
 
-## Start locally
-
-Source requirements: JDK 21, Maven 3.9+, and Python 3.10+. The first launch downloads dependencies
-and pinned model files, verifying SHA-256. Subsequent starts reuse them. The trial ZIP includes the model
-and needs only Java 21 to run the service; Python/MCP clients also need Python.
-Build it using the [local packaging instructions](docs/local-memory.md); no new public release download is available yet.
-
-```powershell
-# Windows, from the repository root
-powershell -NoProfile -ExecutionPolicy Bypass -File .\ops\run-local.ps1
-```
-
-```bash
-# Linux / macOS
-bash ops/run-local.sh
-```
-
-Open the [memory workbench](http://127.0.0.1:8080/) and click **运行真实演示**.
-The demo writes a Beijing address, updates it to Shanghai, and checks that ordinary recall excludes
-the previous version. These are actual storage and retrieval operations; the browser demo does not
-call a chat model. You can also create facts, inspect revision history, retract or delete memories,
-and copy retrieved context for an agent. The workbench currently uses Chinese labels.
-
-For the Python API demo, run in another terminal:
-
-```bash
-python -m pip install ./sdk/python
-python examples/personal-memory/demo.py
-```
-
-The demo changes a remembered home city from Beijing to Shanghai, recalls the current fact, and rejects
-a stale update. API: `127.0.0.1:8080`. Persistent directory: `./data/vortex`.
-For subsequent starts, use `-SkipBuild` on Windows or `SKIP_BUILD=true` on Bash.
-
-Alternatively, build and run one container:
-
-```bash
-docker compose -f docker-compose.local.yml up --build -d
-```
+The commands below assume a source checkout. With a ZIP, use the commands in `README.txt` to install the included wheel from `python/` before running the examples.
 
 ## Use in an agent
 

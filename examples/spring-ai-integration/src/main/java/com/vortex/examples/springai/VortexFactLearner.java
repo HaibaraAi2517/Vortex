@@ -41,6 +41,8 @@ public final class VortexFactLearner {
             Use retract only when the user explicitly withdraws a fact without supplying a replacement; content must be empty.
             Do not retract facts merely because the user does not mention them. Never erase history.
             Evidence must be a nonempty verbatim substring of user_message supporting that specific update.
+            For personal facts, user_message omits recognized quotations and source passages. Use a single intact author statement
+            that identifies the speaker or subject. A third person, a fictional narrator and quoted dialogue are not the user.
             If a statement is ambiguous, unsupported, or not covered by the fields, skip it. Empty updates are normal.
             """;
 
@@ -78,13 +80,17 @@ public final class VortexFactLearner {
     }
 
     public Report learn(Snapshot snapshot) {
+        return learn(snapshot, Set.of());
+    }
+
+    public Report learn(Snapshot snapshot, Set<String> visibleIds) {
         List<Commit> committed = new ArrayList<>();
         List<Failure> failures = new ArrayList<>();
         List<Update> updates;
         try {
             List<Map<String, Object>> current = new ArrayList<>();
             snapshot.facts().forEach((key, fact) -> {
-                if (fact != null) {
+                if (fact != null && fact.hasNonNull("fragmentId") && visibleIds.contains(fact.path("fragmentId").asText())) {
                     Map<String, Object> value = new LinkedHashMap<>();
                     value.put("key", key);
                     value.put("status", fact.path("status").asText());
@@ -92,8 +98,11 @@ public final class VortexFactLearner {
                     current.add(value);
                 }
             });
+            List<String> segments = AuthorEvidence.segments(snapshot.userMessage());
+            boolean personalOnly = fields.stream().allMatch(field -> field.key().startsWith("user."));
             String input = json.writeValueAsString(Map.of("fields", fields, "current_facts", current,
-                    "user_message", snapshot.userMessage()));
+                    "user_message", personalOnly ? String.join("\n[quoted or supplied passage omitted]\n", segments)
+                            : snapshot.userMessage()));
             // Call the raw model, not the advised ChatClient, to avoid recursive learning.
             var response = model.call(new Prompt(List.of(new SystemMessage(INSTRUCTIONS), new UserMessage(input))));
             if (response == null || response.getResult() == null) throw new IllegalArgumentException("Empty extraction");
@@ -101,7 +110,7 @@ public final class VortexFactLearner {
             if (reason != null && !reason.isBlank() && !Set.of("stop", "end_turn").contains(reason.toLowerCase(Locale.ROOT))) {
                 throw new IllegalArgumentException("Incomplete extraction");
             }
-            updates = validate(response.getResult().getOutput().getText(), snapshot.userMessage());
+            updates = validate(response.getResult().getOutput().getText(), snapshot.userMessage(), segments);
         } catch (Exception e) {
             return new Report(committed, List.of(new Failure("extraction", null, e.getClass().getSimpleName(), null)));
         }
@@ -138,7 +147,7 @@ public final class VortexFactLearner {
         return new Report(committed, failures);
     }
 
-    private List<Update> validate(String raw, String userMessage) throws IOException {
+    private List<Update> validate(String raw, String userMessage, List<String> segments) throws IOException {
         if (raw == null || raw.length() > 100000) throw new IllegalArgumentException("Invalid extraction size");
         JsonNode root = json.readTree(raw);
         if (root == null || !root.isObject() || root.size() != 1 || !root.path("updates").isArray()
@@ -160,7 +169,9 @@ public final class VortexFactLearner {
                     || (update.operation().equals("retract") && !update.content().isEmpty())) {
                 throw new IllegalArgumentException("Unsupported or ungrounded update");
             }
-            result.add(update);
+            if (!update.key().startsWith("user.") || segments.stream().anyMatch(part -> part.contains(update.evidence()))) {
+                result.add(update);
+            }
         }
         return result;
     }

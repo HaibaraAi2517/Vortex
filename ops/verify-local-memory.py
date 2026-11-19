@@ -10,8 +10,9 @@ import asyncio
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import secrets
+import signal
 import socket
 import subprocess
 import sys
@@ -28,6 +29,78 @@ def file_sha256(path):
         for chunk in iter(lambda: binary.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def verify_checksum(file):
+    actual = file_sha256(file)
+    checksum = file.with_name(file.name + ".sha256").read_text(encoding="ascii").split()
+    if checksum != [actual, file.name]:
+        raise ValueError(f"Checksum or filename mismatch: {file}")
+    return actual
+
+
+def check_bundle(archive, destination):
+    archive_hash = verify_checksum(archive)
+    with zipfile.ZipFile(archive) as bundle:
+        names = [item.filename for item in bundle.infolist() if not item.is_dir()]
+        manifest = json.loads(bundle.read("manifest.json"))
+        if len(names) != len(set(names)) or set(names) != set(manifest["files"]) | {"manifest.json"}:
+            raise ValueError("ZIP contents and manifest inventory differ")
+        for name in names:
+            relative = PurePosixPath(name)
+            if (relative.is_absolute() or ".." in relative.parts or ":" in name or "\\" in name
+                    or relative.as_posix() != name):
+                raise ValueError(f"Invalid ZIP entry: {name}")
+            extracted = Path(bundle.extract(name, destination))
+            if name != "manifest.json" and file_sha256(extracted) != manifest["files"][name]:
+                raise ValueError(f"Mismatched file hash: {name}")
+    if "GITHUB_SHA" in os.environ and manifest["base_commit"] != os.environ["GITHUB_SHA"]:
+        raise ValueError("Package commit differs from the workflow checkout")
+    return archive_hash, manifest
+
+
+def bundle_command(app, env, bundled_runtime):
+    if os.name != "nt":
+        return ["bash", str(app / "start.sh")]
+    if bundled_runtime:
+        if not (app / "runtime/bin/java.exe").is_file():
+            raise ValueError("Windows x64 distribution must include Java")
+        # A clean Windows PC has no Maven, Python, or JDK on its launcher PATH.
+        system = Path(os.environ["SystemRoot"])
+        env["PATH"] = os.pathsep.join(map(str, (system / "System32", system, system / "System32/WindowsPowerShell/v1.0")))
+        env.pop("JAVA_HOME", None)
+    env["VORTEX_NO_PAUSE"] = "1"
+    env["VORTEX_GATE_LAUNCHER"] = str(app / "Start Vortex.cmd")
+    # cmd /s /c removes the outer quotes. The inner quotes protect paths containing spaces.
+    return f'"{os.environ["ComSpec"]}" /d /s /c ""%VORTEX_GATE_LAUNCHER%" -NoBrowser"'
+
+
+def workbench(url):
+    with urlopen(url + "/", timeout=10) as response:
+        html = response.read().decode("utf-8")
+    if '<title>Vortex' not in html or 'id="recall-form"' not in html:
+        raise ValueError("Missing memory workbench at /")
+    for asset, types in (("/workbench/app.js", {"text/javascript", "application/javascript"}),
+                         ("/workbench/app.css", {"text/css"})):
+        if asset not in html:
+            raise ValueError(f"Workbench does not reference {asset}")
+        with urlopen(url + asset, timeout=10) as response:
+            if response.headers.get_content_type() not in types or not response.read(128).strip():
+                raise ValueError(f"Workbench returned an invalid asset: {asset}")
+
+
+def profile_context(client):
+    name, coffee = "我叫雾杉七九", "我喜欢无糖燕麦拿铁"
+    for key, content in (("user.name", name), ("user.preference.coffee", coffee)):
+        client.remember(key, content, expected_revision=0)
+    cases = [("我叫什么？", [name]), ("照我平时的口味给我推荐一杯咖啡。", [coffee]),
+             ("写一条咖啡自取订单，带上我的取餐称呼，按我平时的口味来。", [name, coffee]),
+             ("润色这句小说对白：「我叫林澈，我最爱双份浓缩。」", [])]
+    for query, wanted in cases:
+        hits = client.recall(query, for_agent=True)["fragments"]
+        actual = [hit["fragment"]["content"] for hit in hits]
+        if sorted(actual) != sorted(wanted):
+            raise ValueError(f"Wrong /context selection for {query!r}: {actual}")
 
 
 async def check_mcp(url, namespace, token):
@@ -63,9 +136,14 @@ def main():
     artifact.add_argument("--jar", type=Path)
     artifact.add_argument("--bundle", type=Path, help="Extract and verify the trial ZIP from its own working directory")
     parser.add_argument("--output", type=Path, default=Path("target/local-memory-smoke.json"))
+    parser.add_argument("--bundled-runtime", action="store_true", help="Start the Windows ZIP without system Java available")
     parser.add_argument("--mcp", action="store_true")
     parser.add_argument("--distractors", type=int, default=300)
     args = parser.parse_args()
+    if args.bundled_runtime and (not args.bundle or os.name != "nt"):
+        parser.error("--bundled-runtime requires a Windows host and --bundle")
+    if not __debug__:
+        parser.error("Run verification without Python -O")
     repo = Path(__file__).resolve().parent.parent
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -73,13 +151,16 @@ def main():
     run_dir.mkdir()
     app_cwd = repo
     if args.bundle:
-        app_cwd = run_dir / "bundle"
-        with zipfile.ZipFile(args.bundle.resolve()) as bundle:
-            bundle.extractall(app_cwd)
+        app_cwd = run_dir / "Vortex 安装测试 ☕"
+        bundle_hash, manifest = check_bundle(args.bundle.resolve(), app_cwd)
+        if args.bundled_runtime:
+            lock = json.loads((repo / "ops/temurin-windows-x64.json").read_text(encoding="utf-8"))
+            if manifest.get("runtime") != lock or manifest.get("platform") != "windows-x64":
+                raise ValueError("Package runtime differs from the pinned Windows runtime")
+            source = args.bundle.resolve().with_name(lock["source"]["name"])
+            if verify_checksum(source) != lock["source"]["sha256"]:
+                raise ValueError("The corresponding Temurin source differs from the lock file")
         jar = app_cwd / "vortex-app.jar"
-        manifest = json.loads((app_cwd / "manifest.json").read_text(encoding="utf-8"))
-        for name, expected in manifest["files"].items():
-            assert file_sha256(app_cwd / name) == expected, name
         wheels = list((app_cwd / "python").glob("*.whl"))
         if len(wheels) != 1:
             raise ValueError("The bundle must contain exactly one Python wheel")
@@ -105,10 +186,15 @@ def main():
     client = VortexClient(url, namespace=namespace, token=token, timeout=60)
     process = None
     log_file = None
-    report = {"checks": [], "distractors": args.distractors, "embedding": "real BGE-Small-ZH ONNX", "external_llm_used": False}
+    report = {"checks": [], "distractors": args.distractors, "embedding": "real BGE-Small-ZH ONNX", "external_llm_used": False,
+              "mcp_checked": False}
     report["python_imports"] = {"client": sdk_client.__file__, "mcp": sdk_mcp.__file__}
     if args.bundle:
-        report["bundle_sha256"] = file_sha256(args.bundle.resolve())
+        report["bundle_sha256"] = bundle_hash
+        report["base_commit"] = manifest["base_commit"]
+        report["bundled_runtime_only"] = args.bundled_runtime
+        if args.bundled_runtime:
+            report["runtime_source"] = lock["source"]
         report["wheel_sha256"] = file_sha256(wheels[0])
         report["manifest_files_verified"] = len(manifest["files"])
     start = time.monotonic()
@@ -121,13 +207,22 @@ def main():
         nonlocal process, log_file
         log_file = (run_dir / f"server-{attempt}.log").open("wb")
         env = {**os.environ, "VORTEX_DATA_DIR": str(run_dir / "data"), "VORTEX_SECURITY_BEARER_TOKEN": token}
-        process = subprocess.Popen(["java", "--enable-preview", "-Xms128m", "-Xmx768m", "-Dfile.encoding=UTF-8", "-jar", str(jar),
-            "--spring.profiles.active=local", f"--server.port={port}", "--server.address=127.0.0.1",
-            "--vortex.security.enabled=true", f"--vortex.security.namespace-patterns={namespace}",
-            "--vortex.security.requests-per-minute=5000", "--vortex.security.audit-enabled=false",
-            "--management.endpoint.health.probes.enabled=true", f"--vortex.kernel.embedding.bge.model-path={model_path}"],
-            cwd=app_cwd, env=env, stdout=log_file, stderr=subprocess.STDOUT,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        if args.bundle:
+            env.update(VORTEX_HTTP_PORT=str(port), VORTEX_SECURITY_ENABLED="true",
+                       VORTEX_SECURITY_NAMESPACE_PATTERNS=namespace + "*", VORTEX_SECURITY_AUDIT_ENABLED="false",
+                       VORTEX_SECURITY_REQUESTS_PER_MINUTE="5000")
+            for var in ("BGE_MODEL_PATH", "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"):
+                env.pop(var, None)
+            command = bundle_command(app_cwd, env, args.bundled_runtime)
+        else:
+            command = ["java", "--enable-preview", "-Xms128m", "-Xmx768m", "-Dfile.encoding=UTF-8", "-jar", str(jar),
+                       "--spring.profiles.active=local", f"--server.port={port}", "--server.address=127.0.0.1",
+                       "--vortex.security.enabled=true", f"--vortex.security.namespace-patterns={namespace}*",
+                       "--vortex.security.requests-per-minute=5000", "--vortex.security.audit-enabled=false",
+                       "--management.endpoint.health.probes.enabled=true", f"--vortex.kernel.embedding.bge.model-path={model_path}"]
+        process = subprocess.Popen(command, cwd=run_dir if args.bundle else app_cwd, env=env,
+                                   stdout=log_file, stderr=subprocess.STDOUT, start_new_session=os.name != "nt",
+                                   creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
             if process.poll() is not None:
@@ -144,7 +239,14 @@ def main():
     def stop_server():
         nonlocal process, log_file
         if process and process.poll() is None:
-            process.kill()  # Deliberately simulate a crash after an acknowledged write.
+            # Crash only the process tree that this verifier started, including the launcher child.
+            if args.bundle and os.name == "nt":
+                subprocess.run(["taskkill", "/f", "/t", "/pid", str(process.pid)], check=True,
+                               stdout=subprocess.DEVNULL, timeout=30)
+            elif os.name != "nt":
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
             process.wait(timeout=30)
         if log_file:
             log_file.close()
@@ -156,6 +258,11 @@ def main():
     try:
         start_server(1)
         record("packaged service starts without external storage")
+        workbench(url)
+        record("workbench HTML, JavaScript and stylesheet served at the advertised URL")
+        profile = VortexClient(url, namespace=namespace + "-profile", token=token, timeout=60)
+        profile_context(profile)
+        record("/context selects name, coffee, both or neither according to the current task")
         for index in range(args.distractors):
             client.store(f"会议档案 {index}：今天整理了项目的例行会议记录。", tags=["noise"])
         coffee = "我喜欢喝美式咖啡，不加糖"
@@ -182,11 +289,13 @@ def main():
         stop_server()
         start_server(2)
         assert client.get_fact("home.city")["revision"] == second["revision"]
+        assert profile.context("我叫什么？") == "我叫雾杉七九"
         assert coffee in texts("用户喜欢什么咖啡", "KEYWORD_ONLY")
         assert "我住北京" not in texts("用户现在住哪里")
         record("acknowledged facts and full-text index survive forced process restart")
         if args.mcp:
             asyncio.run(check_mcp(url, namespace, token))
+            report["mcp_checked"] = True
             record("official MCP stdio client calls real packaged service")
         report["status"] = "passed"
     except BaseException as exc:

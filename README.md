@@ -6,68 +6,31 @@
 [![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](pom.xml)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-**给个人 AI Agent 的本地持久记忆。记住偏好和项目事实，在事实变化时更新它，下次对话只召回当前版本。**
+**让不同的 Agent 共用一份个人记忆。** 在 Codex 里记下住所，搬家后更新一次，下一次换到豆包时就能把新的住所带进对话。Vortex 在本机保存事实、版本和检索索引。
 
-一个 Java 进程，一个本地数据目录；通过 Python、Spring AI、MCP 或 REST 接入。
-默认模式内嵌 Lucene BM25、中文 bigram 与 HNSW 向量检索，使用本地 BGE 模型，
-存储和检索不需要外部数据库、Docker 或聊天模型 API Key。
-自动对话和事实抽取需要另外配置聊天模型；Codex 接入复用客户端已有的模型和登录配置。
+## Windows 上开始使用
 
-当前源码的本地模式是 **alpha**，面向个人开发者本机使用。
-已发布的 [v0.2.0](docs/releases/v0.2.0.md) 使用原 Milvus/MinIO 架构，**不包含下面的新功能**。
-Python 包目前从源码安装，尚未发布到 PyPI；Java Maven 构件也尚未发布。
+1. 在 Releases 找标签以 `local-` 开头的预览版，从 Assets 下载 `vortex-local-windows-x64.zip`。Windows x64 包内含 Java 21 和中文检索模型。[GitHub Releases](https://github.com/HaibaraAi2517/Vortex/releases)
+2. 将整个 ZIP 解压到新文件夹，双击 **`Start Vortex.cmd`**。工作台就绪后浏览器会自动打开。使用期间保持启动窗口打开。[默认工作台地址](http://127.0.0.1:8080/)
+3. 点击「运行真实演示」。它会在单独的空间记下北京，再把住所更新为上海。点「当前住所」，只勾选上海这条事实，检查预览，点「复制任务和所选记忆」。粘贴到豆包的新对话并发送，查看它能否答出现在的住所。以后可用「新建记忆」保存自己的资料。
+
+工作台的存储、检索和复制都无需 API Key。你决定把哪些资料发送给哪个 Agent。Codex CLI 可以通过 MCP 直接访问同一空间，复用现有登录。Python 或 Spring AI 自动从对话中提取事实时，需要另行配置聊天模型。
+
+如果 Releases 暂无 `local-` 预览版，可登录 GitHub，在包含本版启动器且构建成功的 Local Memory 工作流中下载 `vortex-local-windows-release`。解压这层 CI 产物，再解压里面的 Windows ZIP。旧版 `v0.2.0` 对应 Milvus/MinIO 部署。[Local Memory 工作流](https://github.com/HaibaraAi2517/Vortex/actions/workflows/local-memory.yml)
+
+Windows 新安装默认将数据保存在 `%LOCALAPPDATA%\Vortex\data`。升级时先按 `Ctrl+C` 停止旧服务、备份数据，再将新版解压到另一目录。旧包的数据可能在 `data/vortex`，启动窗口会显示实际路径。Linux 可下载通用包 `vortex-local-alpha.zip`，安装 Java 21 后运行 `bash start.sh`。[数据与升级指南](docs/local-memory.md#持久化边界与备份)
+
+## 接入方式
 
 | 想做什么 | 从这里开始 |
 | --- | --- |
-| 先看到记忆更新与召回效果 | 启动服务，打开下方的记忆工作台 |
-| 让 Python Agent 正常聊天时自动记忆 | [MemorySession 与模型配置](docs/automatic-agent-memory.md#python正常聊天即可) |
 | 在 Codex 与 Python 间共享事实 | [Codex CLI 接入指南](docs/codex-memory.md) |
+| 让 Python Agent 聊天时自动检索和更新事实 | [MemorySession 与模型配置](docs/automatic-agent-memory.md) |
 | 给 Spring AI 应用加入自动记忆 | [ChatClient Advisor 示例](examples/spring-ai-integration/README.md) |
 | 接入其他 MCP 客户端或自定义 Agent | [Python SDK、MCP 工具与配置](sdk/python/README.md) |
+| 从源码或容器启动 | [本地运行与配置](docs/local-memory.md#从源码启动) |
 
-## 快速接入
-
-源码启动需要 JDK 21、Maven 3.9+ 和 Python 3.10+。
-首次启动会下载依赖和固定版本的本地模型，并校验 SHA-256；后续启动复用本地文件。
-从源码构建的试用 ZIP 包包含模型，运行记忆服务只需 Java 21；Python/MCP 接入另需 Python。
-见 [打包步骤](docs/local-memory.md#构建可分享的试用包)，目前没有新的公开 release 下载。
-
-在仓库根目录启动服务：
-
-```powershell
-# Windows
-powershell -NoProfile -ExecutionPolicy Bypass -File .\ops\run-local.ps1
-```
-
-```bash
-# Linux / macOS
-bash ops/run-local.sh
-```
-
-启动后打开 **[记忆工作台](http://127.0.0.1:8080/)**，点击「运行真实演示」。
-工作台会实际写入北京、更新为上海，再验证普通召回排除了旧版本。
-也可以直接新增自己的记忆，查看版本历史，撤回事实，或复制检索片段给 Agent。
-整个流程不需要 Python 客户端、外部数据库或聊天模型 API Key。
-这里展示真实的存储和检索结果，不生成 Agent 聊天答案。
-
-需要接入代码时，另开终端：
-
-```bash
-python -m pip install ./sdk/python
-python examples/personal-memory/demo.py
-```
-
-示例会写入“我住北京”，更新为“我已经搬到上海了”，召回当前住所，并验证旧版本更新被拒绝。
-服务默认监听 `127.0.0.1:8080`，数据位于 `./data/vortex`，关闭服务后仍保留。
-后续 Windows 启动可加 `-SkipBuild`；端口冲突可加 `-Port 18080`。
-
-也可以只运行一个容器：
-
-```bash
-docker compose -f docker-compose.local.yml up --build -d
-```
-
-[完整本地指南：配置、鉴权、备份与接口](docs/local-memory.md)
+下面的命令以源码仓库为例。使用 ZIP 时，按包内 `README.txt` 的命令从 `python/` 安装随包 wheel，再运行示例。
 
 ## 在你的 Agent 中使用
 
@@ -148,6 +111,7 @@ BGE-Small-ZH 偏向中文，英文语义质量需另行评测。`forget` 是逻�
 
 | 验证 | 实际结果 | 证据 |
 | --- | --- | --- |
+| Windows 发行包与 Codex | 两个全新 Codex 会话通过 MCP 共享偏好，Python 更新后读回第 2 版 | [安装与实测记录](docs/releases/local-0.3.0-alpha.1.md) |
 | 本地服务与持久化 | 中文检索、300 条干扰记忆、版本冲突、强制重启和官方 MCP Client 调用通过 | [本地服务验收](docs/local-memory-verification.md) |
 | Python ↔ Spring AI | 7 轮真实模型对话，新进程共享并更新城市与咖啡偏好 | [自动记忆验收](docs/automatic-agent-memory-verification.md) |
 | Codex CLI ↔ Python | 9 轮真实模型对话，保存、更新、撤回后读取通过；6 个独立 Codex 会话、12 次 MCP 调用 | [Codex 共享记忆验收](docs/codex-memory-verification.md) |

@@ -70,6 +70,49 @@ class AgentTest(unittest.TestCase):
         self.assertNotIn("北京", json.dumps(reader.calls[0], ensure_ascii=False))
         self.assertEqual(len([m for m in reader.calls[0] if m["role"] == "user"]), 1)
 
+    def test_foreign_passages_cannot_write_personal_facts(self):
+        cases = [
+            ("帮我润色这段小说开头：我叫陆远，住在杭州，是一名律师。", [
+                update("user.name", "陆远", "我叫陆远"), update(CITY.key, "杭州", "住在杭州"),
+                update("user.work.role", "律师", "是一名律师")]),
+            ("这是客户发来的原话：“以后请用英文给我发消息。”帮我分析语气是否礼貌。", [
+                update("user.preference.language", "希望以后用英文接收消息", "以后请用英文给我发消息")]),
+        ]
+        for message, proposals in cases:
+            with self.subTest(message=message):
+                memory, model = Memory(), Model(proposals)
+                turn = MemorySession(memory, model).chat(message)
+                self.assertTrue(turn.memory_ok)
+                self.assertEqual(memory.writes, [])
+                self.assertEqual(model.calls[0][-1]["content"], message)
+                extraction = json.loads(model.calls[1][-1]["content"])["user_message"]
+                for proposal in proposals:
+                    self.assertNotIn(proposal["evidence"], extraction)
+                self.assertEqual(MemorySession(memory, Model()).chat("我住哪？").recalled, [])
+
+    def test_quoted_retraction_and_authors_own_fact_in_same_turn(self):
+        memory = Memory()
+        memory.remember(CITY.key, "杭州", expected_revision=0)
+        model = Model([update(CITY.key, "", "撤回我的住址", "retract"),
+                       update("user.name", "阿梨", "请叫我“阿梨”")])
+        turn = MemorySession(memory, model).chat("客户说：「撤回我的住址。」另外，请叫我“阿梨”。")
+        self.assertTrue(turn.memory_ok)
+        self.assertEqual([item["key"] for item in turn.updates], ["user.name"])
+        self.assertEqual(memory.get_fact(CITY.key)["revision"], 1)
+
+    def test_hidden_profile_values_stay_out_of_both_model_calls(self):
+        class SelectedMemory(Memory):
+            def recall(self, query, *, for_agent, **kwargs):
+                assert for_agent
+                return {"fragments": [{"fragment": {"id": "city-v1", "content": "CITY_SELECTED"}, "score": 1}]}
+        memory, model = SelectedMemory(), Model()
+        for field, text, fragment in [(CITY, "CITY_SELECTED", "city-v1"), (COFFEE, "COFFEE_PRIVATE", "coffee-v1")]:
+            memory.remember(field.key, text, expected_revision=0)["fragmentId"] = fragment
+        MemorySession(memory, model).chat("我住哪？")
+        for prompt in model.calls:
+            self.assertIn("CITY_SELECTED", json.dumps(prompt))
+            self.assertNotIn("COFFEE_PRIVATE", json.dumps(prompt))
+
     def test_answer_is_never_fact_evidence(self):
         model = Model([update(evidence="ANSWER_FROM_MODEL")])
         memory = Memory()

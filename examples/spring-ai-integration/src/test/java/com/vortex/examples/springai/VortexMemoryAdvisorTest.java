@@ -38,6 +38,7 @@ class VortexMemoryAdvisorTest {
     final AtomicReference<String> extractionInput = new AtomicReference<>();
     volatile String proposals = "{\"updates\":[]}";
     volatile int writeError;
+    Set<String> hiddenFromContext = Set.of();
     HttpServer server;
     VortexMemoryClient client;
 
@@ -52,6 +53,8 @@ class VortexMemoryAdvisorTest {
 
     @Test void realChatClientRetrievesAndCommitsWithUppercaseStop() throws Exception {
         put(CITY, "北京", 1, "ACTIVE");
+        put(COFFEE, "PRIVATE_COFFEE", 1, "ACTIVE");
+        hiddenFromContext = Set.of(COFFEE);
         proposals = updates(update(CITY, "上海", "搬到上海了", "set"));
         AtomicReference<String> answerInput = new AtomicReference<>();
         ChatModel answering = prompt -> {
@@ -66,6 +69,28 @@ class VortexMemoryAdvisorTest {
         assertEquals(1, report(result).updates().size());
         assertTrue(report(result).memoryOk());
         assertFalse(extractionInput.get().contains("了解。"));
+        assertTrue(extractionInput.get().contains("北京"));
+        assertFalse(extractionInput.get().contains("PRIVATE_COFFEE"));
+        assertFalse(answerInput.get().contains("PRIVATE_COFFEE"));
+    }
+
+    @Test void novelWithoutQuotationMarksCannotCreatePersonalFacts() throws Exception {
+        proposals = updates(update("user.name", "陆远", "我叫陆远", "set"), update(CITY, "杭州", "住在杭州", "set"),
+                update("user.work.role", "律师", "是一名律师", "set"));
+        var result = call("帮我润色这段小说开头：我叫陆远，住在杭州，是一名律师。", "好的", "STOP");
+        assertTrue(report(result).memoryOk());
+        assertTrue(writes.isEmpty());
+        assertFalse(extractionInput.get().contains("陆远"));
+    }
+
+    @Test void clientsQuotationCannotRetractButAuthorsOwnStatementCanSet() throws Exception {
+        put(CITY, "杭州", 1, "ACTIVE");
+        proposals = updates(update(CITY, "", "撤回我的住址", "retract"), update("user.name", "阿梨", "请叫我“阿梨”", "set"));
+        var result = call("客户说：「撤回我的住址。」另外，请叫我“阿梨”。", "好的", "STOP");
+        assertTrue(report(result).memoryOk());
+        assertEquals(List.of("user.name"), report(result).updates().stream().map(VortexFactLearner.Commit::key).toList());
+        assertEquals(1, facts.get(CITY).path("revision").asInt());
+        assertFalse(extractionInput.get().contains("撤回我的住址"));
     }
 
     @Test void validatesEveryProposalBeforeWritingAnything() throws Exception {
@@ -220,7 +245,7 @@ class VortexMemoryAdvisorTest {
 
     private void put(String key, String content, int revision, String status) throws Exception {
         facts.put(key, json.readTree(json.writeValueAsString(Map.of("key", key, "content", content,
-                "revision", revision, "status", status, "tags", List.of()))));
+                "revision", revision, "status", status, "tags", List.of(), "fragmentId", key))));
     }
 
     private void handle(HttpExchange exchange) throws IOException {
@@ -234,11 +259,11 @@ class VortexMemoryAdvisorTest {
         String key = body == null ? query.get("key") : body.path("key").asText();
         String storageKey = "test".equals(namespace) ? key : namespace + "/" + key;
         String path = exchange.getRequestURI().getPath();
-        if (path.endsWith("/recall")) {
+        if (path.endsWith("/context")) {
             List<Object> hits = new ArrayList<>();
             facts.forEach((k, f) -> {
                 boolean sameNamespace = "test".equals(namespace) ? !k.contains("/") : k.startsWith(namespace + "/");
-                if (sameNamespace && "ACTIVE".equals(f.path("status").asText()))
+                if (sameNamespace && !hiddenFromContext.contains(k) && "ACTIVE".equals(f.path("status").asText()))
                     hits.add(Map.of("fragment", Map.of("id", k, "content", f.path("content").asText()), "score", 1));
             });
             respond(exchange, 200, Map.of("fragments", hits));

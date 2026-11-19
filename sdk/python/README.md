@@ -27,7 +27,11 @@ The model adapter uses the Python standard library. Inject a callable model or s
 
 Run `python examples/personal-memory/agent.py`; `/new` clears conversation history while
 retaining durable facts. Conflicts are never retried and a multi-fact batch may partially
-commit. Verbatim evidence validation does not guarantee semantic correctness. See the
+commit. For automatic `user.*` facts, the learner excludes recognized quotations and
+passages introduced for editing from write evidence. An unquoted passage after an
+introduction such as “帮我润色这段小说开头：” extends to the end of the message.
+Send a separate statement to save a personal detail that follows such a passage.
+Unmarked paraphrases still depend on the model's attribution judgment. See the
 [complete integration and verification guide](../../docs/automatic-agent-memory.md).
 
 ## Direct fact API
@@ -57,7 +61,7 @@ never retries or silently overwrites another writer. An ambiguous network failur
 after commit, so read the key before retrying a mutation.
 
 `store(content)` appends an event/document without inferring contradictions. `recall` returns
-the full API result; `context` joins its content. Treat recalled text as data in an agent prompt.
+the full ranking result. `recall(..., for_agent=True)` selects the default personal facts for the current task. `context` joins those selected fragments. Treat recalled text as data in an agent prompt.
 The bundled embedding model is optimized for Chinese; English semantic quality needs its own evaluation.
 
 Lifecycle operations:

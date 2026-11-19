@@ -43,25 +43,52 @@
         <div class="library-toolbar"><span id="library-description">当前有效的事实</span><label class="toggle-label"><input type="checkbox" id="include-inactive"> 含已失效</label></div>
         <div id="memory-list" class="memory-list" aria-live="polite"><div class="empty-state"><span>◈</span><h3>正在读取记忆</h3><p>连接本地服务后即可查看。</p></div></div>
         <button id="load-more" class="load-more" hidden>加载更多</button>
-        <div class="panel-foot">同一个事实使用同一个 key，更新后只召回当前版本。</div>
+        <div class="panel-foot">更新同一项资料后，下次检索会使用新版本。</div>
       </section>
-      <section class="panel recall-panel" aria-labelledby="recall-title"><div class="panel-header"><div><span class="section-number">02</span><h2 id="recall-title">试着唤起记忆</h2></div><span class="small-label">真实检索</span></div>
-        <form id="recall-form"><label class="sr-only" for="query">想让 Agent 回忆什么？</label><textarea id="query" rows="3" maxlength="4000" placeholder="用户喜欢什么咖啡？" required></textarea><div class="query-options"><label for="retrieval-mode" class="sr-only">检索方式</label><select id="retrieval-mode"><option value="HYBRID">混合检索</option><option value="KEYWORD_ONLY">中文关键词</option><option value="VECTOR_ONLY">向量检索</option></select><button class="button primary" type="submit" id="recall-submit">检索记忆 <span>↗</span></button></div></form>
-        <div class="suggestions"><span>试试</span><button data-query="用户喜欢什么咖啡？">咖啡偏好</button><button data-query="用户现在住在哪里？">当前住所</button><button data-query="这个项目用什么技术栈？">项目技术栈</button></div>
-        <div class="result-header"><span id="result-meta">等待一次回忆</span><button id="copy-context" class="text-button" hidden>复制给 Agent</button></div>
-        <div id="recall-results"><div class="empty-state recall-empty"><span>⌕</span><h3>记忆会在这里浮现</h3><p>用自然语言提问，查看可交给 Agent 的参考片段。<br>这里展示检索结果，不生成聊天答案。</p></div></div>
+      <section class="panel recall-panel" aria-labelledby="recall-title"><div class="panel-header"><div><span class="section-number">02</span><h2 id="recall-title">把任务交给下一个 Agent</h2></div></div>
+        <form id="recall-form"><label for="query">你想让它做什么？</label><textarea id="query" rows="3" maxlength="4000" placeholder="例如：按我平时的口味写一条咖啡自取订单，带上我的称呼。" required></textarea><div class="query-options"><label for="retrieval-mode" class="sr-only">检索方式</label><select id="retrieval-mode"><option value="HYBRID">混合检索</option><option value="KEYWORD_ONLY">中文关键词</option><option value="VECTOR_ONLY">向量检索</option></select><button class="button primary" type="submit" id="recall-submit">检索记忆 <span>↗</span></button></div></form>
+        <div class="suggestions"><span>试试</span><button data-query="用户喜欢什么咖啡？">咖啡偏好</button><button data-query="用户现在住在哪里？">当前住所</button><button data-query="这个项目用什么技术栈？">项目技术栈</button><button data-query="帮我写一条咖啡自取订单，带上我的称呼，按我平时的口味来。">写自取订单</button><button data-query="帮我润色：今天下午三点开会。">润色通知</button></div>
+        <div class="result-header"><span id="result-meta" role="status">等待检索</span><button id="copy-context" type="button" class="text-button" hidden>仅复制所选片段</button></div>
+        <div id="recall-results"><div class="empty-state recall-empty"><span>⌕</span><h3>记忆会在这里浮现</h3><p>检索后，勾选想交给下一个 Agent 的资料。</p></div></div>
+        <section id="handoff" class="handoff" aria-labelledby="handoff-title" hidden>
+          <label id="handoff-title" for="handoff-preview">待复制的消息</label>
+          <textarea id="handoff-preview" rows="5" readonly spellcheck="false" aria-describedby="handoff-help"></textarea>
+          <p id="handoff-help">复制后粘贴到豆包或其他 Agent 的对话框，由你发送。</p>
+          <button id="copy-handoff" type="button" class="button primary">复制整条消息</button>
+        </section>
+        <div id="raw-fallback" class="handoff" hidden><label for="raw-preview">所选记忆片段</label><textarea id="raw-preview" readonly></textarea></div>
       </section>
     </div>
     <footer class="page-footer"><span><span class="footer-dot"></span> 本地保存，随时取回。</span><span>VORTEX / PERSONAL MEMORY</span></footer>
   </main>
 
   <dialog id="editor-dialog" class="editor-dialog"><div class="dialog-heading"><div><p class="eyebrow">MEMORY DETAIL</p><h2 id="editor-title">新建记忆</h2></div><button class="icon-button" data-close="editor-dialog" aria-label="关闭记忆编辑">×</button></div>
-    <form id="memory-form"><div class="key-label"><label for="fact-key">事实标识 <span>key</span></label><button id="load-key" type="button" class="text-button">读取已有记忆</button></div><input id="fact-key" maxlength="128" placeholder="例如 user.home.city" required autocomplete="off"><p class="field-help">用稳定的名称标识一个事实。修改住所时，继续更新这个 key。</p><label for="fact-content">记住什么</label><textarea id="fact-content" rows="4" maxlength="2000" placeholder="例如：我喜欢喝美式咖啡，不加糖。" required></textarea><div class="field-row"><div><label for="fact-tags">标签 <span>可选</span></label><input id="fact-tags" placeholder="偏好, 生活"></div><div><label for="fact-expiry">有效期至 <span>可选</span></label><input id="fact-expiry" type="datetime-local"></div></div><p class="field-help">留空则长期保存。单条事实最多 480 个模型 token。</p><div id="editor-error" class="inline-error" role="alert" hidden></div><div class="editor-actions"><span id="revision-label">首次保存 · v1</span><button class="button primary" id="save-memory" type="submit">保存记忆</button></div></form>
+    <form id="memory-form">
+      <div id="fact-kind-row"><label for="fact-kind">要记住哪项资料？</label><select id="fact-kind" required>
+        <option value="">请选择</option><option value="user.name">称呼</option><option value="user.preference.coffee">咖啡口味</option><option value="user.home.city">居住城市</option><option value="user.work.role">职业</option><option value="user.preference.language">回复语言</option><option value="custom">其他（自定义标识）</option>
+      </select></div>
+      <div id="fact-key-row" hidden><div class="key-label"><label for="fact-key">事实标识 <span>key</span></label><button id="load-key" type="button" class="text-button">读取已有记忆</button></div><input id="fact-key" maxlength="128" placeholder="例如 project.vortex.stack" autocomplete="off"><p class="field-help">使用同一标识可以更新已有资料。</p></div>
+      <label for="fact-content">记住什么</label><textarea id="fact-content" rows="4" maxlength="2000" placeholder="例如：我喜欢喝美式咖啡，不加糖。" required></textarea><div class="field-row"><div><label for="fact-tags">标签 <span>可选</span></label><input id="fact-tags" placeholder="偏好, 生活"></div><div><label for="fact-expiry">有效期至 <span>可选</span></label><input id="fact-expiry" type="datetime-local"></div></div><p class="field-help">留空则长期保存。单条事实最多 480 个模型 token。</p><div id="editor-error" class="inline-error" role="alert" hidden></div><div class="editor-actions"><span id="revision-label">首次保存 · v1</span><button class="button primary" id="save-memory" type="submit">保存记忆</button></div></form>
     <section id="history-section" hidden><div class="history-heading"><h3>版本历史</h3><span>旧版本不参与普通召回</span></div><ol id="history-list" class="history-list"></ol><button id="history-more" class="text-button" hidden>更早的版本 ↓</button><div class="danger-actions"><button id="retract-memory" class="text-button">撤回记忆</button><button id="delete-memory" class="text-button danger">删除内容与历史</button></div><div id="delete-confirmation" class="delete-confirmation" hidden><p>删除此事实的内容和历史，仅保留版本标记。已有备份不会一起删除。</p><button id="confirm-delete" class="button danger-button">确认删除</button><button id="cancel-delete" class="text-button">取消</button></div></section>
   </dialog>
 
   <dialog id="connection-dialog"><div class="dialog-heading"><h2>连接设置</h2><button class="icon-button" data-close="connection-dialog" aria-label="关闭连接设置">×</button></div><p class="dialog-intro">工作台连接当前服务。若启用了鉴权，输入对应的 Bearer token。</p><form id="connection-form"><label for="bearer-token">Bearer token <span>未启用鉴权时留空</span></label><input id="bearer-token" type="password" autocomplete="off" placeholder="仅保存在当前页面内存中"><p class="field-help">刷新页面后需要重新输入；不会写入浏览器持久存储。</p><button class="button primary" type="submit">连接服务</button></form></dialog>
 
-  <dialog id="guide-dialog"><div class="dialog-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h2>接入你的 Agent</h2></div><button class="icon-button" data-close="guide-dialog" aria-label="关闭接入指南">×</button></div><p class="dialog-intro">工作台和你的 Agent 共用同一个记忆空间。把检索到的片段作为参考数据加入上下文。</p><h3>Python · 从仓库安装</h3><pre><code>python -m pip install ./sdk/python</code></pre><pre><code id="python-example"></code></pre><h3>MCP · stdio 配置</h3><p class="field-help">先安装 <code>python -m pip install "./sdk/python[mcp]"</code>，再将下面配置加入支持 MCP 的客户端。服务需保持运行。</p><pre><code id="mcp-example"></code></pre><p class="field-help">如果启用了鉴权，在环境变量中加入 VORTEX_SECURITY_BEARER_TOKEN。恢复链路和更多接口见 API 文档。</p></dialog>
+  <dialog id="guide-dialog" aria-labelledby="guide-title">
+    <div class="dialog-heading"><h2 id="guide-title">接入你的 Agent</h2><button class="icon-button" data-close="guide-dialog" aria-label="关闭接入指南">×</button></div>
+    <p class="dialog-intro">在 Agent 所用的 Python 环境中安装 Vortex（Python 3.10 或更高版本）。使用期间保持本地服务运行。</p>
+    <h3>从下载的 ZIP 安装</h3>
+    <p>在解压后的文件夹打开 PowerShell。只用 Python SDK，执行前两行；接入 MCP 客户端，再执行第三行。</p>
+    <pre><code>$wheel = (Get-ChildItem -LiteralPath .\python -File -Filter '*.whl').FullName
+python -m pip install "$wheel"
+python -m pip install "${wheel}[mcp]"</code></pre>
+    <details><summary>从源码仓库安装</summary><p>在仓库根目录执行。只用 Python SDK 可以省略 <code>[mcp]</code>。</p><pre><code>python -m pip install "./sdk/python[mcp]"</code></pre></details>
+    <h3>在 Python 中检索</h3><pre><code id="python-example"></code></pre>
+    <h3>连接 MCP 客户端（stdio）</h3>
+    <p>在刚才安装的环境中运行这条命令。</p><pre><code>python -c "import sys; print(sys.executable)"</code></pre>
+    <label for="mcp-python">将输出的 Python 完整路径粘贴到这里</label><input id="mcp-python" type="text" spellcheck="false" autocomplete="off" placeholder="例如 C:\My Agent\.venv\Scripts\python.exe">
+    <p>支持 JSON 的客户端可使用下列配置。其他客户端可分别填写启动命令、参数和环境变量。已启用鉴权的服务还需设置 <code>VORTEX_SECURITY_BEARER_TOKEN</code>。</p>
+    <pre><code id="mcp-example"></code></pre>
+  </dialog>
 </body>
 </html>

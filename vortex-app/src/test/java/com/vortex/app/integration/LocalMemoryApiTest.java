@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.*;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.main.allow-bean-definition-overriding=true", "vortex.storage.l2.embedding-dim=3",
         "vortex.security.enabled=true", "vortex.security.bearer-token=local-test-token-0123456789abcdef0123456789",
-        "vortex.security.namespace-patterns[0]=personal", "vortex.security.audit-enabled=false"})
+        "vortex.security.namespace-patterns[0]=personal", "vortex.security.namespace-patterns[1]=context-trial", "vortex.security.audit-enabled=false"})
 @ActiveProfiles("local")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class LocalMemoryApiTest {
@@ -116,6 +116,37 @@ class LocalMemoryApiTest {
                 .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(put("oversize", "文".repeat(481), 0).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(call(HttpMethod.GET, "/api/v1/memory/facts/history?namespace=personal&key=x&limit=101", null).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void agentContextIncludesOnlyRequestedProfileFieldsBeforeApplyingTopK() throws Exception {
+        // Use a distinct namespace so these fixtures cannot affect the catalog/pagination tests.
+        String namespace = "context-trial";
+        Map<String, String> profile = Map.of("user.name", "我叫雾杉七九", "user.preference.coffee", "我喜欢无糖拿铁",
+                "user.home.city", "我住宁波", "user.work.role", "我做动画设计", "user.preference.language", "用法语回复我");
+        for (var entry : profile.entrySet()) {
+            assertThat(call(HttpMethod.PUT, "/api/v1/memory/facts", Map.of("namespace", namespace, "key", entry.getKey(),
+                    "content", entry.getValue(), "expectedRevision", 0)).getStatusCode()).isEqualTo(HttpStatus.OK);
+        }
+        try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(
+                getClass().getResourceAsStream("/agent-context-cases.csv"), java.nio.charset.StandardCharsets.UTF_8))) {
+            for (String line : reader.lines().skip(1).toList()) {
+                String[] row = line.split(",", -1);
+                var expected = java.util.Arrays.stream(row[2].split(" ")).filter(key -> !key.isEmpty()).map(profile::get).toList();
+                var request = Map.of("namespace", namespace, "query", row[1], "topK", Math.max(1, expected.size()));
+                var response = call(HttpMethod.POST, "/api/v1/memory/context", request);
+                assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+                assertThat(contents(response.getBody())).as(row[0]).containsExactlyInAnyOrderElementsOf(expected);
+            }
+        }
+        var denied = Map.of("namespace", "forbidden", "query", "我叫什么");
+        assertThat(call(HttpMethod.POST, "/api/v1/memory/context", denied).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        var raw = call(HttpMethod.POST, "/api/v1/memory/recall", Map.of("namespace", namespace, "query", "润色例句"));
+        assertThat(contents(raw.getBody())).isNotEmpty();
+        var project = Map.of("namespace", namespace, "key", "project.stack", "content", "项目技术栈是Java", "expectedRevision", 0);
+        assertThat(call(HttpMethod.PUT, "/api/v1/memory/facts", project).getStatusCode()).isEqualTo(HttpStatus.OK);
+        var projectContext = call(HttpMethod.POST, "/api/v1/memory/context", Map.of("namespace", namespace, "query", "项目技术栈"));
+        assertThat(contents(projectContext.getBody())).containsExactly("项目技术栈是Java");
     }
 
     @Test

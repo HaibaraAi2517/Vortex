@@ -27,6 +27,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.ObjectProvider;
+import com.vortex.storage.api.FactMemoryStore;
 
 @RestController
 @RequestMapping("/api/v1/memory")
@@ -35,6 +37,7 @@ import java.util.Map;
 public class MemoryController {
 
     private final HierarchicalMemoryController hmc;
+    private final ObjectProvider<FactMemoryStore> factStores;
     private final AsyncMemoryPipeline asyncMemoryPipeline;
     private final MemorySloHealthIndicator memorySloHealthIndicator;
     private final NamespaceAuthorizationService namespaceAuthorization;
@@ -139,6 +142,20 @@ public class MemoryController {
         namespaceAuthorization.requireAccess(query.getNamespace());
         return ResponseEntity.ok(hmc.recall(query));
     }
+
+    @PostMapping("/context")
+    public AgentContext context(@Valid @RequestBody RecallQuery query) {
+        namespaceAuthorization.requireAccess(query.getNamespace());
+        var store = factStores.getIfAvailable();
+        var result = store == null ? hmc.recall(query) : hmc.recallForContext(query,
+                store.excludeFactKeys(query.getNamespace(), PersonalContextPolicy.excludedKeys(query.getQuery())));
+        var hits = result.getFragments().stream().map(hit -> new ContextHit(
+                MemoryResponseModels.from(hit.getFragment()), hit.getScore())).toList();
+        return new AgentContext(hits, result.getTotalTokens());
+    }
+
+    public record AgentContext(List<ContextHit> fragments, int totalTokens) {}
+    public record ContextHit(MemoryResponseModels.MemoryFragmentResponse fragment, double score) {}
 
     @PostMapping("/feedback")
     public ResponseEntity<Map<String, String>> feedback(@Valid @RequestBody MemoryFeedbackRequest request) {
