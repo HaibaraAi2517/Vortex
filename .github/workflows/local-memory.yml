@@ -5,7 +5,15 @@ on:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
-  workflow_call:
+    inputs:
+      draft_release:
+        description: 'Create a GitHub prerelease draft after both platforms pass'
+        type: boolean
+        default: false
+      release_tag:
+        description: 'Optional version tag, e.g. local-0.3.0-alpha.1. An empty tag uses the run number.'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -86,3 +94,12 @@ jobs:
             target/local-memory-smoke-*/server-*.log
             **/target/surefire-reports/*.txt
           if-no-files-found: warn
+
+  draft-release:
+    needs: local-memory
+    if: github.event_name == 'workflow_dispatch' && inputs.draft_release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/local-alpha-release.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}

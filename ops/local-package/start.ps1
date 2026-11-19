@@ -11,11 +11,32 @@ if (-not $AppRoot) { $AppRoot = $PSScriptRoot }
 Push-Location -LiteralPath $AppRoot
 $oldDataDir = $env:VORTEX_DATA_DIR
 $browserJob = $null
+$runtimeJunction = $null
 try {
     if (-not (Test-Path -LiteralPath $Jar -PathType Leaf)) { throw "找不到应用文件 $Jar。请先将整个 ZIP 解压，再运行启动器。" }
     $bundledJava = Join-Path $AppRoot 'runtime/bin/java.exe'
     if (Test-Path -LiteralPath $bundledJava -PathType Leaf) {
-        $java = $bundledJava
+        $runtimeRoot = $AppRoot
+        # The bundled Windows JRE 21 uses the ANSI code page to find its native libraries.
+        $ansi = [Text.Encoding]::Default  # Windows PowerShell invoked by Start Vortex.cmd
+        if ($PSVersionTable.PSEdition -eq 'Core') {
+            $codePage = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage').ACP
+            $ansi = [Text.Encoding]::GetEncoding([int]$codePage)
+        }
+        if ($ansi.GetString($ansi.GetBytes($AppRoot)) -cne $AppRoot) {
+            # Java expands an 8.3 alias back to the original name. Use an actual directory junction.
+            $tempRoot = [IO.Path]::GetTempPath()
+            $pathHint = '请把 ZIP 解压到可写的英文路径（如 D:\Vortex），或将 TEMP 设置为你自己的可写英文临时目录，再运行启动器。'
+            if ($ansi.GetString($ansi.GetBytes($tempRoot)) -cne $tempRoot) { throw $pathHint }
+            $linkPath = Join-Path $tempRoot ('vortex-' + [Guid]::NewGuid().ToString('N'))
+            try { $null = New-Item -ItemType Junction -Path $linkPath -Target $AppRoot }
+            catch { throw "无法在 $tempRoot 创建临时目录链接。$pathHint" }
+            $runtimeJunction = $linkPath
+            $runtimeRoot = $runtimeJunction
+            if ($DataDir) { $DataDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DataDir) }
+            Set-Location -LiteralPath $runtimeRoot
+        }
+        $java = Join-Path $runtimeRoot 'runtime/bin/java.exe'
     } elseif ($env:JAVA_HOME -and (Test-Path -LiteralPath (Join-Path $env:JAVA_HOME 'bin/java.exe') -PathType Leaf)) {
         $java = Join-Path $env:JAVA_HOME 'bin/java.exe'
     } else {
@@ -74,4 +95,5 @@ try {
     if ($null -ne $browserJob) { Remove-Job -Job $browserJob -Force }
     $env:VORTEX_DATA_DIR = $oldDataDir
     Pop-Location
+    if ($runtimeJunction) { [IO.Directory]::Delete($runtimeJunction) }
 }

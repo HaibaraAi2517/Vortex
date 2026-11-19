@@ -111,6 +111,7 @@ BGE-Small-ZH 偏向中文，英文语义质量需另行评测。`forget` 是逻�
 
 | 验证 | 实际结果 | 证据 |
 | --- | --- | --- |
+| Windows 发行包与 Codex | 两个全新 Codex 会话通过 MCP 共享偏好，Python 更新后读回第 2 版 | [安装与实测记录](docs/releases/local-0.3.0-alpha.1.md) |
 | 本地服务与持久化 | 中文检索、300 条干扰记忆、版本冲突、强制重启和官方 MCP Client 调用通过 | [本地服务验收](docs/local-memory-verification.md) |
 | Python ↔ Spring AI | 7 轮真实模型对话，新进程共享并更新城市与咖啡偏好 | [自动记忆验收](docs/automatic-agent-memory-verification.md) |
 | Codex CLI ↔ Python | 9 轮真实模型对话，保存、更新、撤回后读取通过；6 个独立 Codex 会话、12 次 MCP 调用 | [Codex 共享记忆验收](docs/codex-memory-verification.md) |

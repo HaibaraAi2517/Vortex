@@ -26,6 +26,7 @@ def main():
              "agent.py": root / "examples/personal-memory/agent.py",
              "automatic-memory.md": root / "docs/automatic-agent-memory.md",
              "docs/local-memory.md": root / "docs/local-memory.md",
+             "docs/releases/local-0.3.0-alpha.1.md": root / "docs/releases/local-0.3.0-alpha.1.md",
              "docs/local-memory-verification.md": root / "docs/local-memory-verification.md",
              "docs/automatic-agent-memory.md": root / "docs/automatic-agent-memory.md",
              "docs/automatic-agent-memory-verification.md": root / "docs/automatic-agent-memory-verification.md",

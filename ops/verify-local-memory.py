@@ -151,7 +151,7 @@ def main():
     run_dir.mkdir()
     app_cwd = repo
     if args.bundle:
-        app_cwd = run_dir / "Vortex 安装测试"
+        app_cwd = run_dir / "Vortex 安装测试 ☕"
         bundle_hash, manifest = check_bundle(args.bundle.resolve(), app_cwd)
         if args.bundled_runtime:
             lock = json.loads((repo / "ops/temurin-windows-x64.json").read_text(encoding="utf-8"))
