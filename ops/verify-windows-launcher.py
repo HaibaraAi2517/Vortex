@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -17,10 +18,33 @@ from urllib.request import ProxyHandler, Request, build_opener
 import zipfile
 
 
+def retry_file_operation(operation):
+    # Windows can still be unmapping the terminated JVM or scanning its DLLs after taskkill returns.
+    deadline = time.monotonic() + 12
+    while True:
+        try:
+            return operation()
+        except OSError as error:
+            if getattr(error, "winerror", None) not in (5, 32, 33) or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.25)
+
+
+@contextmanager
+def temporary_trial():
+    parent = Path(tempfile.gettempdir()).resolve()
+    trial = Path(tempfile.mkdtemp(prefix="Vortex 用户试用 ", dir=parent))
+    try:
+        yield trial
+    finally:
+        if trial.resolve() != trial or trial.parent != parent:
+            raise RuntimeError(f"Unexpected test cleanup path: {trial}")
+        retry_file_operation(lambda: shutil.rmtree(trial))
+
+
 def verify(bundle):
     http = build_opener(ProxyHandler({}))
-    with tempfile.TemporaryDirectory(prefix="Vortex 用户试用 ") as temporary:
-        trial = Path(temporary)
+    with temporary_trial() as trial:
         original = trial / "第一版"
         upgrade = trial / "新版"
         with zipfile.ZipFile(bundle) as archive:
@@ -81,9 +105,9 @@ def verify(bundle):
                 assert json.load(stored)["revision"] == 1
         assert (Path(env["LOCALAPPDATA"]) / "Vortex/data/index").is_dir()
         assert not (original / "data/vortex").exists()
-        # Both directories belong exclusively to this TemporaryDirectory.
+        # Both directories belong exclusively to this test run.
         assert original.resolve().parent == upgrade.resolve().parent == trial.resolve()
-        original.rename(upgrade)
+        retry_file_operation(lambda: original.rename(upgrade))
         with running(upgrade):
             with http.open(facts + "?namespace=launcher-smoke&key=user.name", timeout=10) as response:
                 fact = json.load(response)
