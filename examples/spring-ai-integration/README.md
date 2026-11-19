@@ -17,7 +17,10 @@ var report = (VortexFactLearner.Report) result.context()
 `before()` snapshots revisions and injects retrieved facts. After a completed answer,
 the raw extraction model proposes updates only from the user's message. The learner
 validates the configured field keys and verbatim evidence, then commits with the original
-revisions. Do not recursively call the advised ChatClient from the extraction model.
+revisions. For automatic personal fields (`user.*`), quoted dialogue and recognized
+source passages are excluded from both set and retract evidence. See the
+[Python integration notes](../../sdk/python/README.md#automatic-agent-memory) for the shared boundaries.
+Do not recursively call the advised ChatClient from the extraction model.
 
 Display `report.errors()` alongside the answer; `.content()` alone discards commit status.
 Multi-field updates are not a transaction. Conflicts are not retried, and network failures
@@ -53,7 +56,7 @@ includes a live Python → Spring AI → Python → MCP verification command.
 ## Original recall-only demo
 
 The original demo below shows Vortex as durable recall memory for Spring AI `ChatClient`.
-It implements a small `BaseAdvisor` that calls Vortex `/api/v1/memory/recall`
+It implements a small `BaseAdvisor` that calls Vortex `/api/v1/memory/context`
 with the current user request, then injects the recalled facts into the Spring AI
 system prompt.
 
@@ -121,7 +124,7 @@ production deployment concerns.
 ## API Surface Used
 
 - `POST /api/v1/memory/store`
-- `POST /api/v1/memory/recall`
+- `POST /api/v1/memory/context`
 - `GET /api/v1/memory/facts` (automatic learner)
 - `PUT /api/v1/memory/facts` (automatic learner)
 - `POST /api/v1/memory/facts/retract` (automatic learner)

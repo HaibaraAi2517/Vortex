@@ -1,0 +1,20 @@
+{
+  "vendor": "Eclipse Adoptium",
+  "product": "Eclipse Temurin JRE",
+  "version": "21.0.13+9-LTS",
+  "os": "windows",
+  "arch": "x64",
+  "vm": "hotspot",
+  "release_url": "https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.13%2B9",
+  "download_base": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/",
+  "archive_root": "jdk-21.0.13+9-jre/",
+  "binary": {
+    "name": "OpenJDK21U-jre_x64_windows_hotspot_21.0.13_9.zip",
+    "sha256": "2332c0b4cff6bed722da3567c91d5e47568bcba863fa4945d0a8d6fc76158628"
+  },
+  "source": {
+    "name": "OpenJDK21U-jdk-sources_21.0.13_9.tar.gz",
+    "sha256": "b5232c9980d8a0f0459676c084c41c6e2c771ed9e785890b03c6a438406ad1ca"
+  },
+  "build_source": "https://github.com/adoptium/temurin-build/tree/1cf43d7a3e77886bfea7d550a902e151a87d724d"
+}

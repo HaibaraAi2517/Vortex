@@ -25,6 +25,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.function.Predicate;
 
 /**
  * Semantic recall orchestrator.
@@ -147,14 +148,14 @@ public class RecallOrchestrator {
      * 3. Prefetch L2 results back into L1 for subsequent calls.
      */
     public RecallResult recall(RecallQuery query) {
-        return recall(query, false);
+        return recall(query, false, null);
     }
 
     RecallResult recallReadOnlyForEvaluation(RecallQuery query) {
-        return recall(query, true);
+        return recall(query, true, null);
     }
 
-    private RecallResult recall(RecallQuery query, boolean readOnlyEvaluation) {
+    RecallResult recall(RecallQuery query, boolean readOnlyEvaluation, Predicate<String> allowed) {
         long startedAt = System.nanoTime();
         List<String> requiredTags = normalizeTags(query.getTags());
         RetrievalMode retrievalMode = query.getRetrievalMode() == null
@@ -254,6 +255,10 @@ public class RecallOrchestrator {
         }
 
         if (!vectorEnabled) candidatesById.keySet().retainAll(keywordScoresById.keySet());
+        if (allowed != null) {
+            candidatesById.keySet().removeIf(allowed.negate());
+            keywordScoresById.keySet().retainAll(candidatesById.keySet());
+        }
         List<MemoryFragment> evaluationPool = new ArrayList<>(candidatesById.values());
         List<ScoredCandidate> activeRanked;
         List<ScoredCandidate> shadowRanked;

@@ -1,11 +1,18 @@
 # 本地 Agent 记忆服务
 
-目标用户是运行个人 Agent 的开发者：用 Python 或 MCP 记录偏好、项目事实和跨会话上下文。
-默认 `local` 模式只有一个 Java 进程，使用 Lucene 持久化全文索引、HNSW 向量和归档。
-不需要 Milvus、MinIO、etcd、Redis 或外部模型 API Key。此功能属于当前源码的 alpha，
-**已发布的 0.2.0 镜像不包含它**。
+Vortex 在本机保存个人事实和版本，供工作台和 Agent 在不同会话中共用。Windows x64 包含 Java 21、应用和本地中文检索模型。启动工作台无需 Python、Docker 或模型服务密钥。
 
-## 启动
+## 下载并启动
+
+1. 在 GitHub Releases 选择标签以 `local-` 开头的预览版。Windows 用户在 Assets 下载 `vortex-local-windows-x64.zip`。Linux 用户下载 `vortex-local-alpha.zip`，使用已安装的 Java 21 运行 `bash start.sh`。[Releases](https://github.com/HaibaraAi2517/Vortex/releases)
+2. 如果尚无预览版，登录 GitHub，进入包含本版启动器的一次成功 Local Memory 构建，在 Artifacts 下载 `vortex-local-windows-release` 或 `vortex-local-ubuntu-latest`。先解压 CI 产物，再解压里面的应用 ZIP。若当前没有相应产物，可按下文从源码启动。[Local Memory 工作流](https://github.com/HaibaraAi2517/Vortex/actions/workflows/local-memory.yml)
+3. Windows 上双击解压目录里的 **`Start Vortex.cmd`**。保持窗口打开，工作台就绪后浏览器自动打开。默认地址为 `http://127.0.0.1:8080/`。端口被其他程序占用时，可在解压目录的 PowerShell 运行 `& '.\Start Vortex.cmd' -Port 8081`，并把 Agent 的服务地址改为相同端口。
+
+点击「运行真实演示」，工作台将在独立空间把住所从北京更新到上海。点「当前住所」，只勾选上海这条记忆，检查「待复制的消息」，再点「复制任务和所选记忆」。在豆包或其他 Agent 的新对话里粘贴并发送，查看它是否回答上海。工作台只把你勾选的资料放进这条消息。
+
+工作台可直接使用已打包的本地模型。Python 客户端和 MCP 是可选组件，在解压目录按 `README.txt` 安装 `python/` 中的 wheel。Codex CLI 复用自己的登录与模型配置。Python 或 Spring AI 自动回答和更新事实时，需要配置聊天模型。
+
+## 从源码启动
 
 源码启动需要 JDK 21、Maven 3.9+ 和 Python 3.10+。启动脚本首次下载固定 revision 的
 BGE-Small-ZH 模型并校验 SHA-256，已有正确文件会直接复用。模型偏向中文，英文全文检索可用，
@@ -48,7 +55,7 @@ API 默认只在本机可达。浏览器打开 `http://127.0.0.1:8080/` 使用�
 4. 左侧切换到 `personal`，新建自己的事实。刷新页面或重启服务后，事实列表从磁盘读取。
 
 列表按 key 稳定分页，默认展示有效事实。「含已失效」显示撤回和到期状态；删除的内容与历史不展示。
-如需再次使用已删除的 key，在「新建记忆」中填入 key 并点击「读取已有记忆」，读取版本标记后填写新内容保存。
+如需重新使用已删除的资料，在「新建记忆」中选择相同资料类型。自定义标识可选「其他（自定义标识）」并点击「读取已有记忆」，读取版本后填写新内容保存。
 编辑基于打开时读到的版本，发生 HTTP 409 时保留输入并提示重新读取，不自动覆盖他人更新。
 关闭编辑框会放弃未保存输入。查询展示真实检索片段，不生成答案或宣称答案正确率。
 列表管理通过 facts 接口保存的事实；通过 store 追加的事件/文档仍可检索，不属于可更新事实目录。
@@ -63,7 +70,7 @@ API 默认只在本机可达。浏览器打开 `http://127.0.0.1:8080/` 使用�
 以下是直接操作事实的 API。如果希望 Agent 从正常聊天中自动检索、提取和更新事实，
 请使用 [Python/Spring AI 自动记忆接入](automatic-agent-memory.md)，其中包含真实跨进程验证脚本。
 
-另开一个终端，保持服务运行：
+源码用户在仓库根目录另开终端，保持服务运行。ZIP 用户可按包内 `README.txt` 安装 wheel，再在解压目录运行 `python demo.py`。
 
 ```sh
 python -m pip install ./sdk/python
@@ -106,6 +113,7 @@ MCP 返回内容与引用，不把大块 embedding 数组塞进模型上下文�
 | `DELETE /api/v1/memory/facts?...&expectedRevision=2` | 删除 live store 中的内容与历史，仅留下防止旧请求复活的版本墓碑 |
 | `POST /api/v1/memory/store` | 追加事件/文档；local 模式成功返回前已经持久化 |
 | `POST /api/v1/memory/store/async` | 显式异步导入；只有 pipeline COMPLETED 才代表最终持久化 |
+| `POST /api/v1/memory/context` | 生成当前任务所需的 Agent 上下文，可返回零条。默认个人字段按任务选择 |
 | `POST /api/v1/memory/recall` | 默认 HYBRID + RRF；也可选择 KEYWORD_ONLY / VECTOR_ONLY |
 
 冲突返回 HTTP 409 和 `currentRevision`，不会自动执行“最后写入获胜”。断网可能发生在提交后，
@@ -118,6 +126,14 @@ MCP 返回内容与引用，不把大块 embedding 数组塞进模型上下文�
 并按字面文本处理，不执行 Lucene 查询语法。全是无关内容时，纯关键词查询返回空集。
 
 ## 持久化、边界与备份
+
+Windows ZIP 新安装使用 `%LOCALAPPDATA%\Vortex\data`，数据独立于解压目录。启动窗口会显示实际保存位置。升级前先按 `Ctrl+C` 停止服务，备份这个目录，再把新版解压到新文件夹。若旧包将记忆保存在相邻的 `data\vortex`，可在新包目录打开 PowerShell，直接指定原位置：
+
+```powershell
+& '.\Start Vortex.cmd' -DataDir 'D:\旧版Vortex\data\vortex'
+```
+
+以后可用同一命令启动，或设置 `VORTEX_DATA_DIR` 指向该目录。启动器依次选择显式 `-DataDir`、`VORTEX_DATA_DIR`、当前包相邻的旧 `data\vortex` 和当前用户的默认位置。请勿将两个已有数据目录直接覆盖或合并。
 
 源码默认数据目录是 `./data/vortex`，可用 `VORTEX_DATA_DIR` 指定绝对目录。
 单容器使用命名卷 `vortex-local-data`。一次目录只能由一个进程打开；第二个进程会明确失败。
@@ -157,18 +173,15 @@ storage 测试覆盖超过 256 条的语料、索引重开、并发 CAS、晚到
 
 ## 构建可分享的试用包
 
-在上述构建与 smoke 通过后运行：
+在仓库根目录完成 Java 构建及 `python ops/verify-local-memory.py --mcp` 后，运行：
 
 ```sh
 python -m pip install build
 python -m build sdk/python
 python ops/package-local.py
+python ops/package-windows-runtime.py
 ```
 
-生成 `target/vortex-local-alpha.zip` 及 SHA-256 文件。ZIP 内含应用 JAR、本地模型、Python wheel、
-启动脚本和验证记录；打包器会检查 smoke 报告对应的 JAR 哈希，拒绝把旧验证套到新二进制上。
-收件人只需安装 Java 21，解压后执行 `start.ps1` 或 `bash start.sh`。Python/MCP 客户端可按包内 README 安装。
-这只是可分享的源码试用快照，没有自动发布到 GitHub、PyPI 或 Maven Central。
+`target/vortex-local-alpha.zip` 包含应用、本地模型和 Python wheel，需要系统 Java 21。`target/vortex-local-windows-x64.zip` 额外包含 Windows x64 用的 Temurin 21 运行时。两者均有配套的 `.zip.sha256`。分发 Windows 版本时，将生成的 Temurin 源码压缩包和摘要一起提供。
 
-模型 ONNX 与面试准备文档已从当前 Git 跟踪范围移出，本地副本保留。旧 Git 历史未重写；
-新用户可用浅克隆避开旧大文件历史。历史评测证据仍保留原链接，避免破坏可追溯性。
+打包器核对本地模型摘要、wheel 与源码、JAR 与通过测试的版本。验收可从解压后的 ZIP 启动服务并调用其中的 Python/MCP 客户端。构建产物位于 `target/`，`local-` 预览版与旧版 Milvus/MinIO 部署使用不同的下载入口。

@@ -23,7 +23,7 @@ class VortexMemoryClientTest {
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
             respond(exchange, "{\"count\":1}");
         });
-        server.createContext("/api/v1/memory/recall", exchange -> respond(exchange,
+        server.createContext("/api/v1/memory/context", exchange -> respond(exchange,
                 "{\"fragments\":[{\"fragment\":{\"id\":\"memory-1\",\"content\":\"durable fact\"},\"score\":0.9}]}"));
         server.start();
 

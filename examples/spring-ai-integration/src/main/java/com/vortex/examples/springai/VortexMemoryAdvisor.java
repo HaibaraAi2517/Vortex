@@ -20,6 +20,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 public final class VortexMemoryAdvisor implements BaseAdvisor {
 
@@ -37,7 +39,7 @@ public final class VortexMemoryAdvisor implements BaseAdvisor {
     private final int order;
     private final VortexFactLearner learner;
 
-    private record LearningState(VortexFactLearner.Snapshot snapshot, AtomicBoolean completed) {}
+    private record LearningState(VortexFactLearner.Snapshot snapshot, Set<String> visibleIds, AtomicBoolean completed) {}
 
     public VortexMemoryAdvisor(VortexMemoryClient memoryClient, String defaultNamespace) {
         this(memoryClient, defaultNamespace, 5, 768, Advisor.DEFAULT_CHAT_MEMORY_PRECEDENCE_ORDER - 20);
@@ -78,9 +80,10 @@ public final class VortexMemoryAdvisor implements BaseAdvisor {
         // Revisions belong to this request, never to a shared mutable advisor field.
         context.remove(LEARNING_STATE);
         context.remove(CONTEXT_MEMORY_REPORT);
+        VortexFactLearner.Snapshot snapshot = null;
         if (learner != null) {
             try {
-                context.put(LEARNING_STATE, new LearningState(learner.snapshot(namespace, userQuery), new AtomicBoolean()));
+                snapshot = learner.snapshot(namespace, userQuery);
             } catch (IOException e) {
                 throw new IllegalStateException("Vortex fact snapshot failed", e);
             } catch (InterruptedException e) {
@@ -90,6 +93,11 @@ public final class VortexMemoryAdvisor implements BaseAdvisor {
         }
 
         List<VortexMemoryClient.RecallFragment> fragments = recall(userQuery, namespace, topK, tokenBudget);
+        if (snapshot != null) {
+            var visibleIds = fragments.stream().map(VortexMemoryClient.RecallFragment::fragmentId)
+                    .filter(Objects::nonNull).collect(Collectors.toSet());
+            context.put(LEARNING_STATE, new LearningState(snapshot, visibleIds, new AtomicBoolean()));
+        }
         if (fragments.isEmpty()) {
             context.put(CONTEXT_RECALL_COUNT, 0);
             return request.mutate().context(context)
@@ -114,7 +122,7 @@ public final class VortexMemoryAdvisor implements BaseAdvisor {
         Map<String, Object> context = new LinkedHashMap<>(response.context());
         Object state = context.remove(LEARNING_STATE);
         if (learner != null && state instanceof LearningState learning && learning.completed().compareAndSet(false, true)) {
-            context.put(CONTEXT_MEMORY_REPORT, successful ? learner.learn(learning.snapshot())
+            context.put(CONTEXT_MEMORY_REPORT, successful ? learner.learn(learning.snapshot(), learning.visibleIds())
                     : new VortexFactLearner.Report(List.of(), List.of(new VortexFactLearner.Failure(
                             "answer", null, "incomplete_answer", null))));
         }

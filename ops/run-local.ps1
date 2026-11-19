@@ -12,7 +12,6 @@ try {
         & python ops/download-model.py
         if ($LASTEXITCODE -ne 0) { throw "Model preparation failed" }
     }
-    if ($DataDir) { $env:VORTEX_DATA_DIR = [IO.Path]::GetFullPath($DataDir) }
     if (-not $SkipBuild) {
         & mvn -B -q -DskipTests package -pl vortex-app -am
         if ($LASTEXITCODE -ne 0) { throw "Maven build failed" }
@@ -20,9 +19,8 @@ try {
     $jar = Get-ChildItem -LiteralPath (Join-Path $repo "vortex-app/target") -Filter "vortex-app-*-exec.jar" |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if (-not $jar) { throw "Application jar is missing; run without -SkipBuild" }
-    Write-Host "Vortex memory workbench: http://127.0.0.1:$Port/"
-    Write-Host "API documentation: http://127.0.0.1:$Port/swagger-ui.html"
-    Write-Host "Persistent data: $(if ($env:VORTEX_DATA_DIR) { $env:VORTEX_DATA_DIR } else { './data/vortex' })"
-    & java --enable-preview -jar $jar.FullName --spring.profiles.active=local "--server.port=$Port"
-    if ($LASTEXITCODE -ne 0) { throw "Vortex exited with code $LASTEXITCODE" }
+    if (-not $DataDir) {
+        $DataDir = if ($env:VORTEX_DATA_DIR) { $env:VORTEX_DATA_DIR } else { Join-Path $repo "data/vortex" }
+    }
+    & (Join-Path $PSScriptRoot "local-package/start.ps1") -AppRoot $repo -Jar $jar.FullName -DataDir $DataDir -Port $Port -NoBrowser
 } finally { Pop-Location }

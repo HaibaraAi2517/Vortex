@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.function.Predicate;
 
 /**
  * Hierarchical Memory Controller (HMC) — facade.
@@ -253,6 +254,10 @@ public class HierarchicalMemoryController {
     /** Delegate to {@link RecallOrchestrator#recall}. */
     public RecallResult recall(RecallQuery query) {
         return recallOrchestrator.recall(query);
+    }
+
+    public RecallResult recallForContext(RecallQuery query, Predicate<String> allowed) {
+        return recallOrchestrator.recall(query, false, allowed);
     }
 
     /** Runs recall without reinforcement or runtime telemetry mutations for offline comparisons. */

@@ -1,0 +1,17 @@
+case,query,expected
+order,帮我写一句可以发给咖啡店的自取订单，带上我的取餐称呼，按我平时的口味来。资料不足就问我。,user.name user.preference.coffee
+name,我叫什么？,user.name
+coffee,照我平时的口味给我推荐一杯咖啡。,user.preference.coffee
+meeting,把这句话改得更自然：今天下午三点开会。,
+fiction,润色这句小说对白：「我叫林澈，我最爱双份浓缩。」,
+alt_order,替我给咖啡馆留言，用我的名字预留一杯我常喝的。,user.name user.preference.coffee
+alt_name,你还记得该怎么称呼我吗？,user.name
+alt_coffee,Which coffee do I usually order?,user.preference.coffee
+alt_city,Where do I live these days?,user.home.city
+alt_job,还记得我是做什么工作的吗？,user.work.role
+alt_language,我希望你用哪种语言回复我？,user.preference.language
+alt_edit,翻译成英文：我的咖啡口味和我的名字都写在杯子上。,
+alt_third_party,帮我推荐一杯咖啡给同事，她喜欢酸一点的。,
+alt_general,咖啡萃取一般需要多久？,
+alt_mixed,帮我润色「我叫阿岚」。另外，你还记得我的名字吗？,user.name
+alt_no_profile,别用我的个人资料，根据下面的话给咖啡店写个评价。,

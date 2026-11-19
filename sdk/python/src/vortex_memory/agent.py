@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Protocol, Sequence
 
+from ._attribution import author_segments
 from .client import VortexClient, VortexConflictError, VortexConnectionError, VortexHTTPError
 
 
@@ -38,6 +39,8 @@ If an active fact already has the same meaning, emit no update; do not just reph
 Use retract only when the user explicitly withdraws a fact without supplying a replacement; content must be empty.
 Do not retract facts merely because the user does not mention them. Never erase history.
 Evidence must be a nonempty verbatim substring of user_message supporting that specific update.
+For personal facts, user_message omits recognized quotations and source passages. Use a single intact author statement
+that identifies the speaker or subject. A third person, a fictional narrator and quoted dialogue are not the user.
 If a statement is ambiguous, unsupported, or not covered by the fields, skip it. Empty updates are normal.
 """
 
@@ -92,7 +95,7 @@ class MemorySession:
             raise ValueError("user_message must contain 1..20000 characters")
         # Capture revisions BEFORE either model call; never read a newer revision to overwrite it.
         snapshot = {f.key: self.memory.get_fact(f.key) for f in self.fields}
-        response = self.memory.recall(user_message, top_k=self.top_k, token_budget=self.token_budget)
+        response = self.memory.recall(user_message, top_k=self.top_k, token_budget=self.token_budget, for_agent=True)
         recalled = [{"id": hit["fragment"]["id"], "content": hit["fragment"]["content"],
                      "score": hit["score"]} for hit in response["fragments"]]
         messages = [
@@ -107,17 +110,20 @@ class MemorySession:
         result = MemoryTurn(answer=answer, recalled=recalled)
         # The generated answer never enters the extraction request as factual evidence.
         try:
+            segments = author_segments(user_message)
+            personal_only = all(f.key.startswith("user.") for f in self.fields)
+            visible_ids = {fragment["id"] for fragment in recalled}
             payload = {
                 "fields": [{"key": f.key, "description": f.description} for f in self.fields],
                 "current_facts": [{"key": key, "status": fact["status"],
                                    "content": fact.get("content") if fact["status"] == "ACTIVE" else None}
-                                  for key, fact in snapshot.items() if fact],
-                "user_message": user_message,
+                                  for key, fact in snapshot.items() if fact and fact.get("fragmentId") in visible_ids],
+                "user_message": "\n[quoted or supplied passage omitted]\n".join(segments) if personal_only else user_message,
             }
             raw = self.extractor([{"role": "system", "content": LEARNING_PROMPT},
                                   {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
                                  json_mode=True)
-            proposals = self._validate(raw, user_message)
+            proposals = self._validate(raw, user_message, segments)
         except Exception as exc:
             # Do not echo provider responses or keys; the answer remains available to the caller.
             result.errors.append({"stage": "extraction", "code": type(exc).__name__})
@@ -130,7 +136,7 @@ class MemorySession:
             self._history = self._history[-self.history_turns * 2:]
         return result
 
-    def _validate(self, raw: str, message: str) -> list[dict]:
+    def _validate(self, raw: str, message: str, segments: list[str]) -> list[dict]:
         if not isinstance(raw, str) or len(raw) > 100000:
             raise ValueError("Invalid extraction response size")
         data = json.loads(raw)
@@ -152,7 +158,9 @@ class MemorySession:
             if (op == "set" and (not content.strip() or len(content) > 2000)) or (op == "retract" and content):
                 raise ValueError("Invalid fact content")
             seen.add(key)
-        return data["updates"]  # Validate the entire proposal before the first write.
+        # Validate the batch first. A quotation cannot authorize a set or retraction.
+        return [update for update in data["updates"]
+                if not update["key"].startswith("user.") or any(update["evidence"] in part for part in segments)]
 
     def _commit(self, update: dict, before: dict | None, result: MemoryTurn) -> None:
         key, op = update["key"], update["operation"]

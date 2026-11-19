@@ -56,7 +56,7 @@ public final class VortexMemoryClient {
                 "namespace", namespace,
                 "topK", topK,
                 "tokenBudget", tokenBudget);
-        JsonNode response = postJson("/api/v1/memory/recall", body);
+        JsonNode response = postJson("/api/v1/memory/context", body);
         List<RecallFragment> fragments = new ArrayList<>();
         for (JsonNode item : response.path("fragments")) {
             JsonNode fragment = item.path("fragment");
